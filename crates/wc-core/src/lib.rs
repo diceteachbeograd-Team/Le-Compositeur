@@ -37,9 +37,14 @@ pub struct AppConfig {
     pub quote_font_size: u32,
     pub quote_pos_x: i32,
     pub quote_pos_y: i32,
+    pub quote_color: String,
     pub clock_font_size: u32,
     pub clock_pos_x: i32,
     pub clock_pos_y: i32,
+    pub clock_color: String,
+    pub text_stroke_color: String,
+    pub text_stroke_width: u32,
+    pub text_undercolor: String,
     pub rotation_use_persistent_state: bool,
     pub rotation_state_file: String,
     pub output_image: String,
@@ -53,7 +58,7 @@ pub struct AppConfig {
 }
 
 pub fn default_config_toml() -> String {
-    r#"# Wallpaper Composer config
+    r##"# Wallpaper Composer config
 config_version = 1
 image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
@@ -67,9 +72,14 @@ quote_format = "lines"
 quote_font_size = 36
 quote_pos_x = 80
 quote_pos_y = 860
+quote_color = "#FFFFFF"
 clock_font_size = 44
 clock_pos_x = 1600
 clock_pos_y = 960
+clock_color = "#FFD700"
+text_stroke_color = "#000000"
+text_stroke_width = 2
+text_undercolor = "#00000066"
 rotation_use_persistent_state = true
 rotation_state_file = "~/.local/state/wallpaper-composer/rotation.state"
 output_image = "/tmp/wallpaper-composer-current.png"
@@ -80,13 +90,13 @@ time_format = "%H:%M"
 apply_wallpaper = false
 wallpaper_backend = "auto"
 wallpaper_fit_mode = "zoom"
-"#
+"##
     .to_string()
 }
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
+        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -100,9 +110,14 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.quote_font_size,
         cfg.quote_pos_x,
         cfg.quote_pos_y,
+        cfg.quote_color,
         cfg.clock_font_size,
         cfg.clock_pos_x,
         cfg.clock_pos_y,
+        cfg.clock_color,
+        cfg.text_stroke_color,
+        cfg.text_stroke_width,
+        cfg.text_undercolor,
         cfg.rotation_use_persistent_state,
         cfg.rotation_state_file,
         cfg.output_image,
@@ -117,7 +132,7 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
 }
 
 pub fn settings_schema_json() -> &'static str {
-    r#"{
+    r##"{
   "schema_version": 1,
   "config_key": "config_version",
   "ui_contract_version": 1,
@@ -149,9 +164,14 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"quote_font_size","group":"layout","label":"Quote Font Size","type":"u32","required":false,"default":36,"min":8},
     {"key":"quote_pos_x","group":"layout","label":"Quote X","type":"i32","required":false,"default":80},
     {"key":"quote_pos_y","group":"layout","label":"Quote Y","type":"i32","required":false,"default":860},
+    {"key":"quote_color","group":"layout","label":"Quote Color","type":"string","required":false,"default":"#FFFFFF"},
     {"key":"clock_font_size","group":"layout","label":"Clock Font Size","type":"u32","required":false,"default":44,"min":8},
     {"key":"clock_pos_x","group":"layout","label":"Clock X","type":"i32","required":false,"default":1600},
     {"key":"clock_pos_y","group":"layout","label":"Clock Y","type":"i32","required":false,"default":960},
+    {"key":"clock_color","group":"layout","label":"Clock Color","type":"string","required":false,"default":"#FFD700"},
+    {"key":"text_stroke_color","group":"layout","label":"Text Stroke Color","type":"string","required":false,"default":"#000000"},
+    {"key":"text_stroke_width","group":"layout","label":"Text Stroke Width","type":"u32","required":false,"default":2},
+    {"key":"text_undercolor","group":"layout","label":"Text Undercolor","type":"string","required":false,"default":"#00000066"},
 
     {"key":"rotation_use_persistent_state","group":"rotation","label":"Use Persistent Rotation State","type":"bool","required":false,"default":true},
     {"key":"rotation_state_file","group":"rotation","label":"Rotation State File","type":"string","required":false,"default":"~/.local/state/wallpaper-composer/rotation.state","ui_widget":"file-save","visible_when":{"field":"rotation_use_persistent_state","equals":true},"enabled_when":{"field":"rotation_use_persistent_state","equals":true}},
@@ -160,7 +180,7 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"wallpaper_backend","group":"wallpaper","label":"Wallpaper Backend","type":"enum","required":false,"default":"auto","options":["auto","noop","gnome","sway","feh"],"visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}},
     {"key":"wallpaper_fit_mode","group":"wallpaper","label":"Wallpaper Fit Mode","type":"enum","required":false,"default":"zoom","options":["zoom","scaled","stretched","spanned","centered","wallpaper"],"visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}}
   ]
-}"#
+}"##
 }
 
 pub fn settings_ui_blueprint_json() -> &'static str {
@@ -197,9 +217,14 @@ pub fn settings_ui_blueprint_json() -> &'static str {
           "quote_font_size",
           "quote_pos_x",
           "quote_pos_y",
+          "quote_color",
           "clock_font_size",
           "clock_pos_x",
-          "clock_pos_y"
+          "clock_pos_y",
+          "clock_color",
+          "text_stroke_color",
+          "text_stroke_width",
+          "text_undercolor"
         ]
       },
       {
@@ -253,9 +278,14 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut quote_font_size = None::<u32>;
     let mut quote_pos_x = None::<i32>;
     let mut quote_pos_y = None::<i32>;
+    let mut quote_color = None::<String>;
     let mut clock_font_size = None::<u32>;
     let mut clock_pos_x = None::<i32>;
     let mut clock_pos_y = None::<i32>;
+    let mut clock_color = None::<String>;
+    let mut text_stroke_color = None::<String>;
+    let mut text_stroke_width = None::<u32>;
+    let mut text_undercolor = None::<String>;
     let mut rotation_use_persistent_state = None::<bool>;
     let mut rotation_state_file = None::<String>;
     let mut output_image = None::<String>;
@@ -292,9 +322,14 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "quote_font_size" => quote_font_size = parse_u32(value),
             "quote_pos_x" => quote_pos_x = parse_i32(value),
             "quote_pos_y" => quote_pos_y = parse_i32(value),
+            "quote_color" => quote_color = parse_string(value),
             "clock_font_size" => clock_font_size = parse_u32(value),
             "clock_pos_x" => clock_pos_x = parse_i32(value),
             "clock_pos_y" => clock_pos_y = parse_i32(value),
+            "clock_color" => clock_color = parse_string(value),
+            "text_stroke_color" => text_stroke_color = parse_string(value),
+            "text_stroke_width" => text_stroke_width = parse_u32(value),
+            "text_undercolor" => text_undercolor = parse_string(value),
             "rotation_use_persistent_state" => rotation_use_persistent_state = parse_bool(value),
             "rotation_state_file" => rotation_state_file = parse_string(value),
             "output_image" => output_image = parse_string(value),
@@ -323,9 +358,14 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         quote_font_size: quote_font_size.unwrap_or(36).max(8),
         quote_pos_x: quote_pos_x.unwrap_or(80),
         quote_pos_y: quote_pos_y.unwrap_or(860),
+        quote_color: quote_color.unwrap_or_else(|| "#FFFFFF".to_string()),
         clock_font_size: clock_font_size.unwrap_or(44).max(8),
         clock_pos_x: clock_pos_x.unwrap_or(1600),
         clock_pos_y: clock_pos_y.unwrap_or(960),
+        clock_color: clock_color.unwrap_or_else(|| "#FFD700".to_string()),
+        text_stroke_color: text_stroke_color.unwrap_or_else(|| "#000000".to_string()),
+        text_stroke_width: text_stroke_width.unwrap_or(2),
+        text_undercolor: text_undercolor.unwrap_or_else(|| "#00000066".to_string()),
         rotation_use_persistent_state: rotation_use_persistent_state.unwrap_or(true),
         rotation_state_file: rotation_state_file
             .unwrap_or_else(|| "~/.local/state/wallpaper-composer/rotation.state".to_string()),
@@ -616,9 +656,14 @@ mod tests {
         assert_eq!(cfg.quote_font_size, 36);
         assert_eq!(cfg.quote_pos_x, 80);
         assert_eq!(cfg.quote_pos_y, 860);
+        assert_eq!(cfg.quote_color, "#FFFFFF");
         assert_eq!(cfg.clock_font_size, 44);
         assert_eq!(cfg.clock_pos_x, 1600);
         assert_eq!(cfg.clock_pos_y, 960);
+        assert_eq!(cfg.clock_color, "#FFD700");
+        assert_eq!(cfg.text_stroke_color, "#000000");
+        assert_eq!(cfg.text_stroke_width, 2);
+        assert_eq!(cfg.text_undercolor, "#00000066");
         assert!(cfg.rotation_use_persistent_state);
         assert_eq!(
             cfg.rotation_state_file,

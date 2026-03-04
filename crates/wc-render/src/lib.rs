@@ -9,9 +9,14 @@ pub struct PreviewText<'a> {
     pub quote_font_size: u32,
     pub quote_pos_x: i32,
     pub quote_pos_y: i32,
+    pub quote_color: &'a str,
     pub clock_font_size: u32,
     pub clock_pos_x: i32,
     pub clock_pos_y: i32,
+    pub clock_color: &'a str,
+    pub text_stroke_color: &'a str,
+    pub text_stroke_width: u32,
+    pub text_undercolor: &'a str,
 }
 
 #[derive(Debug, Clone)]
@@ -42,16 +47,21 @@ pub fn render_preview_to_file(
 
     let meta_path = metadata_path_for(output_image);
     let metadata = format!(
-        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nsource_image = {:?}\n",
+        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\nsource_image = {:?}\n",
         render_mode,
         text.quote,
         text.clock,
         text.quote_font_size,
         text.quote_pos_x,
         text.quote_pos_y,
+        text.quote_color,
         text.clock_font_size,
         text.clock_pos_x,
         text.clock_pos_y,
+        text.clock_color,
+        text.text_stroke_color,
+        text.text_stroke_width,
+        text.text_undercolor,
         source_image.display().to_string()
     );
 
@@ -91,15 +101,15 @@ fn render_with_imagemagick(
     args.push("-gravity".to_string());
     args.push("NorthWest".to_string());
     args.push("-stroke".to_string());
-    args.push("black".to_string());
+    args.push(text.text_stroke_color.to_string());
     args.push("-strokewidth".to_string());
-    args.push("2".to_string());
+    args.push(text.text_stroke_width.to_string());
     args.push("-undercolor".to_string());
-    args.push("#00000066".to_string());
+    args.push(text.text_undercolor.to_string());
 
     // Quote text styling and placement.
     args.push("-fill".to_string());
-    args.push("white".to_string());
+    args.push(text.quote_color.to_string());
     args.push("-pointsize".to_string());
     args.push(text.quote_font_size.to_string());
     args.push("-annotate".to_string());
@@ -108,7 +118,7 @@ fn render_with_imagemagick(
 
     // Clock styling and placement.
     args.push("-fill".to_string());
-    args.push("gold".to_string());
+    args.push(text.clock_color.to_string());
     args.push("-pointsize".to_string());
     args.push(text.clock_font_size.to_string());
     args.push("-annotate".to_string());
@@ -481,9 +491,14 @@ mod tests {
                 quote_font_size: 24,
                 quote_pos_x: 10,
                 quote_pos_y: 20,
+                quote_color: "#FFFFFF",
                 clock_font_size: 28,
                 clock_pos_x: 300,
                 clock_pos_y: 180,
+                clock_color: "#FFD700",
+                text_stroke_color: "#000000",
+                text_stroke_width: 2,
+                text_undercolor: "#00000066",
             },
         )
         .expect("render should succeed");
@@ -515,9 +530,14 @@ mod tests {
                 quote_font_size: 24,
                 quote_pos_x: 2,
                 quote_pos_y: 2,
+                quote_color: "#FFFFFF",
                 clock_font_size: 24,
                 clock_pos_x: 2,
                 clock_pos_y: 20,
+                clock_color: "#FFD700",
+                text_stroke_color: "#000000",
+                text_stroke_width: 1,
+                text_undercolor: "#00000066",
             },
         )
         .expect("native bmp render should return status");

@@ -171,9 +171,14 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             quote_font_size: cfg.quote_font_size,
             quote_pos_x: cfg.quote_pos_x,
             quote_pos_y: cfg.quote_pos_y,
+            quote_color: &cfg.quote_color,
             clock_font_size: cfg.clock_font_size,
             clock_pos_x: cfg.clock_pos_x,
             clock_pos_y: cfg.clock_pos_y,
+            clock_color: &cfg.clock_color,
+            text_stroke_color: &cfg.text_stroke_color,
+            text_stroke_width: cfg.text_stroke_width,
+            text_undercolor: &cfg.text_undercolor,
         },
     )
     .map_err(anyhow::Error::msg)?;
@@ -277,6 +282,18 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
 
     if cfg.quote_font_size < 8 || cfg.clock_font_size < 8 {
         anyhow::bail!("quote_font_size and clock_font_size must be >= 8");
+    }
+    if cfg.text_stroke_width > 20 {
+        anyhow::bail!("text_stroke_width must be <= 20");
+    }
+    if cfg.quote_color.trim().is_empty()
+        || cfg.clock_color.trim().is_empty()
+        || cfg.text_stroke_color.trim().is_empty()
+        || cfg.text_undercolor.trim().is_empty()
+    {
+        anyhow::bail!(
+            "quote_color, clock_color, text_stroke_color and text_undercolor must be non-empty"
+        );
     }
     let fit_mode = cfg.wallpaper_fit_mode.trim().to_ascii_lowercase();
     if ![
