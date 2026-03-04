@@ -10,7 +10,7 @@ use wc_backend::apply_wallpaper;
 use wc_core::{
     AppConfig, build_doctor_report, builtin_image_presets, builtin_quote_presets, cycle_index,
     default_config_path, default_config_toml, expand_tilde, image_preset_endpoint, load_config,
-    pick_background_image, pick_quote, presets_catalog_json, quote_preset_endpoint,
+    pick_background_image_with_mode, pick_quote, presets_catalog_json, quote_preset_endpoint,
     settings_schema_json, settings_ui_blueprint_json, to_config_toml,
 };
 use wc_render::{PreviewText, render_preview_to_file};
@@ -179,6 +179,9 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             text_stroke_color: &cfg.text_stroke_color,
             text_stroke_width: cfg.text_stroke_width,
             text_undercolor: &cfg.text_undercolor,
+            text_box_size: &cfg.text_box_size,
+            text_box_width_pct: cfg.text_box_width_pct,
+            text_box_height_pct: cfg.text_box_height_pct,
         },
     )
     .map_err(anyhow::Error::msg)?;
@@ -286,6 +289,19 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     if cfg.text_stroke_width > 20 {
         anyhow::bail!("text_stroke_width must be <= 20");
     }
+    let text_box_size = cfg.text_box_size.trim().to_ascii_lowercase();
+    if !["quarter", "third", "half", "full", "custom"].contains(&text_box_size.as_str()) {
+        anyhow::bail!(
+            "unsupported text_box_size={}; use quarter, third, half, full, or custom",
+            cfg.text_box_size
+        );
+    }
+    if cfg.text_box_width_pct < 10 || cfg.text_box_width_pct > 100 {
+        anyhow::bail!("text_box_width_pct must be between 10 and 100");
+    }
+    if cfg.text_box_height_pct < 10 || cfg.text_box_height_pct > 100 {
+        anyhow::bail!("text_box_height_pct must be between 10 and 100");
+    }
     if cfg.quote_color.trim().is_empty()
         || cfg.clock_color.trim().is_empty()
         || cfg.text_stroke_color.trim().is_empty()
@@ -310,6 +326,13 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
         anyhow::bail!(
             "unsupported wallpaper_fit_mode={}; use zoom, scaled, stretched, spanned, centered, wallpaper, or tiled",
             cfg.wallpaper_fit_mode
+        );
+    }
+    let image_order_mode = cfg.image_order_mode.trim().to_ascii_lowercase();
+    if !["sequential", "random"].contains(&image_order_mode.as_str()) {
+        anyhow::bail!(
+            "unsupported image_order_mode={}; use sequential or random",
+            cfg.image_order_mode
         );
     }
 
@@ -377,7 +400,17 @@ fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {
     match cfg.image_source.trim().to_ascii_lowercase().as_str() {
         "local" => {
             let image_dir = expand_tilde(&cfg.image_dir)?;
-            pick_background_image(&image_dir, cycle)
+            let state_path = image_pick_state_path(cfg)?;
+            let previous_index = read_image_pick_index(&state_path);
+            let (picked, picked_idx) = pick_background_image_with_mode(
+                &image_dir,
+                cycle,
+                &cfg.image_order_mode,
+                cfg.image_avoid_repeat,
+                previous_index,
+            )?;
+            write_image_pick_index(&state_path, picked_idx)?;
+            Ok(picked)
         }
         "preset" | "remote_preset" => {
             let (endpoint, provider) = resolve_image_endpoint_from_preset(cfg)?;
@@ -393,6 +426,24 @@ fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {
             "unsupported image_source={other}; supported: local, preset, url"
         )),
     }
+}
+
+fn image_pick_state_path(cfg: &AppConfig) -> Result<PathBuf> {
+    let path = expand_tilde(&format!("{}.image_pick", cfg.rotation_state_file))?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    Ok(path)
+}
+
+fn read_image_pick_index(path: &Path) -> Option<usize> {
+    let raw = fs::read_to_string(path).ok()?;
+    raw.trim().parse::<usize>().ok()
+}
+
+fn write_image_pick_index(path: &Path, idx: usize) -> Result<()> {
+    fs::write(path, format!("{idx}\n"))?;
+    Ok(())
 }
 
 fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {

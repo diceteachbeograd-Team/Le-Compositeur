@@ -17,6 +17,9 @@ pub struct PreviewText<'a> {
     pub text_stroke_color: &'a str,
     pub text_stroke_width: u32,
     pub text_undercolor: &'a str,
+    pub text_box_size: &'a str,
+    pub text_box_width_pct: u32,
+    pub text_box_height_pct: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +50,7 @@ pub fn render_preview_to_file(
 
     let meta_path = metadata_path_for(output_image);
     let metadata = format!(
-        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\nsource_image = {:?}\n",
+        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nsource_image = {:?}\n",
         render_mode,
         text.quote,
         text.clock,
@@ -62,6 +65,9 @@ pub fn render_preview_to_file(
         text.text_stroke_color,
         text.text_stroke_width,
         text.text_undercolor,
+        text.text_box_size,
+        text.text_box_width_pct,
+        text.text_box_height_pct,
         source_image.display().to_string()
     );
 
@@ -98,46 +104,75 @@ fn render_with_imagemagick(
         args.push("convert".to_string());
     }
     args.push(source_image.display().to_string());
+
+    let (quote_body, author) = split_quote_and_author(text.quote);
+    let rtl = is_rtl_text(&quote_body);
+    let quote_gravity = if rtl { "East" } else { "West" };
+    let author_gravity = if rtl { "West" } else { "East" };
+    let (img_w, img_h) =
+        detect_image_dimensions(&source_image.display().to_string()).unwrap_or((1920, 1080));
+    let (box_w_pct, box_h_pct) = resolve_text_box_pct(text);
+    let box_w = ((img_w * box_w_pct as i32) / 100).max(240);
+    let box_h = ((img_h * box_h_pct as i32) / 100).max(160);
+    let author_h = (text.quote_font_size as i32 * 2).max(40);
+    let quote_h = (box_h - author_h).max(80);
+
+    // Quote text in bounded box to avoid full-screen overlay.
+    args.push("(".to_string());
+    args.push("-background".to_string());
+    args.push("none".to_string());
+    args.push("-size".to_string());
+    args.push(format!("{}x{}", box_w, quote_h));
+    args.push("-fill".to_string());
+    args.push(text.quote_color.to_string());
     args.push("-stroke".to_string());
     args.push(text.text_stroke_color.to_string());
     args.push("-strokewidth".to_string());
     args.push(text.text_stroke_width.to_string());
     args.push("-undercolor".to_string());
     args.push(text.text_undercolor.to_string());
-
-    let (quote_body, author) = split_quote_and_author(text.quote);
-    let rtl = is_rtl_text(&quote_body);
-    let quote_gravity = if rtl { "NorthEast" } else { "NorthWest" };
-    let author_gravity = if rtl { "NorthWest" } else { "NorthEast" };
-
-    // Quote text styling and placement (start side of script direction).
     args.push("-gravity".to_string());
     args.push(quote_gravity.to_string());
-    args.push("-fill".to_string());
-    args.push(text.quote_color.to_string());
     args.push("-pointsize".to_string());
     args.push(text.quote_font_size.to_string());
-    args.push("-annotate".to_string());
+    args.push(format!("caption:{quote_body}"));
+    args.push(")".to_string());
+    args.push("-gravity".to_string());
+    args.push("NorthWest".to_string());
+    args.push("-geometry".to_string());
     args.push(format!("+{}+{}", text.quote_pos_x, text.quote_pos_y));
-    args.push(quote_body.clone());
+    args.push("-composite".to_string());
 
-    // Optional author line (end side of script direction).
+    // Optional author line in same bounded area at opposite edge.
     if let Some(author_text) = author {
-        let author_y = text
-            .quote_pos_y
-            .saturating_add(
-                (quote_body.lines().count() as i32).saturating_mul(text.quote_font_size as i32),
-            )
-            .saturating_add((text.quote_font_size as i32) / 2);
-        args.push("-gravity".to_string());
-        args.push(author_gravity.to_string());
+        args.push("(".to_string());
+        args.push("-background".to_string());
+        args.push("none".to_string());
+        args.push("-size".to_string());
+        args.push(format!("{}x{}", box_w, author_h));
         args.push("-fill".to_string());
         args.push(text.quote_color.to_string());
+        args.push("-stroke".to_string());
+        args.push(text.text_stroke_color.to_string());
+        args.push("-strokewidth".to_string());
+        args.push(text.text_stroke_width.to_string());
+        args.push("-undercolor".to_string());
+        args.push(text.text_undercolor.to_string());
+        args.push("-gravity".to_string());
+        args.push(author_gravity.to_string());
         args.push("-pointsize".to_string());
         args.push(text.quote_font_size.to_string());
-        args.push("-annotate".to_string());
-        args.push(format!("+{}+{}", text.quote_pos_x, author_y));
-        args.push(format!("- {author_text}"));
+        args.push(format!("caption:- {author_text}"));
+        args.push(")".to_string());
+        args.push("-gravity".to_string());
+        args.push("NorthWest".to_string());
+        args.push("-geometry".to_string());
+        args.push(format!(
+            "+{}+{}",
+            text.quote_pos_x,
+            text.quote_pos_y.saturating_add(quote_h)
+        ));
+        args.push("-composite".to_string());
     }
 
     // Clock styling and placement.
@@ -215,6 +250,34 @@ fn is_rtl_char(c: char) -> bool {
             | 0xFB50..=0xFDFF // Arabic Presentation Forms-A
             | 0xFE70..=0xFEFF // Arabic Presentation Forms-B
     )
+}
+
+fn detect_image_dimensions(path: &str) -> Option<(i32, i32)> {
+    let out = Command::new("identify")
+        .args(["-format", "%w %h", path])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8_lossy(&out.stdout);
+    let mut parts = raw.split_whitespace();
+    let w = parts.next()?.parse::<i32>().ok()?;
+    let h = parts.next()?.parse::<i32>().ok()?;
+    Some((w, h))
+}
+
+fn resolve_text_box_pct(text: &PreviewText<'_>) -> (u32, u32) {
+    match text.text_box_size.trim().to_ascii_lowercase().as_str() {
+        "third" => (58, 58),
+        "half" => (70, 70),
+        "full" => (100, 100),
+        "custom" => (
+            text.text_box_width_pct.clamp(10, 100),
+            text.text_box_height_pct.clamp(10, 100),
+        ),
+        _ => (50, 50),
+    }
 }
 
 fn render_with_native_bmp(
@@ -582,6 +645,9 @@ mod tests {
                 text_stroke_color: "#000000",
                 text_stroke_width: 2,
                 text_undercolor: "#00000066",
+                text_box_size: "quarter",
+                text_box_width_pct: 50,
+                text_box_height_pct: 50,
             },
         )
         .expect("render should succeed");
@@ -621,6 +687,9 @@ mod tests {
                 text_stroke_color: "#000000",
                 text_stroke_width: 1,
                 text_undercolor: "#00000066",
+                text_box_size: "quarter",
+                text_box_width_pct: 50,
+                text_box_height_pct: 50,
             },
         )
         .expect("native bmp render should return status");

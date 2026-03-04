@@ -34,6 +34,8 @@ pub struct AppConfig {
     pub quote_source_url: Option<String>,
     pub quote_source_preset: Option<String>,
     pub quote_format: String,
+    pub image_order_mode: String,
+    pub image_avoid_repeat: bool,
     pub quote_font_size: u32,
     pub quote_pos_x: i32,
     pub quote_pos_y: i32,
@@ -45,6 +47,9 @@ pub struct AppConfig {
     pub text_stroke_color: String,
     pub text_stroke_width: u32,
     pub text_undercolor: String,
+    pub text_box_size: String,
+    pub text_box_width_pct: u32,
+    pub text_box_height_pct: u32,
     pub rotation_use_persistent_state: bool,
     pub rotation_state_file: String,
     pub output_image: String,
@@ -69,6 +74,8 @@ quote_source = "local"
 quote_source_url = ""
 quote_source_preset = "zenquotes_daily"
 quote_format = "lines"
+image_order_mode = "sequential"
+image_avoid_repeat = true
 quote_font_size = 36
 quote_pos_x = 80
 quote_pos_y = 860
@@ -80,6 +87,9 @@ clock_color = "#FFD700"
 text_stroke_color = "#000000"
 text_stroke_width = 2
 text_undercolor = "#00000066"
+text_box_size = "quarter"
+text_box_width_pct = 50
+text_box_height_pct = 50
 rotation_use_persistent_state = true
 rotation_state_file = "~/.local/state/wallpaper-composer/rotation.state"
 output_image = "/tmp/wallpaper-composer-current.png"
@@ -96,7 +106,7 @@ wallpaper_fit_mode = "zoom"
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
+        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -107,6 +117,8 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.quote_source_url.clone().unwrap_or_default(),
         cfg.quote_source_preset.clone().unwrap_or_default(),
         cfg.quote_format,
+        cfg.image_order_mode,
+        cfg.image_avoid_repeat,
         cfg.quote_font_size,
         cfg.quote_pos_x,
         cfg.quote_pos_y,
@@ -118,6 +130,9 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.text_stroke_color,
         cfg.text_stroke_width,
         cfg.text_undercolor,
+        cfg.text_box_size,
+        cfg.text_box_width_pct,
+        cfg.text_box_height_pct,
         cfg.rotation_use_persistent_state,
         cfg.rotation_state_file,
         cfg.output_image,
@@ -160,6 +175,8 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"quote_source_url","group":"sources","label":"Quote Source URL","type":"string","required":false,"default":"","visible_when":{"field":"quote_source","equals":"url"},"enabled_when":{"field":"quote_source","equals":"url"}},
     {"key":"quote_source_preset","group":"sources","label":"Quote Source Preset","type":"string","required":false,"default":"zenquotes_daily","visible_when":{"field":"quote_source","equals":"preset"},"enabled_when":{"field":"quote_source","equals":"preset"}},
     {"key":"quote_format","group":"sources","label":"Quote Format","type":"enum","required":false,"default":"lines","options":["lines","paragraphs","markdown_blocks"]},
+    {"key":"image_order_mode","group":"sources","label":"Image Order","type":"enum","required":false,"default":"sequential","options":["sequential","random"]},
+    {"key":"image_avoid_repeat","group":"sources","label":"Avoid Immediate Repeat","type":"bool","required":false,"default":true},
 
     {"key":"quote_font_size","group":"layout","label":"Quote Font Size","type":"u32","required":false,"default":36,"min":8},
     {"key":"quote_pos_x","group":"layout","label":"Quote X","type":"i32","required":false,"default":80},
@@ -172,6 +189,9 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"text_stroke_color","group":"layout","label":"Text Stroke Color","type":"string","required":false,"default":"#000000"},
     {"key":"text_stroke_width","group":"layout","label":"Text Stroke Width","type":"u32","required":false,"default":2},
     {"key":"text_undercolor","group":"layout","label":"Text Undercolor","type":"string","required":false,"default":"#00000066"},
+    {"key":"text_box_size","group":"layout","label":"Text Box Size","type":"enum","required":false,"default":"quarter","options":["quarter","third","half","full","custom"]},
+    {"key":"text_box_width_pct","group":"layout","label":"Text Box Width %","type":"u32","required":false,"default":50,"min":10,"max":100,"visible_when":{"field":"text_box_size","equals":"custom"},"enabled_when":{"field":"text_box_size","equals":"custom"}},
+    {"key":"text_box_height_pct","group":"layout","label":"Text Box Height %","type":"u32","required":false,"default":50,"min":10,"max":100,"visible_when":{"field":"text_box_size","equals":"custom"},"enabled_when":{"field":"text_box_size","equals":"custom"}},
 
     {"key":"rotation_use_persistent_state","group":"rotation","label":"Use Persistent Rotation State","type":"bool","required":false,"default":true},
     {"key":"rotation_state_file","group":"rotation","label":"Rotation State File","type":"string","required":false,"default":"~/.local/state/wallpaper-composer/rotation.state","ui_widget":"file-save","visible_when":{"field":"rotation_use_persistent_state","equals":true},"enabled_when":{"field":"rotation_use_persistent_state","equals":true}},
@@ -207,7 +227,9 @@ pub fn settings_ui_blueprint_json() -> &'static str {
           "quotes_path",
           "quote_source_preset",
           "quote_source_url",
-          "quote_format"
+          "quote_format",
+          "image_order_mode",
+          "image_avoid_repeat"
         ]
       },
       {
@@ -224,7 +246,10 @@ pub fn settings_ui_blueprint_json() -> &'static str {
           "clock_color",
           "text_stroke_color",
           "text_stroke_width",
-          "text_undercolor"
+          "text_undercolor",
+          "text_box_size",
+          "text_box_width_pct",
+          "text_box_height_pct"
         ]
       },
       {
@@ -244,6 +269,8 @@ pub fn settings_ui_blueprint_json() -> &'static str {
     {"field":"image_source_preset","visible_when":{"field":"image_source","equals":"preset"},"enabled_when":{"field":"image_source","equals":"preset"}},
     {"field":"quote_source_url","visible_when":{"field":"quote_source","equals":"url"},"enabled_when":{"field":"quote_source","equals":"url"}},
     {"field":"quote_source_preset","visible_when":{"field":"quote_source","equals":"preset"},"enabled_when":{"field":"quote_source","equals":"preset"}},
+    {"field":"text_box_width_pct","visible_when":{"field":"text_box_size","equals":"custom"},"enabled_when":{"field":"text_box_size","equals":"custom"}},
+    {"field":"text_box_height_pct","visible_when":{"field":"text_box_size","equals":"custom"},"enabled_when":{"field":"text_box_size","equals":"custom"}},
     {"field":"rotation_state_file","visible_when":{"field":"rotation_use_persistent_state","equals":true},"enabled_when":{"field":"rotation_use_persistent_state","equals":true}},
     {"field":"wallpaper_backend","visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}},
     {"field":"wallpaper_fit_mode","visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}}
@@ -275,6 +302,8 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut quote_source_url = None::<String>;
     let mut quote_source_preset = None::<String>;
     let mut quote_format = None::<String>;
+    let mut image_order_mode = None::<String>;
+    let mut image_avoid_repeat = None::<bool>;
     let mut quote_font_size = None::<u32>;
     let mut quote_pos_x = None::<i32>;
     let mut quote_pos_y = None::<i32>;
@@ -286,6 +315,9 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut text_stroke_color = None::<String>;
     let mut text_stroke_width = None::<u32>;
     let mut text_undercolor = None::<String>;
+    let mut text_box_size = None::<String>;
+    let mut text_box_width_pct = None::<u32>;
+    let mut text_box_height_pct = None::<u32>;
     let mut rotation_use_persistent_state = None::<bool>;
     let mut rotation_state_file = None::<String>;
     let mut output_image = None::<String>;
@@ -319,6 +351,8 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "quote_source_url" => quote_source_url = parse_string(value),
             "quote_source_preset" => quote_source_preset = parse_string(value),
             "quote_format" => quote_format = parse_string(value),
+            "image_order_mode" => image_order_mode = parse_string(value),
+            "image_avoid_repeat" => image_avoid_repeat = parse_bool(value),
             "quote_font_size" => quote_font_size = parse_u32(value),
             "quote_pos_x" => quote_pos_x = parse_i32(value),
             "quote_pos_y" => quote_pos_y = parse_i32(value),
@@ -330,6 +364,9 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "text_stroke_color" => text_stroke_color = parse_string(value),
             "text_stroke_width" => text_stroke_width = parse_u32(value),
             "text_undercolor" => text_undercolor = parse_string(value),
+            "text_box_size" => text_box_size = parse_string(value),
+            "text_box_width_pct" => text_box_width_pct = parse_u32(value),
+            "text_box_height_pct" => text_box_height_pct = parse_u32(value),
             "rotation_use_persistent_state" => rotation_use_persistent_state = parse_bool(value),
             "rotation_state_file" => rotation_state_file = parse_string(value),
             "output_image" => output_image = parse_string(value),
@@ -355,6 +392,8 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         quote_source_url: sanitize_optional_string(quote_source_url),
         quote_source_preset: sanitize_optional_string(quote_source_preset),
         quote_format: quote_format.unwrap_or_else(|| "lines".to_string()),
+        image_order_mode: image_order_mode.unwrap_or_else(|| "sequential".to_string()),
+        image_avoid_repeat: image_avoid_repeat.unwrap_or(true),
         quote_font_size: quote_font_size.unwrap_or(36).max(8),
         quote_pos_x: quote_pos_x.unwrap_or(80),
         quote_pos_y: quote_pos_y.unwrap_or(860),
@@ -366,6 +405,9 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         text_stroke_color: text_stroke_color.unwrap_or_else(|| "#000000".to_string()),
         text_stroke_width: text_stroke_width.unwrap_or(2),
         text_undercolor: text_undercolor.unwrap_or_else(|| "#00000066".to_string()),
+        text_box_size: text_box_size.unwrap_or_else(|| "quarter".to_string()),
+        text_box_width_pct: text_box_width_pct.unwrap_or(50).clamp(10, 100),
+        text_box_height_pct: text_box_height_pct.unwrap_or(50).clamp(10, 100),
         rotation_use_persistent_state: rotation_use_persistent_state.unwrap_or(true),
         rotation_state_file: rotation_state_file
             .unwrap_or_else(|| "~/.local/state/wallpaper-composer/rotation.state".to_string()),
@@ -455,6 +497,47 @@ pub fn list_background_images(image_dir: &Path) -> Result<Vec<PathBuf>> {
 pub fn pick_background_image(image_dir: &Path, index: u64) -> Result<PathBuf> {
     let candidates = list_background_images(image_dir)?;
     pick_by_index(&candidates, index, "images", image_dir)
+}
+
+pub fn pick_background_image_with_mode(
+    image_dir: &Path,
+    index: u64,
+    mode: &str,
+    avoid_repeat: bool,
+    previous_index: Option<usize>,
+) -> Result<(PathBuf, usize)> {
+    let candidates = list_background_images(image_dir)?;
+    if candidates.is_empty() {
+        return Err(anyhow::anyhow!(
+            "no images available in {}",
+            image_dir.display()
+        ));
+    }
+
+    let mut idx = match mode.trim().to_ascii_lowercase().as_str() {
+        "random" => pseudo_random_index(index, candidates.len()),
+        _ => (index as usize) % candidates.len(),
+    };
+
+    if avoid_repeat
+        && candidates.len() > 1
+        && previous_index.is_some()
+        && previous_index == Some(idx)
+    {
+        idx = (idx + 1) % candidates.len();
+    }
+
+    Ok((candidates[idx].clone(), idx))
+}
+
+fn pseudo_random_index(seed: u64, modulo: usize) -> usize {
+    if modulo == 0 {
+        return 0;
+    }
+    let x = seed
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
+    ((x >> 16) as usize) % modulo
 }
 
 pub fn load_quotes(quotes_path: &Path) -> Result<Vec<String>> {
@@ -752,6 +835,8 @@ mod tests {
         assert_eq!(cfg.config_version, 1);
         assert_eq!(cfg.quote_source, "local");
         assert_eq!(cfg.quote_format, "lines");
+        assert_eq!(cfg.image_order_mode, "sequential");
+        assert!(cfg.image_avoid_repeat);
         assert_eq!(cfg.quote_font_size, 36);
         assert_eq!(cfg.quote_pos_x, 80);
         assert_eq!(cfg.quote_pos_y, 860);
@@ -763,6 +848,9 @@ mod tests {
         assert_eq!(cfg.text_stroke_color, "#000000");
         assert_eq!(cfg.text_stroke_width, 2);
         assert_eq!(cfg.text_undercolor, "#00000066");
+        assert_eq!(cfg.text_box_size, "quarter");
+        assert_eq!(cfg.text_box_width_pct, 50);
+        assert_eq!(cfg.text_box_height_pct, 50);
         assert!(cfg.rotation_use_persistent_state);
         assert_eq!(
             cfg.rotation_state_file,
