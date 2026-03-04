@@ -15,6 +15,7 @@ Alternative block format (recommended for multi-line quotes):
 - wrap each quote block between `***` delimiters
 - delimiter markers are never displayed
 - optional short first line header inside a block (for example `T1`, `Text 1`) is treated as a label and hidden
+- optional author separator line `:` inside a block: content after `:` is displayed as author line (`- Author`)
 
 Examples:
 
@@ -40,6 +41,14 @@ weiter zweiter anzeigetext
 ***
 ***T
 Dritter anzeigetext
+***
+```
+
+```txt
+***
+Text1
+:
+Verfasser
 ***
 ```
 

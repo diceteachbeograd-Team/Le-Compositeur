@@ -506,7 +506,7 @@ fn parse_star_delimited_quotes(raw: &str) -> Vec<String> {
 }
 
 fn normalize_block_quote(input: &str) -> String {
-    let lines = input
+    let mut lines = input
         .lines()
         .map(str::trim_end)
         .filter(|l| !l.trim().is_empty())
@@ -514,16 +514,66 @@ fn normalize_block_quote(input: &str) -> String {
 
     if lines.len() >= 2 {
         let header = lines[0].trim();
-        let is_short_header = header.len() <= 24
-            && header
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == ' ' || c == '_');
-        if is_short_header {
-            return lines[1..].join("\n").trim().to_string();
+        let second = lines[1].trim();
+        if second != ":" && is_optional_block_label(header) {
+            lines = lines[1..].to_vec();
         }
     }
 
-    lines.join("\n").trim().to_string()
+    format_quote_with_optional_author(&lines)
+}
+
+fn is_optional_block_label(line: &str) -> bool {
+    let upper = line.trim().to_ascii_uppercase();
+    if upper.is_empty() || upper.len() > 16 {
+        return false;
+    }
+    if let Some(rest) = upper.strip_prefix("TEXT") {
+        let rest = rest.trim();
+        return !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '_');
+    }
+    if let Some(rest) = upper.strip_prefix('T') {
+        if rest.is_empty() {
+            return true;
+        }
+        return rest.chars().all(|c| c.is_ascii_digit() || c == '_');
+    }
+    false
+}
+
+fn format_quote_with_optional_author(lines: &[&str]) -> String {
+    let mut split_index = None;
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim() == ":" {
+            split_index = Some(i);
+            break;
+        }
+    }
+
+    let Some(idx) = split_index else {
+        return lines.join("\n").trim().to_string();
+    };
+
+    let body = lines[..idx]
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let author = lines[idx + 1..]
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if body.is_empty() {
+        return author;
+    }
+    if author.is_empty() {
+        return body;
+    }
+    format!("{body}\n- {author}")
 }
 
 pub fn pick_quote(quotes_path: &Path, index: u64) -> Result<String> {
@@ -762,6 +812,17 @@ mod tests {
         assert_eq!(quotes[0], "Blabla\nBlabal");
         assert_eq!(quotes[1], "weiter zweiter anzeigetext");
         assert_eq!(quotes[2], "Dritter anzeigetext");
+        let _ = fs::remove_file(quotes_path);
+    }
+
+    #[test]
+    fn load_quotes_supports_author_separator_in_block() {
+        let quotes_path = std::env::temp_dir().join("wc-core-quotes-author-block-test.md");
+        let sample = "***\nText1\n:\nVerfasser\n***";
+        fs::write(&quotes_path, sample).expect("quotes author block file should be writable");
+        let quotes = load_quotes(&quotes_path).expect("author block should parse");
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0], "Text1\n- Verfasser");
         let _ = fs::remove_file(quotes_path);
     }
 
