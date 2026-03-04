@@ -11,6 +11,11 @@ Current default mode is `quote_format = "lines"`:
 - one non-empty line equals one quote
 - markdown markers at line start are stripped (`#`, `-`, `*`, `>`)
 
+Alternative block format (recommended for multi-line quotes):
+- wrap each quote block between `***` delimiters
+- delimiter markers are never displayed
+- optional short first line header inside a block (for example `T1`, `Text 1`) is treated as a label and hidden
+
 Examples:
 
 ```txt
@@ -23,6 +28,19 @@ Document every change.
 # Stay focused.
 - Ship small increments.
 > Document every change.
+```
+
+```txt
+*** Text 1
+Blabla
+Blabal
+***
+***T2
+weiter zweiter anzeigetext
+***
+***T
+Dritter anzeigetext
+***
 ```
 
 ## Planned parsing modes

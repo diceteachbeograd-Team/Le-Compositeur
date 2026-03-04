@@ -126,7 +126,7 @@ fn main() -> Result<()> {
                 if once {
                     break;
                 }
-                thread::sleep(Duration::from_secs(cfg.refresh_seconds.max(1)));
+                thread::sleep(Duration::from_secs(loop_tick_seconds(&cfg)));
             }
         }
         Commands::Presets => {
@@ -522,4 +522,13 @@ fn backup_path_for(config_path: &Path) -> PathBuf {
         .and_then(|n| n.to_str())
         .unwrap_or("config.toml");
     config_path.with_file_name(format!("{name}.bak-{ts}"))
+}
+
+fn loop_tick_seconds(cfg: &AppConfig) -> u64 {
+    // Clock must stay current; enforce a max tick of 60s while still respecting tighter user settings.
+    cfg.refresh_seconds
+        .max(1)
+        .min(cfg.image_refresh_seconds.max(1))
+        .min(cfg.quote_refresh_seconds.max(1))
+        .min(60)
 }

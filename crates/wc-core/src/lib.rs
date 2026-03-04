@@ -461,20 +461,69 @@ pub fn load_quotes(quotes_path: &Path) -> Result<Vec<String>> {
     let raw = fs::read_to_string(quotes_path)
         .with_context(|| format!("failed to read quotes file {}", quotes_path.display()))?;
 
-    let mut quotes = raw
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(strip_simple_markdown_prefix)
-        .filter(|line| !line.is_empty())
-        .map(ToOwned::to_owned)
-        .collect::<Vec<_>>();
+    let mut quotes = if raw.contains("***") {
+        parse_star_delimited_quotes(&raw)
+    } else {
+        raw.lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(strip_simple_markdown_prefix)
+            .filter(|line| !line.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>()
+    };
 
     if quotes.is_empty() {
         quotes.push("Stay focused. Build step by step.".to_string());
     }
 
     Ok(quotes)
+}
+
+fn parse_star_delimited_quotes(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut inside = false;
+    let mut buf = String::new();
+
+    for chunk in raw.split("***") {
+        if inside {
+            let text = chunk.trim();
+            if !text.is_empty() {
+                out.push(normalize_block_quote(text));
+            }
+        } else if !chunk.trim().is_empty() {
+            // Tolerate files not starting with delimiter by treating plain text as fallback quote.
+            buf.push_str(chunk.trim());
+        }
+        inside = !inside;
+    }
+
+    if out.is_empty() && !buf.trim().is_empty() {
+        out.push(buf.trim().to_string());
+    }
+
+    out
+}
+
+fn normalize_block_quote(input: &str) -> String {
+    let lines = input
+        .lines()
+        .map(str::trim_end)
+        .filter(|l| !l.trim().is_empty())
+        .collect::<Vec<_>>();
+
+    if lines.len() >= 2 {
+        let header = lines[0].trim();
+        let is_short_header = header.len() <= 24
+            && header
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == ' ' || c == '_');
+        if is_short_header {
+            return lines[1..].join("\n").trim().to_string();
+        }
+    }
+
+    lines.join("\n").trim().to_string()
 }
 
 pub fn pick_quote(quotes_path: &Path, index: u64) -> Result<String> {
@@ -700,6 +749,19 @@ mod tests {
         assert_eq!(quotes.len(), 2);
         assert_eq!(quotes[0], "Hello");
         assert_eq!(quotes[1], "World");
+        let _ = fs::remove_file(quotes_path);
+    }
+
+    #[test]
+    fn load_quotes_supports_star_delimited_blocks() {
+        let quotes_path = std::env::temp_dir().join("wc-core-quotes-block-test.md");
+        let sample = "*** Text 1\nBlabla\nBlabal***\n***T2\nweiter zweiter anzeigetext\n***\n***T\nDritter anzeigetext***";
+        fs::write(&quotes_path, sample).expect("quotes block file should be writable");
+        let quotes = load_quotes(&quotes_path).expect("block quotes should parse");
+        assert_eq!(quotes.len(), 3);
+        assert_eq!(quotes[0], "Blabla\nBlabal");
+        assert_eq!(quotes[1], "weiter zweiter anzeigetext");
+        assert_eq!(quotes[2], "Dritter anzeigetext");
         let _ = fs::remove_file(quotes_path);
     }
 
