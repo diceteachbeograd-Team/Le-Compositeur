@@ -44,9 +44,12 @@ pub struct AppConfig {
     pub rotation_state_file: String,
     pub output_image: String,
     pub refresh_seconds: u64,
+    pub image_refresh_seconds: u64,
+    pub quote_refresh_seconds: u64,
     pub time_format: String,
     pub apply_wallpaper: bool,
     pub wallpaper_backend: String,
+    pub wallpaper_fit_mode: String,
 }
 
 pub fn default_config_toml() -> String {
@@ -71,16 +74,19 @@ rotation_use_persistent_state = true
 rotation_state_file = "~/.local/state/wallpaper-composer/rotation.state"
 output_image = "/tmp/wallpaper-composer-current.png"
 refresh_seconds = 300
+image_refresh_seconds = 300
+quote_refresh_seconds = 300
 time_format = "%H:%M"
 apply_wallpaper = false
 wallpaper_backend = "auto"
+wallpaper_fit_mode = "zoom"
 "#
     .to_string()
 }
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\n",
+        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -101,9 +107,12 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.rotation_state_file,
         cfg.output_image,
         cfg.refresh_seconds,
+        cfg.image_refresh_seconds,
+        cfg.quote_refresh_seconds,
         cfg.time_format,
         cfg.apply_wallpaper,
-        cfg.wallpaper_backend
+        cfg.wallpaper_backend,
+        cfg.wallpaper_fit_mode
     )
 }
 
@@ -122,7 +131,9 @@ pub fn settings_schema_json() -> &'static str {
   "fields": [
     {"key":"config_version","group":"general","label":"Config Version","type":"u32","required":false,"default":1},
     {"key":"output_image","group":"general","label":"Output Image","type":"string","required":true,"description":"Rendered wallpaper output path.","ui_widget":"file-save"},
-    {"key":"refresh_seconds","group":"general","label":"Refresh Seconds","type":"u64","required":true,"description":"Update interval in seconds."},
+    {"key":"refresh_seconds","group":"general","label":"Runner Tick Seconds","type":"u64","required":true,"description":"Main loop tick interval in seconds."},
+    {"key":"image_refresh_seconds","group":"general","label":"Image Change Seconds","type":"u64","required":false,"default":300,"description":"How often the background image changes."},
+    {"key":"quote_refresh_seconds","group":"general","label":"Quote Change Seconds","type":"u64","required":false,"default":300,"description":"How often the quote changes."},
     {"key":"time_format","group":"general","label":"Time Format","type":"string","required":true,"description":"Clock format using chrono syntax."},
 
     {"key":"image_dir","group":"sources","label":"Image Directory","type":"string","required":true,"ui_widget":"directory-picker"},
@@ -146,7 +157,8 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"rotation_state_file","group":"rotation","label":"Rotation State File","type":"string","required":false,"default":"~/.local/state/wallpaper-composer/rotation.state","ui_widget":"file-save","visible_when":{"field":"rotation_use_persistent_state","equals":true},"enabled_when":{"field":"rotation_use_persistent_state","equals":true}},
 
     {"key":"apply_wallpaper","group":"wallpaper","label":"Apply Wallpaper","type":"bool","required":false,"default":false},
-    {"key":"wallpaper_backend","group":"wallpaper","label":"Wallpaper Backend","type":"enum","required":false,"default":"auto","options":["auto","noop","gnome","sway","feh"],"visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}}
+    {"key":"wallpaper_backend","group":"wallpaper","label":"Wallpaper Backend","type":"enum","required":false,"default":"auto","options":["auto","noop","gnome","sway","feh"],"visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}},
+    {"key":"wallpaper_fit_mode","group":"wallpaper","label":"Wallpaper Fit Mode","type":"enum","required":false,"default":"zoom","options":["zoom","scaled","stretched","spanned","centered","wallpaper"],"visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}}
   ]
 }"#
 }
@@ -161,7 +173,7 @@ pub fn settings_ui_blueprint_json() -> &'static str {
       {
         "id": "general",
         "title": "General",
-        "fields": ["output_image", "refresh_seconds", "time_format"]
+        "fields": ["output_image", "refresh_seconds", "image_refresh_seconds", "quote_refresh_seconds", "time_format"]
       },
       {
         "id": "sources",
@@ -198,7 +210,7 @@ pub fn settings_ui_blueprint_json() -> &'static str {
       {
         "id": "wallpaper",
         "title": "Wallpaper",
-        "fields": ["apply_wallpaper", "wallpaper_backend"]
+        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode"]
       }
     ]
   },
@@ -208,7 +220,8 @@ pub fn settings_ui_blueprint_json() -> &'static str {
     {"field":"quote_source_url","visible_when":{"field":"quote_source","equals":"url"},"enabled_when":{"field":"quote_source","equals":"url"}},
     {"field":"quote_source_preset","visible_when":{"field":"quote_source","equals":"preset"},"enabled_when":{"field":"quote_source","equals":"preset"}},
     {"field":"rotation_state_file","visible_when":{"field":"rotation_use_persistent_state","equals":true},"enabled_when":{"field":"rotation_use_persistent_state","equals":true}},
-    {"field":"wallpaper_backend","visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}}
+    {"field":"wallpaper_backend","visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}},
+    {"field":"wallpaper_fit_mode","visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}}
   ]
 }"#
 }
@@ -247,9 +260,12 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut rotation_state_file = None::<String>;
     let mut output_image = None::<String>;
     let mut refresh_seconds = None::<u64>;
+    let mut image_refresh_seconds = None::<u64>;
+    let mut quote_refresh_seconds = None::<u64>;
     let mut time_format = None::<String>;
     let mut apply_wallpaper = None::<bool>;
     let mut wallpaper_backend = None::<String>;
+    let mut wallpaper_fit_mode = None::<String>;
 
     for line in raw.lines() {
         let line = line.trim();
@@ -283,9 +299,12 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "rotation_state_file" => rotation_state_file = parse_string(value),
             "output_image" => output_image = parse_string(value),
             "refresh_seconds" => refresh_seconds = value.parse::<u64>().ok(),
+            "image_refresh_seconds" => image_refresh_seconds = value.parse::<u64>().ok(),
+            "quote_refresh_seconds" => quote_refresh_seconds = value.parse::<u64>().ok(),
             "time_format" => time_format = parse_string(value),
             "apply_wallpaper" => apply_wallpaper = parse_bool(value),
             "wallpaper_backend" => wallpaper_backend = parse_string(value),
+            "wallpaper_fit_mode" => wallpaper_fit_mode = parse_string(value),
             _ => {}
         }
     }
@@ -312,10 +331,18 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             .unwrap_or_else(|| "~/.local/state/wallpaper-composer/rotation.state".to_string()),
         output_image: output_image.ok_or_else(|| anyhow::anyhow!("missing key: output_image"))?,
         refresh_seconds: refresh_seconds
-            .ok_or_else(|| anyhow::anyhow!("missing/invalid key: refresh_seconds"))?,
+            .ok_or_else(|| anyhow::anyhow!("missing/invalid key: refresh_seconds"))?
+            .max(1),
+        image_refresh_seconds: image_refresh_seconds
+            .unwrap_or_else(|| refresh_seconds.unwrap_or(300))
+            .max(1),
+        quote_refresh_seconds: quote_refresh_seconds
+            .unwrap_or_else(|| refresh_seconds.unwrap_or(300))
+            .max(1),
         time_format: time_format.ok_or_else(|| anyhow::anyhow!("missing key: time_format"))?,
         apply_wallpaper: apply_wallpaper.unwrap_or(false),
         wallpaper_backend: wallpaper_backend.unwrap_or_else(|| "auto".to_string()),
+        wallpaper_fit_mode: wallpaper_fit_mode.unwrap_or_else(|| "zoom".to_string()),
     })
 }
 
@@ -599,6 +626,9 @@ mod tests {
         );
         assert!(!cfg.apply_wallpaper);
         assert_eq!(cfg.wallpaper_backend, "auto");
+        assert_eq!(cfg.wallpaper_fit_mode, "zoom");
+        assert_eq!(cfg.image_refresh_seconds, 300);
+        assert_eq!(cfg.quote_refresh_seconds, 300);
         let _ = fs::remove_file(cfg_path);
     }
 
@@ -674,6 +704,7 @@ mod tests {
         assert!(blueprint.contains("\"sections\""));
         assert!(blueprint.contains("\"conditions\""));
         assert!(blueprint.contains("\"wallpaper_backend\""));
+        assert!(blueprint.contains("\"wallpaper_fit_mode\""));
     }
 
     #[test]

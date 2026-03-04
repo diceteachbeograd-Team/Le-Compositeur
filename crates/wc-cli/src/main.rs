@@ -5,6 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 use wc_backend::apply_wallpaper;
 use wc_core::{
     AppConfig, build_doctor_report, builtin_image_presets, builtin_quote_presets, cycle_index,
@@ -87,8 +88,9 @@ fn main() -> Result<()> {
             let config_path = resolve_config_path(config)?;
             let cfg = load_config(&config_path)?;
             validate_config(&cfg)?;
-            let cycle = determine_cycle(&cfg)?;
-            run_cycle(&cfg, cycle)?;
+            let image_cycle = determine_cycle(&cfg, cfg.image_refresh_seconds, "image")?;
+            let quote_cycle = determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote")?;
+            run_cycle(&cfg, image_cycle, quote_cycle)?;
         }
         Commands::Init { config, force } => {
             let config_path = resolve_config_path(config)?;
@@ -117,8 +119,9 @@ fn main() -> Result<()> {
             loop {
                 let cfg = load_config(&config_path)?;
                 validate_config(&cfg)?;
-                let cycle = determine_cycle(&cfg)?;
-                run_cycle(&cfg, cycle)?;
+                let image_cycle = determine_cycle(&cfg, cfg.image_refresh_seconds, "image")?;
+                let quote_cycle = determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote")?;
+                run_cycle(&cfg, image_cycle, quote_cycle)?;
 
                 if once {
                     break;
@@ -152,10 +155,10 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_cycle(cfg: &AppConfig, cycle: u64) -> Result<()> {
+fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> {
     let output_path = expand_tilde(&cfg.output_image)?;
-    let source_image = resolve_source_image(cfg, cycle)?;
-    let quote = resolve_quote(cfg, cycle)?;
+    let source_image = resolve_source_image(cfg, image_cycle)?;
+    let quote = resolve_quote(cfg, quote_cycle)?;
     let clock = chrono::Local::now().format(&cfg.time_format).to_string();
 
     ensure_parent_dir(&output_path)?;
@@ -175,7 +178,8 @@ fn run_cycle(cfg: &AppConfig, cycle: u64) -> Result<()> {
     )
     .map_err(anyhow::Error::msg)?;
 
-    println!("cycle: {}", cycle);
+    println!("image_cycle: {}", image_cycle);
+    println!("quote_cycle: {}", quote_cycle);
     println!("source_image: {}", source_image.display());
     println!("quote: {}", quote);
     println!("clock: {}", clock);
@@ -183,8 +187,13 @@ fn run_cycle(cfg: &AppConfig, cycle: u64) -> Result<()> {
     println!("preview_output: {}", output_path.display());
     println!("preview_metadata: {}", render.meta_path.display());
 
-    let apply_status = apply_wallpaper(&cfg.wallpaper_backend, cfg.apply_wallpaper, &output_path)
-        .map_err(anyhow::Error::msg)?;
+    let apply_status = apply_wallpaper(
+        &cfg.wallpaper_backend,
+        &cfg.wallpaper_fit_mode,
+        cfg.apply_wallpaper,
+        &output_path,
+    )
+    .map_err(anyhow::Error::msg)?;
     println!("wallpaper_apply: {}", apply_status);
 
     Ok(())
@@ -254,6 +263,9 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     if cfg.refresh_seconds == 0 {
         anyhow::bail!("refresh_seconds must be greater than 0");
     }
+    if cfg.image_refresh_seconds == 0 || cfg.quote_refresh_seconds == 0 {
+        anyhow::bail!("image_refresh_seconds and quote_refresh_seconds must be greater than 0");
+    }
 
     let backend = cfg.wallpaper_backend.trim().to_ascii_lowercase();
     if !["auto", "noop", "gnome", "sway", "feh"].contains(&backend.as_str()) {
@@ -266,27 +278,54 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     if cfg.quote_font_size < 8 || cfg.clock_font_size < 8 {
         anyhow::bail!("quote_font_size and clock_font_size must be >= 8");
     }
+    let fit_mode = cfg.wallpaper_fit_mode.trim().to_ascii_lowercase();
+    if ![
+        "zoom",
+        "scaled",
+        "stretched",
+        "spanned",
+        "centered",
+        "wallpaper",
+        "tiled",
+    ]
+    .contains(&fit_mode.as_str())
+    {
+        anyhow::bail!(
+            "unsupported wallpaper_fit_mode={}; use zoom, scaled, stretched, spanned, centered, wallpaper, or tiled",
+            cfg.wallpaper_fit_mode
+        );
+    }
 
     Ok(())
 }
 
-fn determine_cycle(cfg: &AppConfig) -> Result<u64> {
-    let base_cycle = cycle_index(cfg.refresh_seconds);
+fn determine_cycle(cfg: &AppConfig, interval_seconds: u64, stream: &str) -> Result<u64> {
+    let base_cycle = cycle_index(interval_seconds);
     if !cfg.rotation_use_persistent_state {
         return Ok(base_cycle);
     }
 
-    let state_path = expand_tilde(&cfg.rotation_state_file)?;
+    let state_path = expand_tilde(&format!("{}.{}", cfg.rotation_state_file, stream))?;
     if let Some(parent) = state_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let next_cycle = read_last_cycle(&state_path)
-        .map_or(base_cycle, |last| last.saturating_add(1))
-        .max(base_cycle);
+    let now = now_epoch_seconds();
+    let (mut current_cycle, mut last_ts) = read_cycle_state(&state_path)
+        .map(|(cycle, ts)| (cycle.max(base_cycle), ts))
+        .unwrap_or((base_cycle, now));
 
-    write_last_cycle(&state_path, next_cycle)?;
-    Ok(next_cycle)
+    if now > last_ts {
+        let elapsed = now - last_ts;
+        let steps = elapsed / interval_seconds.max(1);
+        if steps > 0 {
+            current_cycle = current_cycle.saturating_add(steps).max(base_cycle);
+            last_ts = last_ts.saturating_add(steps * interval_seconds.max(1));
+        }
+    }
+
+    write_cycle_state(&state_path, current_cycle, last_ts)?;
+    Ok(current_cycle.max(base_cycle))
 }
 
 fn read_last_cycle(path: &Path) -> Option<u64> {
@@ -294,9 +333,27 @@ fn read_last_cycle(path: &Path) -> Option<u64> {
     raw.trim().parse::<u64>().ok()
 }
 
-fn write_last_cycle(path: &Path, cycle: u64) -> Result<()> {
-    fs::write(path, format!("{}\n", cycle))?;
+fn read_cycle_state(path: &Path) -> Option<(u64, u64)> {
+    let raw = fs::read_to_string(path).ok()?;
+    let trimmed = raw.trim();
+    let Some((cycle, ts)) = trimmed.split_once(',') else {
+        return read_last_cycle(path).map(|cycle| (cycle, now_epoch_seconds()));
+    };
+    let cycle = cycle.trim().parse::<u64>().ok()?;
+    let ts = ts.trim().parse::<u64>().ok()?;
+    Some((cycle, ts))
+}
+
+fn write_cycle_state(path: &Path, cycle: u64, epoch_ts: u64) -> Result<()> {
+    fs::write(path, format!("{cycle},{epoch_ts}\n"))?;
     Ok(())
+}
+
+fn now_epoch_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {

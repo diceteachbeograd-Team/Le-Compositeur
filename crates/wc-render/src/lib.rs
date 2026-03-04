@@ -88,6 +88,14 @@ fn render_with_imagemagick(
         args.push("convert".to_string());
     }
     args.push(source_image.display().to_string());
+    args.push("-gravity".to_string());
+    args.push("NorthWest".to_string());
+    args.push("-stroke".to_string());
+    args.push("black".to_string());
+    args.push("-strokewidth".to_string());
+    args.push("2".to_string());
+    args.push("-undercolor".to_string());
+    args.push("#00000066".to_string());
 
     // Quote text styling and placement.
     args.push("-fill".to_string());
@@ -106,6 +114,8 @@ fn render_with_imagemagick(
     args.push("-annotate".to_string());
     args.push(format!("+{}+{}", text.clock_pos_x, text.clock_pos_y));
     args.push(text.clock.to_string());
+    args.push("-stroke".to_string());
+    args.push("none".to_string());
 
     args.push(output_image.display().to_string());
 
