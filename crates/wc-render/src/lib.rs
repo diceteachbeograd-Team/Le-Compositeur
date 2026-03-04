@@ -98,8 +98,6 @@ fn render_with_imagemagick(
         args.push("convert".to_string());
     }
     args.push(source_image.display().to_string());
-    args.push("-gravity".to_string());
-    args.push("NorthWest".to_string());
     args.push("-stroke".to_string());
     args.push(text.text_stroke_color.to_string());
     args.push("-strokewidth".to_string());
@@ -107,16 +105,44 @@ fn render_with_imagemagick(
     args.push("-undercolor".to_string());
     args.push(text.text_undercolor.to_string());
 
-    // Quote text styling and placement.
+    let (quote_body, author) = split_quote_and_author(text.quote);
+    let rtl = is_rtl_text(&quote_body);
+    let quote_gravity = if rtl { "NorthEast" } else { "NorthWest" };
+    let author_gravity = if rtl { "NorthWest" } else { "NorthEast" };
+
+    // Quote text styling and placement (start side of script direction).
+    args.push("-gravity".to_string());
+    args.push(quote_gravity.to_string());
     args.push("-fill".to_string());
     args.push(text.quote_color.to_string());
     args.push("-pointsize".to_string());
     args.push(text.quote_font_size.to_string());
     args.push("-annotate".to_string());
     args.push(format!("+{}+{}", text.quote_pos_x, text.quote_pos_y));
-    args.push(text.quote.to_string());
+    args.push(quote_body.clone());
+
+    // Optional author line (end side of script direction).
+    if let Some(author_text) = author {
+        let author_y = text
+            .quote_pos_y
+            .saturating_add(
+                (quote_body.lines().count() as i32).saturating_mul(text.quote_font_size as i32),
+            )
+            .saturating_add((text.quote_font_size as i32) / 2);
+        args.push("-gravity".to_string());
+        args.push(author_gravity.to_string());
+        args.push("-fill".to_string());
+        args.push(text.quote_color.to_string());
+        args.push("-pointsize".to_string());
+        args.push(text.quote_font_size.to_string());
+        args.push("-annotate".to_string());
+        args.push(format!("+{}+{}", text.quote_pos_x, author_y));
+        args.push(format!("- {author_text}"));
+    }
 
     // Clock styling and placement.
+    args.push("-gravity".to_string());
+    args.push("NorthWest".to_string());
     args.push("-fill".to_string());
     args.push(text.clock_color.to_string());
     args.push("-pointsize".to_string());
@@ -135,6 +161,60 @@ fn render_with_imagemagick(
         .map_err(|e| format!("failed to run {cmd}: {e}"))?;
 
     Ok(status.success())
+}
+
+fn split_quote_and_author(input: &str) -> (String, Option<String>) {
+    let lines = input.lines().map(str::trim_end).collect::<Vec<_>>();
+    if lines.len() < 2 {
+        return (input.trim().to_string(), None);
+    }
+
+    let mut last_non_empty = None;
+    for (idx, line) in lines.iter().enumerate().rev() {
+        if !line.trim().is_empty() {
+            last_non_empty = Some((idx, line.trim().to_string()));
+            break;
+        }
+    }
+    let Some((author_idx, author_line)) = last_non_empty else {
+        return (input.trim().to_string(), None);
+    };
+    let Some(author) = author_line.strip_prefix("- ").map(|s| s.trim().to_string()) else {
+        return (input.trim().to_string(), None);
+    };
+    if author.is_empty() {
+        return (input.trim().to_string(), None);
+    }
+
+    let body = lines[..author_idx]
+        .iter()
+        .map(|s| s.trim_end())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string();
+    if body.is_empty() {
+        return (input.trim().to_string(), None);
+    }
+    (body, Some(author))
+}
+
+fn is_rtl_text(input: &str) -> bool {
+    input.chars().any(is_rtl_char)
+}
+
+fn is_rtl_char(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x0590..=0x05FF  // Hebrew
+            | 0x0600..=0x06FF // Arabic
+            | 0x0700..=0x074F // Syriac
+            | 0x0750..=0x077F // Arabic Supplement
+            | 0x0780..=0x07BF // Thaana
+            | 0x08A0..=0x08FF // Arabic Extended-A
+            | 0xFB50..=0xFDFF // Arabic Presentation Forms-A
+            | 0xFE70..=0xFEFF // Arabic Presentation Forms-B
+    )
 }
 
 fn render_with_native_bmp(
@@ -473,7 +553,10 @@ fn glyph_bits(ch: char) -> [u8; 7] {
 
 #[cfg(test)]
 mod tests {
-    use crate::{PreviewText, render_preview_to_file, render_with_native_bmp};
+    use crate::{
+        PreviewText, is_rtl_text, render_preview_to_file, render_with_native_bmp,
+        split_quote_and_author,
+    };
     use std::fs;
 
     #[test]
@@ -547,6 +630,20 @@ mod tests {
 
         let _ = fs::remove_file(src);
         let _ = fs::remove_file(dst);
+    }
+
+    #[test]
+    fn split_quote_and_author_extracts_signature_line() {
+        let (body, author) = split_quote_and_author("Line one\nLine two\n- Boris");
+        assert_eq!(body, "Line one\nLine two");
+        assert_eq!(author.as_deref(), Some("Boris"));
+    }
+
+    #[test]
+    fn rtl_detection_finds_arabic_scripts() {
+        assert!(is_rtl_text("مرحبا"));
+        assert!(is_rtl_text("ܫܠܡܐ"));
+        assert!(!is_rtl_text("Hello world"));
     }
 
     fn bmp24_solid(width: usize, height: usize, r: u8, g: u8, b: u8) -> Vec<u8> {

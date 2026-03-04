@@ -16,6 +16,9 @@ Alternative block format (recommended for multi-line quotes):
 - delimiter markers are never displayed
 - optional short first line header inside a block (for example `T1`, `Text 1`) is treated as a label and hidden
 - optional author separator line `:` inside a block: content after `:` is displayed as author line (`- Author`)
+- rendering alignment is automatic by script direction:
+  - LTR: quote left-aligned, author right-aligned
+  - RTL (Arabic/Hebrew/Syriac etc.): quote right-aligned, author left-aligned
 
 Examples:
 
