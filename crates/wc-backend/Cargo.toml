@@ -1,0 +1,8 @@
+[package]
+name = "wc-backend"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+
+[dependencies]

@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wallpaper Composer Settings Prototype</title>
+  <style>
+    :root {
+      --bg: #f6f2e8;
+      --card: #fffdf8;
+      --ink: #1c1b18;
+      --muted: #5f5a4d;
+      --line: #d6ccb8;
+      --accent: #a0462c;
+      --accent2: #2f6454;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+      background:
+        radial-gradient(circle at 0% 0%, #efe4ce 0%, transparent 30%),
+        radial-gradient(circle at 100% 100%, #e8d8bf 0%, transparent 35%),
+        var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 18px;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 8px 30px rgba(30, 20, 10, 0.08);
+      overflow: hidden;
+    }
+    .panel h1, .panel h2 {
+      margin: 0;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+    .head {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(90deg, #fff4e9, #f9f4ec);
+    }
+    .head p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .content {
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+    }
+    .section {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: #fffcf7;
+    }
+    .section > header {
+      padding: 10px 12px;
+      font-weight: 700;
+      background: #f8f1e5;
+      border-bottom: 1px solid var(--line);
+      color: var(--accent2);
+    }
+    .fields {
+      padding: 12px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(250px, 1fr));
+      gap: 12px;
+    }
+    .field {
+      display: grid;
+      gap: 6px;
+      padding: 10px;
+      border: 1px solid #e6dcc8;
+      border-radius: 8px;
+      background: #fff;
+      transition: opacity .2s ease;
+    }
+    .field.hidden { display: none; }
+    .field.disabled { opacity: .5; }
+    label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #3b382f;
+    }
+    input, select {
+      width: 100%;
+      border: 1px solid #c7bca7;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      font-size: 14px;
+      background: #fffdfa;
+      color: #27231e;
+    }
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 0 16px 16px;
+    }
+    button {
+      border: 1px solid #b06a54;
+      color: #fff;
+      background: linear-gradient(180deg, #c15a3a, #9d4026);
+      border-radius: 7px;
+      padding: 8px 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: linear-gradient(180deg, #4b7f70, #2f6454);
+      border-color: #2b5d4e;
+    }
+    pre {
+      margin: 0;
+      padding: 14px;
+      background: #1e1f23;
+      color: #d7e1ea;
+      border-top: 1px solid var(--line);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      overflow: auto;
+      max-height: 70vh;
+    }
+    @media (max-width: 980px) {
+      .wrap { grid-template-columns: 1fr; }
+      .fields { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel" id="formPanel">
+      <div class="head">
+        <h1>Wallpaper Composer Settings (Prototype)</h1>
+        <p>UI scaffold generated from export schema and blueprint contract.</p>
+      </div>
+      <div class="content" id="sections"></div>
+      <div class="toolbar">
+        <button id="btnDefaults">Load Defaults</button>
+        <button class="secondary" id="btnPrint">Print Current JSON</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="head">
+        <h2>Current State JSON</h2>
+        <p>Live values and condition effects.</p>
+      </div>
+      <pre id="stateOut"></pre>
+    </section>
+  </div>
+
+  <script>
+    const schema = {
+      fields: [
+        { key: "output_image", group: "general", label: "Output Image", type: "string", default: "/tmp/wallpaper-composer-current.png" },
+        { key: "refresh_seconds", group: "general", label: "Refresh Seconds", type: "u64", default: 300 },
+        { key: "time_format", group: "general", label: "Time Format", type: "string", default: "%H:%M" },
+
+        { key: "image_source", group: "sources", label: "Image Source Mode", type: "enum", default: "local", options: ["local", "preset", "url"] },
+        { key: "image_dir", group: "sources", label: "Image Directory", type: "string", default: "~/Pictures/Wallpapers" },
+        { key: "image_source_preset", group: "sources", label: "Image Source Preset", type: "string", default: "nasa_apod", visible_when: { field: "image_source", equals: "preset" }, enabled_when: { field: "image_source", equals: "preset" } },
+        { key: "image_source_url", group: "sources", label: "Image Source URL", type: "string", default: "", visible_when: { field: "image_source", equals: "url" }, enabled_when: { field: "image_source", equals: "url" } },
+
+        { key: "quote_source", group: "sources", label: "Quote Source Mode", type: "enum", default: "local", options: ["local", "preset", "url"] },
+        { key: "quotes_path", group: "sources", label: "Quotes File", type: "string", default: "~/Documents/wallpaper-composer/quotes.md" },
+        { key: "quote_source_preset", group: "sources", label: "Quote Source Preset", type: "string", default: "zenquotes_daily", visible_when: { field: "quote_source", equals: "preset" }, enabled_when: { field: "quote_source", equals: "preset" } },
+        { key: "quote_source_url", group: "sources", label: "Quote Source URL", type: "string", default: "", visible_when: { field: "quote_source", equals: "url" }, enabled_when: { field: "quote_source", equals: "url" } },
+        { key: "quote_format", group: "sources", label: "Quote Format", type: "enum", default: "lines", options: ["lines", "paragraphs", "markdown_blocks"] },
+
+        { key: "quote_font_size", group: "layout", label: "Quote Font Size", type: "u32", default: 36 },
+        { key: "quote_pos_x", group: "layout", label: "Quote X", type: "i32", default: 80 },
+        { key: "quote_pos_y", group: "layout", label: "Quote Y", type: "i32", default: 860 },
+        { key: "clock_font_size", group: "layout", label: "Clock Font Size", type: "u32", default: 44 },
+        { key: "clock_pos_x", group: "layout", label: "Clock X", type: "i32", default: 1600 },
+        { key: "clock_pos_y", group: "layout", label: "Clock Y", type: "i32", default: 960 },
+
+        { key: "rotation_use_persistent_state", group: "rotation", label: "Use Persistent Rotation State", type: "bool", default: true },
+        { key: "rotation_state_file", group: "rotation", label: "Rotation State File", type: "string", default: "~/.local/state/wallpaper-composer/rotation.state", visible_when: { field: "rotation_use_persistent_state", equals: true }, enabled_when: { field: "rotation_use_persistent_state", equals: true } },
+
+        { key: "apply_wallpaper", group: "wallpaper", label: "Apply Wallpaper", type: "bool", default: false },
+        { key: "wallpaper_backend", group: "wallpaper", label: "Wallpaper Backend", type: "enum", default: "auto", options: ["auto", "noop", "gnome", "sway", "feh"], visible_when: { field: "apply_wallpaper", equals: true }, enabled_when: { field: "apply_wallpaper", equals: true } }
+      ]
+    };
+
+    const blueprint = {
+      form: {
+        sections: [
+          { id: "general", title: "General", fields: ["output_image", "refresh_seconds", "time_format"] },
+          { id: "sources", title: "Sources", fields: ["image_source", "image_dir", "image_source_preset", "image_source_url", "quote_source", "quotes_path", "quote_source_preset", "quote_source_url", "quote_format"] },
+          { id: "layout", title: "Layout", fields: ["quote_font_size", "quote_pos_x", "quote_pos_y", "clock_font_size", "clock_pos_x", "clock_pos_y"] },
+          { id: "rotation", title: "Rotation", fields: ["rotation_use_persistent_state", "rotation_state_file"] },
+          { id: "wallpaper", title: "Wallpaper", fields: ["apply_wallpaper", "wallpaper_backend"] }
+        ]
+      }
+    };
+
+    const fieldMap = new Map(schema.fields.map(f => [f.key, f]));
+    const state = {};
+    const nodes = {};
+
+    function defaultState() {
+      for (const f of schema.fields) state[f.key] = f.default ?? "";
+    }
+
+    function renderForm() {
+      const root = document.getElementById("sections");
+      root.innerHTML = "";
+
+      for (const section of blueprint.form.sections) {
+        const sec = document.createElement("section");
+        sec.className = "section";
+        sec.innerHTML = `<header>${section.title}</header>`;
+
+        const fieldsWrap = document.createElement("div");
+        fieldsWrap.className = "fields";
+
+        for (const key of section.fields) {
+          const field = fieldMap.get(key);
+          if (!field) continue;
+
+          const fieldNode = document.createElement("div");
+          fieldNode.className = "field";
+          fieldNode.dataset.key = key;
+
+          const label = document.createElement("label");
+          label.textContent = field.label || key;
+          label.setAttribute("for", key);
+
+          const input = buildInput(field);
+          input.id = key;
+          input.dataset.key = key;
+          bindInput(input, field);
+
+          fieldNode.appendChild(label);
+          fieldNode.appendChild(input);
+
+          if (field.description) {
+            const meta = document.createElement("div");
+            meta.className = "meta";
+            meta.textContent = field.description;
+            fieldNode.appendChild(meta);
+          }
+
+          fieldsWrap.appendChild(fieldNode);
+          nodes[key] = { container: fieldNode, input };
+        }
+
+        sec.appendChild(fieldsWrap);
+        root.appendChild(sec);
+      }
+    }
+
+    function buildInput(field) {
+      if (field.type === "bool") {
+        const sel = document.createElement("select");
+        sel.innerHTML = `<option value="true">true</option><option value="false">false</option>`;
+        return sel;
+      }
+      if (field.type === "enum") {
+        const sel = document.createElement("select");
+        for (const opt of field.options || []) {
+          const o = document.createElement("option");
+          o.value = opt;
+          o.textContent = opt;
+          sel.appendChild(o);
+        }
+        return sel;
+      }
+      const inp = document.createElement("input");
+      inp.type = ["u32", "u64", "i32"].includes(field.type) ? "number" : "text";
+      if (field.type === "u32" || field.type === "u64") inp.min = "0";
+      return inp;
+    }
+
+    function bindInput(input, field) {
+      setInputValue(input, field, state[field.key]);
+      input.addEventListener("input", () => {
+        state[field.key] = readInputValue(input, field);
+        applyConditions();
+        renderState();
+      });
+      input.addEventListener("change", () => {
+        state[field.key] = readInputValue(input, field);
+        applyConditions();
+        renderState();
+      });
+    }
+
+    function setInputValue(input, field, value) {
+      if (field.type === "bool") input.value = String(Boolean(value));
+      else input.value = value ?? "";
+    }
+
+    function readInputValue(input, field) {
+      if (field.type === "bool") return input.value === "true";
+      if (field.type === "u32" || field.type === "u64" || field.type === "i32") {
+        return input.value === "" ? 0 : Number(input.value);
+      }
+      return input.value;
+    }
+
+    function matchCondition(cond) {
+      if (!cond) return true;
+      return state[cond.field] === cond.equals;
+    }
+
+    function applyConditions() {
+      for (const field of schema.fields) {
+        const ui = nodes[field.key];
+        if (!ui) continue;
+
+        const visible = matchCondition(field.visible_when);
+        const enabled = matchCondition(field.enabled_when);
+
+        ui.container.classList.toggle("hidden", !visible);
+        ui.container.classList.toggle("disabled", visible && !enabled);
+        ui.input.disabled = !enabled;
+      }
+    }
+
+    function renderState() {
+      document.getElementById("stateOut").textContent = JSON.stringify(state, null, 2);
+    }
+
+    document.getElementById("btnDefaults").addEventListener("click", () => {
+      defaultState();
+      for (const field of schema.fields) {
+        const ui = nodes[field.key];
+        if (!ui) continue;
+        setInputValue(ui.input, field, state[field.key]);
+      }
+      applyConditions();
+      renderState();
+    });
+
+    document.getElementById("btnPrint").addEventListener("click", () => {
+      renderState();
+      alert("Current JSON refreshed on right panel.");
+    });
+
+    defaultState();
+    renderForm();
+    applyConditions();
+    renderState();
+  </script>
+</body>
+</html>

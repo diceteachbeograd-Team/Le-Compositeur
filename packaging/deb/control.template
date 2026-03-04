@@ -1,0 +1,15 @@
+Source: wallpaper-composer
+Section: utils
+Priority: optional
+Maintainer: Wallpaper Composer Contributors <opensource@example.com>
+Standards-Version: 4.7.0
+Build-Depends: debhelper-compat (= 13), rustc, cargo
+Homepage: https://github.com/<org-or-user>/wallpaper-composer
+
+Package: wallpaper-composer
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Dynamic Linux wallpaper composer (Rust)
+ Wallpaper Composer renders dynamic wallpapers using local or public image/quote sources,
+ clock overlays, and desktop backend integration.
+
