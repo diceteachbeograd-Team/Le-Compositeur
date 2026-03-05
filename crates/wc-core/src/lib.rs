@@ -39,6 +39,7 @@ pub struct AppConfig {
     pub quote_font_size: u32,
     pub quote_pos_x: i32,
     pub quote_pos_y: i32,
+    pub font_family: String,
     pub quote_color: String,
     pub clock_font_size: u32,
     pub clock_pos_x: i32,
@@ -47,6 +48,10 @@ pub struct AppConfig {
     pub text_stroke_color: String,
     pub text_stroke_width: u32,
     pub text_undercolor: String,
+    pub text_shadow_enabled: bool,
+    pub text_shadow_color: String,
+    pub text_shadow_offset_x: i32,
+    pub text_shadow_offset_y: i32,
     pub text_box_size: String,
     pub text_box_width_pct: u32,
     pub text_box_height_pct: u32,
@@ -79,6 +84,7 @@ image_avoid_repeat = true
 quote_font_size = 36
 quote_pos_x = 80
 quote_pos_y = 860
+font_family = "DejaVu-Sans"
 quote_color = "#FFFFFF"
 clock_font_size = 44
 clock_pos_x = 1600
@@ -87,6 +93,10 @@ clock_color = "#FFD700"
 text_stroke_color = "#000000"
 text_stroke_width = 2
 text_undercolor = "#00000066"
+text_shadow_enabled = true
+text_shadow_color = "#00000099"
+text_shadow_offset_x = 3
+text_shadow_offset_y = 3
 text_box_size = "quarter"
 text_box_width_pct = 50
 text_box_height_pct = 50
@@ -106,7 +116,7 @@ wallpaper_fit_mode = "zoom"
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
+        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -122,6 +132,7 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.quote_font_size,
         cfg.quote_pos_x,
         cfg.quote_pos_y,
+        cfg.font_family,
         cfg.quote_color,
         cfg.clock_font_size,
         cfg.clock_pos_x,
@@ -130,6 +141,10 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.text_stroke_color,
         cfg.text_stroke_width,
         cfg.text_undercolor,
+        cfg.text_shadow_enabled,
+        cfg.text_shadow_color,
+        cfg.text_shadow_offset_x,
+        cfg.text_shadow_offset_y,
         cfg.text_box_size,
         cfg.text_box_width_pct,
         cfg.text_box_height_pct,
@@ -181,6 +196,7 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"quote_font_size","group":"layout","label":"Quote Font Size","type":"u32","required":false,"default":36,"min":8},
     {"key":"quote_pos_x","group":"layout","label":"Quote X","type":"i32","required":false,"default":80},
     {"key":"quote_pos_y","group":"layout","label":"Quote Y","type":"i32","required":false,"default":860},
+    {"key":"font_family","group":"layout","label":"Font Family","type":"enum","required":false,"default":"DejaVu-Sans","options":["DejaVu-Sans","Noto-Sans","Liberation-Sans","Serif","Monospace"]},
     {"key":"quote_color","group":"layout","label":"Quote Color","type":"string","required":false,"default":"#FFFFFF"},
     {"key":"clock_font_size","group":"layout","label":"Clock Font Size","type":"u32","required":false,"default":44,"min":8},
     {"key":"clock_pos_x","group":"layout","label":"Clock X","type":"i32","required":false,"default":1600},
@@ -189,6 +205,10 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"text_stroke_color","group":"layout","label":"Text Stroke Color","type":"string","required":false,"default":"#000000"},
     {"key":"text_stroke_width","group":"layout","label":"Text Stroke Width","type":"u32","required":false,"default":2},
     {"key":"text_undercolor","group":"layout","label":"Text Undercolor","type":"string","required":false,"default":"#00000066"},
+    {"key":"text_shadow_enabled","group":"layout","label":"Text Shadow","type":"bool","required":false,"default":true},
+    {"key":"text_shadow_color","group":"layout","label":"Shadow Color","type":"string","required":false,"default":"#00000099","visible_when":{"field":"text_shadow_enabled","equals":true},"enabled_when":{"field":"text_shadow_enabled","equals":true}},
+    {"key":"text_shadow_offset_x","group":"layout","label":"Shadow Offset X","type":"i32","required":false,"default":3,"visible_when":{"field":"text_shadow_enabled","equals":true},"enabled_when":{"field":"text_shadow_enabled","equals":true}},
+    {"key":"text_shadow_offset_y","group":"layout","label":"Shadow Offset Y","type":"i32","required":false,"default":3,"visible_when":{"field":"text_shadow_enabled","equals":true},"enabled_when":{"field":"text_shadow_enabled","equals":true}},
     {"key":"text_box_size","group":"layout","label":"Text Box Size","type":"enum","required":false,"default":"quarter","options":["quarter","third","half","full","custom"]},
     {"key":"text_box_width_pct","group":"layout","label":"Text Box Width %","type":"u32","required":false,"default":50,"min":10,"max":100,"visible_when":{"field":"text_box_size","equals":"custom"},"enabled_when":{"field":"text_box_size","equals":"custom"}},
     {"key":"text_box_height_pct","group":"layout","label":"Text Box Height %","type":"u32","required":false,"default":50,"min":10,"max":100,"visible_when":{"field":"text_box_size","equals":"custom"},"enabled_when":{"field":"text_box_size","equals":"custom"}},
@@ -239,6 +259,7 @@ pub fn settings_ui_blueprint_json() -> &'static str {
           "quote_font_size",
           "quote_pos_x",
           "quote_pos_y",
+          "font_family",
           "quote_color",
           "clock_font_size",
           "clock_pos_x",
@@ -247,6 +268,10 @@ pub fn settings_ui_blueprint_json() -> &'static str {
           "text_stroke_color",
           "text_stroke_width",
           "text_undercolor",
+          "text_shadow_enabled",
+          "text_shadow_color",
+          "text_shadow_offset_x",
+          "text_shadow_offset_y",
           "text_box_size",
           "text_box_width_pct",
           "text_box_height_pct"
@@ -269,6 +294,9 @@ pub fn settings_ui_blueprint_json() -> &'static str {
     {"field":"image_source_preset","visible_when":{"field":"image_source","equals":"preset"},"enabled_when":{"field":"image_source","equals":"preset"}},
     {"field":"quote_source_url","visible_when":{"field":"quote_source","equals":"url"},"enabled_when":{"field":"quote_source","equals":"url"}},
     {"field":"quote_source_preset","visible_when":{"field":"quote_source","equals":"preset"},"enabled_when":{"field":"quote_source","equals":"preset"}},
+    {"field":"text_shadow_color","visible_when":{"field":"text_shadow_enabled","equals":true},"enabled_when":{"field":"text_shadow_enabled","equals":true}},
+    {"field":"text_shadow_offset_x","visible_when":{"field":"text_shadow_enabled","equals":true},"enabled_when":{"field":"text_shadow_enabled","equals":true}},
+    {"field":"text_shadow_offset_y","visible_when":{"field":"text_shadow_enabled","equals":true},"enabled_when":{"field":"text_shadow_enabled","equals":true}},
     {"field":"text_box_width_pct","visible_when":{"field":"text_box_size","equals":"custom"},"enabled_when":{"field":"text_box_size","equals":"custom"}},
     {"field":"text_box_height_pct","visible_when":{"field":"text_box_size","equals":"custom"},"enabled_when":{"field":"text_box_size","equals":"custom"}},
     {"field":"rotation_state_file","visible_when":{"field":"rotation_use_persistent_state","equals":true},"enabled_when":{"field":"rotation_use_persistent_state","equals":true}},
@@ -307,6 +335,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut quote_font_size = None::<u32>;
     let mut quote_pos_x = None::<i32>;
     let mut quote_pos_y = None::<i32>;
+    let mut font_family = None::<String>;
     let mut quote_color = None::<String>;
     let mut clock_font_size = None::<u32>;
     let mut clock_pos_x = None::<i32>;
@@ -315,6 +344,10 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut text_stroke_color = None::<String>;
     let mut text_stroke_width = None::<u32>;
     let mut text_undercolor = None::<String>;
+    let mut text_shadow_enabled = None::<bool>;
+    let mut text_shadow_color = None::<String>;
+    let mut text_shadow_offset_x = None::<i32>;
+    let mut text_shadow_offset_y = None::<i32>;
     let mut text_box_size = None::<String>;
     let mut text_box_width_pct = None::<u32>;
     let mut text_box_height_pct = None::<u32>;
@@ -356,6 +389,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "quote_font_size" => quote_font_size = parse_u32(value),
             "quote_pos_x" => quote_pos_x = parse_i32(value),
             "quote_pos_y" => quote_pos_y = parse_i32(value),
+            "font_family" => font_family = parse_string(value),
             "quote_color" => quote_color = parse_string(value),
             "clock_font_size" => clock_font_size = parse_u32(value),
             "clock_pos_x" => clock_pos_x = parse_i32(value),
@@ -364,6 +398,10 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "text_stroke_color" => text_stroke_color = parse_string(value),
             "text_stroke_width" => text_stroke_width = parse_u32(value),
             "text_undercolor" => text_undercolor = parse_string(value),
+            "text_shadow_enabled" => text_shadow_enabled = parse_bool(value),
+            "text_shadow_color" => text_shadow_color = parse_string(value),
+            "text_shadow_offset_x" => text_shadow_offset_x = parse_i32(value),
+            "text_shadow_offset_y" => text_shadow_offset_y = parse_i32(value),
             "text_box_size" => text_box_size = parse_string(value),
             "text_box_width_pct" => text_box_width_pct = parse_u32(value),
             "text_box_height_pct" => text_box_height_pct = parse_u32(value),
@@ -397,6 +435,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         quote_font_size: quote_font_size.unwrap_or(36).max(8),
         quote_pos_x: quote_pos_x.unwrap_or(80),
         quote_pos_y: quote_pos_y.unwrap_or(860),
+        font_family: font_family.unwrap_or_else(|| "DejaVu-Sans".to_string()),
         quote_color: quote_color.unwrap_or_else(|| "#FFFFFF".to_string()),
         clock_font_size: clock_font_size.unwrap_or(44).max(8),
         clock_pos_x: clock_pos_x.unwrap_or(1600),
@@ -405,6 +444,10 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         text_stroke_color: text_stroke_color.unwrap_or_else(|| "#000000".to_string()),
         text_stroke_width: text_stroke_width.unwrap_or(2),
         text_undercolor: text_undercolor.unwrap_or_else(|| "#00000066".to_string()),
+        text_shadow_enabled: text_shadow_enabled.unwrap_or(true),
+        text_shadow_color: text_shadow_color.unwrap_or_else(|| "#00000099".to_string()),
+        text_shadow_offset_x: text_shadow_offset_x.unwrap_or(3),
+        text_shadow_offset_y: text_shadow_offset_y.unwrap_or(3),
         text_box_size: text_box_size.unwrap_or_else(|| "quarter".to_string()),
         text_box_width_pct: text_box_width_pct.unwrap_or(50).clamp(10, 100),
         text_box_height_pct: text_box_height_pct.unwrap_or(50).clamp(10, 100),
@@ -840,6 +883,7 @@ mod tests {
         assert_eq!(cfg.quote_font_size, 36);
         assert_eq!(cfg.quote_pos_x, 80);
         assert_eq!(cfg.quote_pos_y, 860);
+        assert_eq!(cfg.font_family, "DejaVu-Sans");
         assert_eq!(cfg.quote_color, "#FFFFFF");
         assert_eq!(cfg.clock_font_size, 44);
         assert_eq!(cfg.clock_pos_x, 1600);
@@ -848,6 +892,10 @@ mod tests {
         assert_eq!(cfg.text_stroke_color, "#000000");
         assert_eq!(cfg.text_stroke_width, 2);
         assert_eq!(cfg.text_undercolor, "#00000066");
+        assert!(cfg.text_shadow_enabled);
+        assert_eq!(cfg.text_shadow_color, "#00000099");
+        assert_eq!(cfg.text_shadow_offset_x, 3);
+        assert_eq!(cfg.text_shadow_offset_y, 3);
         assert_eq!(cfg.text_box_size, "quarter");
         assert_eq!(cfg.text_box_width_pct, 50);
         assert_eq!(cfg.text_box_height_pct, 50);

@@ -171,6 +171,7 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             quote_font_size: cfg.quote_font_size,
             quote_pos_x: cfg.quote_pos_x,
             quote_pos_y: cfg.quote_pos_y,
+            font_family: &cfg.font_family,
             quote_color: &cfg.quote_color,
             clock_font_size: cfg.clock_font_size,
             clock_pos_x: cfg.clock_pos_x,
@@ -179,6 +180,10 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             text_stroke_color: &cfg.text_stroke_color,
             text_stroke_width: cfg.text_stroke_width,
             text_undercolor: &cfg.text_undercolor,
+            text_shadow_enabled: cfg.text_shadow_enabled,
+            text_shadow_color: &cfg.text_shadow_color,
+            text_shadow_offset_x: cfg.text_shadow_offset_x,
+            text_shadow_offset_y: cfg.text_shadow_offset_y,
             text_box_size: &cfg.text_box_size,
             text_box_width_pct: cfg.text_box_width_pct,
             text_box_height_pct: cfg.text_box_height_pct,
@@ -306,9 +311,11 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
         || cfg.clock_color.trim().is_empty()
         || cfg.text_stroke_color.trim().is_empty()
         || cfg.text_undercolor.trim().is_empty()
+        || cfg.text_shadow_color.trim().is_empty()
+        || cfg.font_family.trim().is_empty()
     {
         anyhow::bail!(
-            "quote_color, clock_color, text_stroke_color and text_undercolor must be non-empty"
+            "font_family, quote_color, clock_color, text_stroke_color, text_undercolor and text_shadow_color must be non-empty"
         );
     }
     let fit_mode = cfg.wallpaper_fit_mode.trim().to_ascii_lowercase();

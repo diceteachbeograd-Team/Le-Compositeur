@@ -303,6 +303,26 @@ impl eframe::App for WcGuiApp {
                     ui.add(egui::DragValue::new(&mut self.cfg.quote_pos_y).speed(1));
                 });
                 ui.horizontal(|ui| {
+                    ui.label("Font family");
+                    egui::ComboBox::from_id_salt("font_family")
+                        .selected_text(&self.cfg.font_family)
+                        .show_ui(ui, |ui| {
+                            for family in [
+                                "DejaVu-Sans",
+                                "Noto-Sans",
+                                "Liberation-Sans",
+                                "Serif",
+                                "Monospace",
+                            ] {
+                                ui.selectable_value(
+                                    &mut self.cfg.font_family,
+                                    family.to_string(),
+                                    family,
+                                );
+                            }
+                        });
+                });
+                ui.horizontal(|ui| {
                     ui.label("Clock size");
                     ui.add(egui::DragValue::new(&mut self.cfg.clock_font_size).speed(1));
                     ui.label("X");
@@ -353,6 +373,15 @@ impl eframe::App for WcGuiApp {
                 ui.horizontal(|ui| {
                     ui.label("Undercolor");
                     ui.text_edit_singleline(&mut self.cfg.text_undercolor);
+                });
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.cfg.text_shadow_enabled, "Shadow");
+                    ui.label("Shadow color");
+                    ui.text_edit_singleline(&mut self.cfg.text_shadow_color);
+                    ui.label("dx");
+                    ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_x).speed(1));
+                    ui.label("dy");
+                    ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_y).speed(1));
                 });
 
                 ui.separator();
@@ -439,6 +468,7 @@ fn default_cfg() -> AppConfig {
         quote_font_size: 36,
         quote_pos_x: 80,
         quote_pos_y: 860,
+        font_family: "DejaVu-Sans".to_string(),
         quote_color: "#FFFFFF".to_string(),
         clock_font_size: 44,
         clock_pos_x: 1600,
@@ -447,6 +477,10 @@ fn default_cfg() -> AppConfig {
         text_stroke_color: "#000000".to_string(),
         text_stroke_width: 2,
         text_undercolor: "#00000066".to_string(),
+        text_shadow_enabled: true,
+        text_shadow_color: "#00000099".to_string(),
+        text_shadow_offset_x: 3,
+        text_shadow_offset_y: 3,
         text_box_size: "quarter".to_string(),
         text_box_width_pct: 50,
         text_box_height_pct: 50,

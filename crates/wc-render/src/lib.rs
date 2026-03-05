@@ -9,6 +9,7 @@ pub struct PreviewText<'a> {
     pub quote_font_size: u32,
     pub quote_pos_x: i32,
     pub quote_pos_y: i32,
+    pub font_family: &'a str,
     pub quote_color: &'a str,
     pub clock_font_size: u32,
     pub clock_pos_x: i32,
@@ -17,6 +18,10 @@ pub struct PreviewText<'a> {
     pub text_stroke_color: &'a str,
     pub text_stroke_width: u32,
     pub text_undercolor: &'a str,
+    pub text_shadow_enabled: bool,
+    pub text_shadow_color: &'a str,
+    pub text_shadow_offset_x: i32,
+    pub text_shadow_offset_y: i32,
     pub text_box_size: &'a str,
     pub text_box_width_pct: u32,
     pub text_box_height_pct: u32,
@@ -50,13 +55,14 @@ pub fn render_preview_to_file(
 
     let meta_path = metadata_path_for(output_image);
     let metadata = format!(
-        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nsource_image = {:?}\n",
+        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nsource_image = {:?}\n",
         render_mode,
         text.quote,
         text.clock,
         text.quote_font_size,
         text.quote_pos_x,
         text.quote_pos_y,
+        text.font_family,
         text.quote_color,
         text.clock_font_size,
         text.clock_pos_x,
@@ -65,6 +71,10 @@ pub fn render_preview_to_file(
         text.text_stroke_color,
         text.text_stroke_width,
         text.text_undercolor,
+        text.text_shadow_enabled,
+        text.text_shadow_color,
+        text.text_shadow_offset_x,
+        text.text_shadow_offset_y,
         text.text_box_size,
         text.text_box_width_pct,
         text.text_box_height_pct,
@@ -116,6 +126,36 @@ fn render_with_imagemagick(
     let box_h = ((img_h * box_h_pct as i32) / 100).max(160);
     let author_h = (text.quote_font_size as i32 * 2).max(40);
     let quote_h = (box_h - author_h).max(80);
+    let shadow_x = text.quote_pos_x.saturating_add(text.text_shadow_offset_x);
+    let shadow_y = text.quote_pos_y.saturating_add(text.text_shadow_offset_y);
+
+    if text.text_shadow_enabled {
+        // Draw a shadow pass first, then overlay the main text on top.
+        args.push("(".to_string());
+        args.push("-background".to_string());
+        args.push("none".to_string());
+        args.push("-size".to_string());
+        args.push(format!("{}x{}", box_w, quote_h));
+        args.push("-fill".to_string());
+        args.push(text.text_shadow_color.to_string());
+        args.push("-stroke".to_string());
+        args.push("none".to_string());
+        args.push("-undercolor".to_string());
+        args.push("none".to_string());
+        args.push("-gravity".to_string());
+        args.push(quote_gravity.to_string());
+        args.push("-font".to_string());
+        args.push(text.font_family.to_string());
+        args.push("-pointsize".to_string());
+        args.push(text.quote_font_size.to_string());
+        args.push(format!("caption:{quote_body}"));
+        args.push(")".to_string());
+        args.push("-gravity".to_string());
+        args.push("NorthWest".to_string());
+        args.push("-geometry".to_string());
+        args.push(format!("+{}+{}", shadow_x, shadow_y));
+        args.push("-composite".to_string());
+    }
 
     // Quote text in bounded box to avoid full-screen overlay.
     args.push("(".to_string());
@@ -133,6 +173,8 @@ fn render_with_imagemagick(
     args.push(text.text_undercolor.to_string());
     args.push("-gravity".to_string());
     args.push(quote_gravity.to_string());
+    args.push("-font".to_string());
+    args.push(text.font_family.to_string());
     args.push("-pointsize".to_string());
     args.push(text.quote_font_size.to_string());
     args.push(format!("caption:{quote_body}"));
@@ -145,6 +187,37 @@ fn render_with_imagemagick(
 
     // Optional author line in same bounded area at opposite edge.
     if let Some(author_text) = author {
+        if text.text_shadow_enabled {
+            args.push("(".to_string());
+            args.push("-background".to_string());
+            args.push("none".to_string());
+            args.push("-size".to_string());
+            args.push(format!("{}x{}", box_w, author_h));
+            args.push("-fill".to_string());
+            args.push(text.text_shadow_color.to_string());
+            args.push("-stroke".to_string());
+            args.push("none".to_string());
+            args.push("-undercolor".to_string());
+            args.push("none".to_string());
+            args.push("-gravity".to_string());
+            args.push(author_gravity.to_string());
+            args.push("-font".to_string());
+            args.push(text.font_family.to_string());
+            args.push("-pointsize".to_string());
+            args.push(text.quote_font_size.to_string());
+            args.push(format!("caption:- {author_text}"));
+            args.push(")".to_string());
+            args.push("-gravity".to_string());
+            args.push("NorthWest".to_string());
+            args.push("-geometry".to_string());
+            args.push(format!(
+                "+{}+{}",
+                shadow_x,
+                shadow_y.saturating_add(quote_h)
+            ));
+            args.push("-composite".to_string());
+        }
+
         args.push("(".to_string());
         args.push("-background".to_string());
         args.push("none".to_string());
@@ -160,6 +233,8 @@ fn render_with_imagemagick(
         args.push(text.text_undercolor.to_string());
         args.push("-gravity".to_string());
         args.push(author_gravity.to_string());
+        args.push("-font".to_string());
+        args.push(text.font_family.to_string());
         args.push("-pointsize".to_string());
         args.push(text.quote_font_size.to_string());
         args.push(format!("caption:- {author_text}"));
@@ -176,10 +251,34 @@ fn render_with_imagemagick(
     }
 
     // Clock styling and placement.
+    if text.text_shadow_enabled {
+        args.push("-gravity".to_string());
+        args.push("NorthWest".to_string());
+        args.push("-fill".to_string());
+        args.push(text.text_shadow_color.to_string());
+        args.push("-stroke".to_string());
+        args.push("none".to_string());
+        args.push("-undercolor".to_string());
+        args.push("none".to_string());
+        args.push("-font".to_string());
+        args.push(text.font_family.to_string());
+        args.push("-pointsize".to_string());
+        args.push(text.clock_font_size.to_string());
+        args.push("-annotate".to_string());
+        args.push(format!(
+            "+{}+{}",
+            text.clock_pos_x.saturating_add(text.text_shadow_offset_x),
+            text.clock_pos_y.saturating_add(text.text_shadow_offset_y)
+        ));
+        args.push(text.clock.to_string());
+    }
+
     args.push("-gravity".to_string());
     args.push("NorthWest".to_string());
     args.push("-fill".to_string());
     args.push(text.clock_color.to_string());
+    args.push("-font".to_string());
+    args.push(text.font_family.to_string());
     args.push("-pointsize".to_string());
     args.push(text.clock_font_size.to_string());
     args.push("-annotate".to_string());
@@ -637,6 +736,7 @@ mod tests {
                 quote_font_size: 24,
                 quote_pos_x: 10,
                 quote_pos_y: 20,
+                font_family: "DejaVu-Sans",
                 quote_color: "#FFFFFF",
                 clock_font_size: 28,
                 clock_pos_x: 300,
@@ -645,6 +745,10 @@ mod tests {
                 text_stroke_color: "#000000",
                 text_stroke_width: 2,
                 text_undercolor: "#00000066",
+                text_shadow_enabled: true,
+                text_shadow_color: "#00000099",
+                text_shadow_offset_x: 3,
+                text_shadow_offset_y: 3,
                 text_box_size: "quarter",
                 text_box_width_pct: 50,
                 text_box_height_pct: 50,
@@ -679,6 +783,7 @@ mod tests {
                 quote_font_size: 24,
                 quote_pos_x: 2,
                 quote_pos_y: 2,
+                font_family: "DejaVu-Sans",
                 quote_color: "#FFFFFF",
                 clock_font_size: 24,
                 clock_pos_x: 2,
@@ -687,6 +792,10 @@ mod tests {
                 text_stroke_color: "#000000",
                 text_stroke_width: 1,
                 text_undercolor: "#00000066",
+                text_shadow_enabled: true,
+                text_shadow_color: "#00000099",
+                text_shadow_offset_x: 2,
+                text_shadow_offset_y: 2,
                 text_box_size: "quarter",
                 text_box_width_pct: 50,
                 text_box_height_pct: 50,
