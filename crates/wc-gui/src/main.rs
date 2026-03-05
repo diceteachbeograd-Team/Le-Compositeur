@@ -44,22 +44,30 @@ impl WcGuiApp {
         }
     }
 
-    fn save_to_path(&mut self) {
+    fn save_to_path_inner(&mut self) -> Result<(), String> {
         let path = PathBuf::from(&self.config_path);
         if let Some(parent) = path.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
         {
-            self.status = format!("Create dir failed: {e}");
-            return;
+            return Err(format!("Create dir failed: {e}"));
         }
         let raw = to_config_toml(&self.cfg);
-        match std::fs::write(&path, raw) {
+        std::fs::write(&path, raw).map_err(|e| format!("Save failed: {e}"))
+    }
+
+    fn save_to_path(&mut self) {
+        match self.save_to_path_inner() {
             Ok(()) => self.status = "Config saved".to_string(),
-            Err(e) => self.status = format!("Save failed: {e}"),
+            Err(e) => self.status = e,
         }
     }
 
     fn run_wc_cli(&mut self, args: &[&str]) {
+        if let Err(e) = self.save_to_path_inner() {
+            self.status = format!("Cannot run command before save: {e}");
+            return;
+        }
+
         let path = self.config_path.clone();
         let direct = Command::new("wc-cli")
             .args(args)
@@ -114,6 +122,9 @@ impl eframe::App for WcGuiApp {
                     self.run_wc_cli(&["render-preview"]);
                 }
                 if ui.button("Run Once").clicked() {
+                    self.run_wc_cli(&["run", "--once"]);
+                }
+                if ui.button("Apply Now").clicked() {
                     self.run_wc_cli(&["run", "--once"]);
                 }
                 if ui.button("Migrate").clicked() {
