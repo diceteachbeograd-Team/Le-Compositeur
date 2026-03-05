@@ -1,8 +1,8 @@
 use eframe::egui;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 use wc_core::{
-    AppConfig, default_config_path, expand_tilde, list_background_images, load_config,
+    AppConfig, default_config_path, expand_tilde, list_background_images, load_config, load_quotes,
     to_config_toml,
 };
 
@@ -26,6 +26,8 @@ struct WcGuiApp {
     status: String,
     thumbnails: Vec<ThumbnailItem>,
     thumbnails_for_dir: String,
+    quote_preview: Vec<String>,
+    runner: Option<Child>,
 }
 
 impl WcGuiApp {
@@ -43,6 +45,8 @@ impl WcGuiApp {
             status: "Ready".to_string(),
             thumbnails: Vec::new(),
             thumbnails_for_dir: String::new(),
+            quote_preview: Vec::new(),
+            runner: None,
         }
     }
 
@@ -52,6 +56,7 @@ impl WcGuiApp {
                 self.cfg = cfg;
                 self.status = "Config loaded".to_string();
                 self.refresh_thumbnails(ctx);
+                self.refresh_quotes_preview();
             }
             Err(e) => self.status = format!("Load failed: {e}"),
         }
@@ -83,19 +88,11 @@ impl WcGuiApp {
         }
 
         let path = self.config_path.clone();
-        let direct = Command::new("wc-cli")
-            .args(args)
-            .args(["--config", &path])
-            .output();
+        let direct = self.build_wc_cli_direct(args, &path).output();
 
         let output = match direct {
             Ok(out) => out,
-            Err(_) => match Command::new("cargo")
-                .args(["run", "-p", "wc-cli", "--"])
-                .args(args)
-                .args(["--config", &path])
-                .output()
-            {
+            Err(_) => match self.build_wc_cli_cargo(args, &path).output() {
                 Ok(out) => out,
                 Err(e) => {
                     self.status = format!("Command start failed: {e}");
@@ -111,6 +108,118 @@ impl WcGuiApp {
         } else {
             self.status = format!("{} failed\n{stderr}\n{stdout}", args.join(" "));
         }
+    }
+
+    fn apply_now(&mut self) {
+        let was_enabled = self.cfg.apply_wallpaper;
+        if !self.cfg.apply_wallpaper {
+            self.cfg.apply_wallpaper = true;
+        }
+        self.run_wc_cli(&["run", "--once"]);
+        if !was_enabled {
+            self.cfg.apply_wallpaper = false;
+            let _ = self.save_to_path_inner();
+            self.status
+                .push_str("\nApply Now used temporary apply_wallpaper=true.");
+        }
+    }
+
+    fn start_runner(&mut self) {
+        if self.runner.is_some() {
+            self.status = "Runner already active".to_string();
+            return;
+        }
+        if let Err(e) = self.save_to_path_inner() {
+            self.status = format!("Cannot start runner before save: {e}");
+            return;
+        }
+
+        let path = self.config_path.clone();
+        let spawn_direct = self
+            .build_wc_cli_direct(&["run"], &path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn();
+        let child = match spawn_direct {
+            Ok(child) => child,
+            Err(_) => match self
+                .build_wc_cli_cargo(&["run"], &path)
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                Ok(child) => child,
+                Err(e) => {
+                    self.status = format!("Runner start failed: {e}");
+                    return;
+                }
+            },
+        };
+
+        self.runner = Some(child);
+        self.status = "Runner started (continuous updates active)".to_string();
+    }
+
+    fn stop_runner(&mut self) {
+        let Some(mut child) = self.runner.take() else {
+            self.status = "Runner is not active".to_string();
+            return;
+        };
+        let _ = child.kill();
+        let _ = child.wait();
+        self.status = "Runner stopped".to_string();
+    }
+
+    fn poll_runner_state(&mut self) {
+        let Some(child) = self.runner.as_mut() else {
+            return;
+        };
+        let polled = child.try_wait();
+        match polled {
+            Ok(Some(exit)) => {
+                self.status = format!("Runner exited: {exit}");
+                self.runner = None;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                self.status = format!("Runner state check failed: {e}");
+                self.runner = None;
+            }
+        }
+    }
+
+    fn refresh_quotes_preview(&mut self) {
+        let Ok(path) = expand_tilde(&self.cfg.quotes_path) else {
+            self.status = "Cannot expand quotes_path".to_string();
+            self.quote_preview.clear();
+            return;
+        };
+        match load_quotes(&path) {
+            Ok(quotes) => {
+                self.quote_preview = quotes.into_iter().take(3).collect();
+                if self.quote_preview.is_empty() {
+                    self.status = "Quotes loaded but empty".to_string();
+                }
+            }
+            Err(e) => {
+                self.quote_preview.clear();
+                self.status = format!("Quote parse failed: {e}");
+            }
+        }
+    }
+
+    fn build_wc_cli_direct(&self, args: &[&str], path: &str) -> Command {
+        let mut cmd = Command::new("wc-cli");
+        cmd.args(args).args(["--config", path]);
+        cmd
+    }
+
+    fn build_wc_cli_cargo(&self, args: &[&str], path: &str) -> Command {
+        let mut cmd = Command::new("cargo");
+        cmd.args(["run", "-p", "wc-cli", "--"])
+            .args(args)
+            .args(["--config", path]);
+        cmd
     }
 
     fn pick_image_dir(&mut self, ctx: &egui::Context) {
@@ -138,6 +247,7 @@ impl WcGuiApp {
             .pick_file()
         {
             self.cfg.quotes_path = path.display().to_string();
+            self.refresh_quotes_preview();
             self.status = "Quotes file selected".to_string();
         } else {
             self.status = "Quotes file selection canceled".to_string();
@@ -188,14 +298,20 @@ impl WcGuiApp {
 
 impl eframe::App for WcGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_runner_state();
+
         if self.thumbnails.is_empty() || self.thumbnails_for_dir != self.cfg.image_dir {
             self.refresh_thumbnails(ctx);
+        }
+        if self.quote_preview.is_empty() {
+            self.refresh_quotes_preview();
         }
 
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Config");
-                ui.text_edit_singleline(&mut self.config_path);
+                ui.text_edit_singleline(&mut self.config_path)
+                    .on_hover_text("Path to config.toml used by all actions.");
                 if ui.button("Load").clicked() {
                     self.load_from_path(ctx);
                 }
@@ -205,6 +321,11 @@ impl eframe::App for WcGuiApp {
             });
 
             ui.horizontal(|ui| {
+                ui.label(if self.runner.is_some() {
+                    "Runner: ACTIVE"
+                } else {
+                    "Runner: STOPPED"
+                });
                 if ui.button("Validate").clicked() {
                     self.run_wc_cli(&["validate"]);
                 }
@@ -215,10 +336,16 @@ impl eframe::App for WcGuiApp {
                     self.run_wc_cli(&["run", "--once"]);
                 }
                 if ui.button("Apply Now").clicked() {
-                    self.run_wc_cli(&["run", "--once"]);
+                    self.apply_now();
                 }
                 if ui.button("Migrate").clicked() {
                     self.run_wc_cli(&["migrate"]);
+                }
+                if ui.button("Start Loop").clicked() {
+                    self.start_runner();
+                }
+                if ui.button("Stop Loop").clicked() {
+                    self.stop_runner();
                 }
             });
         });
@@ -243,6 +370,16 @@ impl eframe::App for WcGuiApp {
                         ui.separator();
                     }
                 }
+
+                ui.heading("Quote Preview");
+                if ui.button("Reload Quotes").clicked() {
+                    self.refresh_quotes_preview();
+                }
+                for (i, q) in self.quote_preview.iter().enumerate() {
+                    ui.label(format!("#{}", i + 1));
+                    ui.label(q);
+                    ui.separator();
+                }
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -250,14 +387,18 @@ impl eframe::App for WcGuiApp {
                 ui.heading("Sources");
                 ui.horizontal(|ui| {
                     ui.label("Image dir");
-                    ui.text_edit_singleline(&mut self.cfg.image_dir);
+                    ui.text_edit_singleline(&mut self.cfg.image_dir)
+                        .on_hover_text("Local folder for background images (jpg/png/webp/bmp).");
                     if ui.button("Browse...").clicked() {
                         self.pick_image_dir(ctx);
                     }
                 });
                 ui.horizontal(|ui| {
                     ui.label("Quotes path");
-                    ui.text_edit_singleline(&mut self.cfg.quotes_path);
+                    ui.text_edit_singleline(&mut self.cfg.quotes_path)
+                        .on_hover_text(
+                            "Quotes file. Supports ***...*** blocks and optional author syntax.",
+                        );
                     if ui.button("Browse...").clicked() {
                         self.pick_quotes_file();
                     }
@@ -431,6 +572,15 @@ impl eframe::App for WcGuiApp {
                     .desired_width(f32::INFINITY),
             );
         });
+    }
+}
+
+impl Drop for WcGuiApp {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.runner.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 

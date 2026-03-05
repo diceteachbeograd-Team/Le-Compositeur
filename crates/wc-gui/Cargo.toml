@@ -12,7 +12,7 @@ image = "0.25"
 wc-core = { path = "../wc-core" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-rfd = { version = "0.15", default-features = false, features = ["gtk3"] }
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 rfd = "0.15"

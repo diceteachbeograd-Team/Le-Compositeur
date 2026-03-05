@@ -677,6 +677,20 @@ fn format_quote_with_optional_author(lines: &[&str]) -> String {
     }
 
     let Some(idx) = split_index else {
+        // Support inline style like "***Text:Author***" as requested by users.
+        if lines.len() == 1
+            && let Some((body, author)) = lines[0].split_once(':')
+        {
+            let body = body.trim();
+            let author = author.trim();
+            if !body.is_empty()
+                && !author.is_empty()
+                && !body.contains("://")
+                && !author.contains("://")
+            {
+                return format!("{body}\n- {author}");
+            }
+        }
         return lines.join("\n").trim().to_string();
     };
 
@@ -959,6 +973,29 @@ mod tests {
         let quotes = load_quotes(&quotes_path).expect("author block should parse");
         assert_eq!(quotes.len(), 1);
         assert_eq!(quotes[0], "Text1\n- Verfasser");
+        let _ = fs::remove_file(quotes_path);
+    }
+
+    #[test]
+    fn load_quotes_supports_inline_text_author_block() {
+        let quotes_path = std::env::temp_dir().join("wc-core-quotes-inline-author-test.md");
+        let sample = "***Text1:Verfasser***";
+        fs::write(&quotes_path, sample).expect("inline author block file should be writable");
+        let quotes = load_quotes(&quotes_path).expect("inline author block should parse");
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0], "Text1\n- Verfasser");
+        let _ = fs::remove_file(quotes_path);
+    }
+
+    #[test]
+    fn load_quotes_supports_multiple_inline_text_author_blocks() {
+        let quotes_path = std::env::temp_dir().join("wc-core-quotes-inline-author-multi-test.md");
+        let sample = "***Text eins:Autor A***\n***Text zwei:Autor B***";
+        fs::write(&quotes_path, sample).expect("inline author blocks file should be writable");
+        let quotes = load_quotes(&quotes_path).expect("inline author blocks should parse");
+        assert_eq!(quotes.len(), 2);
+        assert_eq!(quotes[0], "Text eins\n- Autor A");
+        assert_eq!(quotes[1], "Text zwei\n- Autor B");
         let _ = fs::remove_file(quotes_path);
     }
 
