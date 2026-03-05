@@ -28,6 +28,8 @@ struct WcGuiApp {
     thumbnails_for_dir: String,
     quote_preview: Vec<String>,
     runner: Option<Child>,
+    #[cfg(target_os = "linux")]
+    file_dialog_rt: Option<tokio::runtime::Runtime>,
 }
 
 impl WcGuiApp {
@@ -47,6 +49,11 @@ impl WcGuiApp {
             thumbnails_for_dir: String::new(),
             quote_preview: Vec::new(),
             runner: None,
+            #[cfg(target_os = "linux")]
+            file_dialog_rt: tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .ok(),
         }
     }
 
@@ -224,7 +231,8 @@ impl WcGuiApp {
 
     fn pick_image_dir(&mut self, ctx: &egui::Context) {
         let start = expand_tilde(&self.cfg.image_dir).unwrap_or_else(|_| PathBuf::from("."));
-        if let Some(path) = rfd::FileDialog::new().set_directory(start).pick_folder() {
+        let picked = self.pick_folder_dialog(start);
+        if let Some(path) = picked {
             self.cfg.image_dir = path.display().to_string();
             self.refresh_thumbnails(ctx);
             self.status = "Image folder selected".to_string();
@@ -241,16 +249,52 @@ impl WcGuiApp {
             start
         };
 
-        if let Some(path) = rfd::FileDialog::new()
-            .set_directory(base)
-            .add_filter("Quotes", &["md", "txt"])
-            .pick_file()
-        {
+        let picked = self.pick_quotes_dialog(base);
+        if let Some(path) = picked {
             self.cfg.quotes_path = path.display().to_string();
             self.refresh_quotes_preview();
             self.status = "Quotes file selected".to_string();
         } else {
             self.status = "Quotes file selection canceled".to_string();
+        }
+    }
+
+    fn pick_folder_dialog(&self, start: PathBuf) -> Option<PathBuf> {
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(rt) = &self.file_dialog_rt {
+                let _guard = rt.enter();
+                return rfd::FileDialog::new().set_directory(start).pick_folder();
+            }
+            return rfd::FileDialog::new().set_directory(start).pick_folder();
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            rfd::FileDialog::new().set_directory(start).pick_folder()
+        }
+    }
+
+    fn pick_quotes_dialog(&self, base: PathBuf) -> Option<PathBuf> {
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(rt) = &self.file_dialog_rt {
+                let _guard = rt.enter();
+                return rfd::FileDialog::new()
+                    .set_directory(base)
+                    .add_filter("Quotes", &["md", "txt"])
+                    .pick_file();
+            }
+            return rfd::FileDialog::new()
+                .set_directory(base)
+                .add_filter("Quotes", &["md", "txt"])
+                .pick_file();
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            rfd::FileDialog::new()
+                .set_directory(base)
+                .add_filter("Quotes", &["md", "txt"])
+                .pick_file()
         }
     }
 
