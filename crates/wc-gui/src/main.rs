@@ -1,7 +1,10 @@
 use eframe::egui;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use wc_core::{AppConfig, default_config_path, load_config, to_config_toml};
+use wc_core::{
+    AppConfig, default_config_path, expand_tilde, list_background_images, load_config,
+    to_config_toml,
+};
 
 fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions::default();
@@ -12,10 +15,17 @@ fn main() -> eframe::Result<()> {
     )
 }
 
+struct ThumbnailItem {
+    label: String,
+    texture: egui::TextureHandle,
+}
+
 struct WcGuiApp {
     config_path: String,
     cfg: AppConfig,
     status: String,
+    thumbnails: Vec<ThumbnailItem>,
+    thumbnails_for_dir: String,
 }
 
 impl WcGuiApp {
@@ -31,14 +41,17 @@ impl WcGuiApp {
             config_path,
             cfg,
             status: "Ready".to_string(),
+            thumbnails: Vec::new(),
+            thumbnails_for_dir: String::new(),
         }
     }
 
-    fn load_from_path(&mut self) {
+    fn load_from_path(&mut self, ctx: &egui::Context) {
         match load_config(PathBuf::from(&self.config_path).as_path()) {
             Ok(cfg) => {
                 self.cfg = cfg;
                 self.status = "Config loaded".to_string();
+                self.refresh_thumbnails(ctx);
             }
             Err(e) => self.status = format!("Load failed: {e}"),
         }
@@ -98,16 +111,88 @@ impl WcGuiApp {
             self.status = format!("{} failed\n{stderr}\n{stdout}", args.join(" "));
         }
     }
+
+    fn pick_image_dir(&mut self, ctx: &egui::Context) {
+        let start = expand_tilde(&self.cfg.image_dir).unwrap_or_else(|_| PathBuf::from("."));
+        if let Some(path) = rfd::FileDialog::new().set_directory(start).pick_folder() {
+            self.cfg.image_dir = path.display().to_string();
+            self.refresh_thumbnails(ctx);
+            self.status = "Image folder selected".to_string();
+        }
+    }
+
+    fn pick_quotes_file(&mut self) {
+        let start = expand_tilde(&self.cfg.quotes_path).unwrap_or_else(|_| PathBuf::from("."));
+        let base = if start.is_file() {
+            start.parent().unwrap_or(Path::new(".")).to_path_buf()
+        } else {
+            start
+        };
+
+        if let Some(path) = rfd::FileDialog::new()
+            .set_directory(base)
+            .add_filter("Quotes", &["md", "txt"])
+            .pick_file()
+        {
+            self.cfg.quotes_path = path.display().to_string();
+            self.status = "Quotes file selected".to_string();
+        }
+    }
+
+    fn refresh_thumbnails(&mut self, ctx: &egui::Context) {
+        let Ok(dir) = expand_tilde(&self.cfg.image_dir) else {
+            self.status = "Cannot expand image_dir path".to_string();
+            self.thumbnails.clear();
+            self.thumbnails_for_dir.clear();
+            return;
+        };
+
+        let images = match list_background_images(&dir) {
+            Ok(list) => list,
+            Err(e) => {
+                self.status = format!("Thumbnail scan failed: {e}");
+                self.thumbnails.clear();
+                self.thumbnails_for_dir.clear();
+                return;
+            }
+        };
+
+        self.thumbnails.clear();
+        for (idx, path) in images.iter().take(3).enumerate() {
+            match load_thumbnail(ctx, path, idx) {
+                Ok(texture) => {
+                    let label = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("image")
+                        .to_string();
+                    self.thumbnails.push(ThumbnailItem { label, texture });
+                }
+                Err(err) => {
+                    self.status = format!("Thumbnail decode failed for {}: {err}", path.display());
+                }
+            }
+        }
+
+        self.thumbnails_for_dir = self.cfg.image_dir.clone();
+        if self.thumbnails.is_empty() {
+            self.status = "No previewable images found in folder".to_string();
+        }
+    }
 }
 
 impl eframe::App for WcGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.thumbnails.is_empty() || self.thumbnails_for_dir != self.cfg.image_dir {
+            self.refresh_thumbnails(ctx);
+        }
+
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Config");
                 ui.text_edit_singleline(&mut self.config_path);
                 if ui.button("Load").clicked() {
-                    self.load_from_path();
+                    self.load_from_path(ctx);
                 }
                 if ui.button("Save").clicked() {
                     self.save_to_path();
@@ -133,16 +218,44 @@ impl eframe::App for WcGuiApp {
             });
         });
 
+        egui::SidePanel::right("thumbs")
+            .default_width(320.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.heading("Image Preview");
+                ui.label("First 2-3 images from selected folder");
+                if ui.button("Refresh Preview Images").clicked() {
+                    self.refresh_thumbnails(ctx);
+                }
+                ui.separator();
+
+                if self.thumbnails.is_empty() {
+                    ui.label("No thumbnails available");
+                } else {
+                    for item in &self.thumbnails {
+                        ui.label(&item.label);
+                        ui.image((item.texture.id(), egui::vec2(280.0, 158.0)));
+                        ui.separator();
+                    }
+                }
+            });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.heading("Sources");
                 ui.horizontal(|ui| {
                     ui.label("Image dir");
                     ui.text_edit_singleline(&mut self.cfg.image_dir);
+                    if ui.button("Browse...").clicked() {
+                        self.pick_image_dir(ctx);
+                    }
                 });
                 ui.horizontal(|ui| {
                     ui.label("Quotes path");
                     ui.text_edit_singleline(&mut self.cfg.quotes_path);
+                    if ui.button("Browse...").clicked() {
+                        self.pick_quotes_file();
+                    }
                 });
                 ui.horizontal(|ui| {
                     ui.label("Image order");
@@ -285,6 +398,23 @@ impl eframe::App for WcGuiApp {
             );
         });
     }
+}
+
+fn load_thumbnail(
+    ctx: &egui::Context,
+    path: &Path,
+    idx: usize,
+) -> Result<egui::TextureHandle, String> {
+    let img = image::open(path).map_err(|e| format!("decode failed: {e}"))?;
+    let thumb = img.thumbnail(480, 270).to_rgba8();
+    let size = [thumb.width() as usize, thumb.height() as usize];
+    let pixels = thumb.into_raw();
+    let color = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+    Ok(ctx.load_texture(
+        format!("thumb-{idx}-{}", path.display()),
+        color,
+        egui::TextureOptions::LINEAR,
+    ))
 }
 
 fn default_cfg() -> AppConfig {

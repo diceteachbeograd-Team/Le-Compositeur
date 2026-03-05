@@ -8,4 +8,6 @@ authors.workspace = true
 [dependencies]
 eframe = { package = "eframe", version = "0.31" }
 egui = "0.31"
+image = "0.25"
+rfd = "0.15"
 wc-core = { path = "../wc-core" }
