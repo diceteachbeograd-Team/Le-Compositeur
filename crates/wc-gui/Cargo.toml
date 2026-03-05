@@ -9,5 +9,10 @@ authors.workspace = true
 eframe = { package = "eframe", version = "0.31" }
 egui = "0.31"
 image = "0.25"
-rfd = "0.15"
 wc-core = { path = "../wc-core" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rfd = { version = "0.15", default-features = false, features = ["gtk3"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+rfd = "0.15"

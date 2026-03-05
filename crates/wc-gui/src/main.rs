@@ -76,6 +76,7 @@ impl WcGuiApp {
     }
 
     fn run_wc_cli(&mut self, args: &[&str]) {
+        self.status = format!("Running: wc-cli {}", args.join(" "));
         if let Err(e) = self.save_to_path_inner() {
             self.status = format!("Cannot run command before save: {e}");
             return;
@@ -118,6 +119,8 @@ impl WcGuiApp {
             self.cfg.image_dir = path.display().to_string();
             self.refresh_thumbnails(ctx);
             self.status = "Image folder selected".to_string();
+        } else {
+            self.status = "Folder selection canceled (or no folder selected)".to_string();
         }
     }
 
@@ -136,6 +139,8 @@ impl WcGuiApp {
         {
             self.cfg.quotes_path = path.display().to_string();
             self.status = "Quotes file selected".to_string();
+        } else {
+            self.status = "Quotes file selection canceled".to_string();
         }
     }
 
