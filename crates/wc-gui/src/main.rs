@@ -488,6 +488,24 @@ impl eframe::App for WcGuiApp {
                         });
                     ui.checkbox(&mut self.cfg.image_avoid_repeat, "Avoid repeat");
                 });
+                ui.horizontal(|ui| {
+                    ui.label("Quote order");
+                    egui::ComboBox::from_id_salt("quote_order_mode")
+                        .selected_text(&self.cfg.quote_order_mode)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.cfg.quote_order_mode,
+                                "sequential".to_string(),
+                                "sequential",
+                            );
+                            ui.selectable_value(
+                                &mut self.cfg.quote_order_mode,
+                                "random".to_string(),
+                                "random",
+                            );
+                        });
+                    ui.checkbox(&mut self.cfg.quote_avoid_repeat, "Avoid repeat");
+                });
 
                 ui.separator();
                 ui.heading("Timing");
@@ -567,25 +585,20 @@ impl eframe::App for WcGuiApp {
                 });
 
                 ui.horizontal(|ui| {
-                    ui.label("Quote color");
-                    ui.text_edit_singleline(&mut self.cfg.quote_color);
-                    ui.label("Clock color");
-                    ui.text_edit_singleline(&mut self.cfg.clock_color);
+                    edit_color_field(ui, "Quote color", &mut self.cfg.quote_color, false);
+                    edit_color_field(ui, "Clock color", &mut self.cfg.clock_color, false);
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Stroke color");
-                    ui.text_edit_singleline(&mut self.cfg.text_stroke_color);
+                    edit_color_field(ui, "Stroke color", &mut self.cfg.text_stroke_color, false);
                     ui.label("Stroke width");
                     ui.add(egui::DragValue::new(&mut self.cfg.text_stroke_width).speed(1));
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Undercolor");
-                    ui.text_edit_singleline(&mut self.cfg.text_undercolor);
+                    edit_color_field(ui, "Undercolor", &mut self.cfg.text_undercolor, true);
                 });
                 ui.horizontal(|ui| {
                     ui.checkbox(&mut self.cfg.text_shadow_enabled, "Shadow");
-                    ui.label("Shadow color");
-                    ui.text_edit_singleline(&mut self.cfg.text_shadow_color);
+                    edit_color_field(ui, "Shadow color", &mut self.cfg.text_shadow_color, true);
                     ui.label("dx");
                     ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_x).speed(1));
                     ui.label("dy");
@@ -682,6 +695,8 @@ fn default_cfg() -> AppConfig {
         quote_format: "lines".to_string(),
         image_order_mode: "sequential".to_string(),
         image_avoid_repeat: true,
+        quote_order_mode: "sequential".to_string(),
+        quote_avoid_repeat: true,
         quote_font_size: 36,
         quote_pos_x: 80,
         quote_pos_y: 860,
@@ -712,4 +727,71 @@ fn default_cfg() -> AppConfig {
         wallpaper_backend: "auto".to_string(),
         wallpaper_fit_mode: "zoom".to_string(),
     }
+}
+
+fn edit_color_field(ui: &mut egui::Ui, label: &str, value: &mut String, allow_alpha: bool) {
+    ui.label(label);
+    let mut color = parse_color_value(value).unwrap_or(egui::Color32::WHITE);
+    let picker = ui.color_edit_button_srgba(&mut color);
+    if picker.changed() {
+        if allow_alpha {
+            *value = format!(
+                "#{:02X}{:02X}{:02X}{:02X}",
+                color.r(),
+                color.g(),
+                color.b(),
+                color.a()
+            );
+        } else {
+            *value = format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b());
+        }
+    }
+    ui.text_edit_singleline(value)
+        .on_hover_text("Hex (#RRGGBB / #RRGGBBAA) oder RGB (r,g,b)");
+}
+
+fn parse_color_value(input: &str) -> Option<egui::Color32> {
+    let raw = input.trim();
+    if let Some(hex) = raw.strip_prefix('#') {
+        return parse_hex_color(hex);
+    }
+    parse_rgb_triplet(raw)
+}
+
+fn parse_hex_color(hex: &str) -> Option<egui::Color32> {
+    match hex.len() {
+        6 => {
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            Some(egui::Color32::from_rgb(r, g, b))
+        }
+        8 => {
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            let a = u8::from_str_radix(&hex[6..8], 16).ok()?;
+            Some(egui::Color32::from_rgba_premultiplied(r, g, b, a))
+        }
+        _ => None,
+    }
+}
+
+fn parse_rgb_triplet(raw: &str) -> Option<egui::Color32> {
+    let parts = raw
+        .split(',')
+        .map(|p| p.trim().parse::<u8>().ok())
+        .collect::<Vec<_>>();
+    if parts.len() < 3 || parts.iter().take(3).any(Option::is_none) {
+        return None;
+    }
+    let r = parts[0]?;
+    let g = parts[1]?;
+    let b = parts[2]?;
+    let a = if parts.len() >= 4 {
+        parts[3].unwrap_or(255)
+    } else {
+        255
+    };
+    Some(egui::Color32::from_rgba_premultiplied(r, g, b, a))
 }

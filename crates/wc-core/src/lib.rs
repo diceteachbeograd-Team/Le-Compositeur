@@ -36,6 +36,8 @@ pub struct AppConfig {
     pub quote_format: String,
     pub image_order_mode: String,
     pub image_avoid_repeat: bool,
+    pub quote_order_mode: String,
+    pub quote_avoid_repeat: bool,
     pub quote_font_size: u32,
     pub quote_pos_x: i32,
     pub quote_pos_y: i32,
@@ -81,6 +83,8 @@ quote_source_preset = "zenquotes_daily"
 quote_format = "lines"
 image_order_mode = "sequential"
 image_avoid_repeat = true
+quote_order_mode = "sequential"
+quote_avoid_repeat = true
 quote_font_size = 36
 quote_pos_x = 80
 quote_pos_y = 860
@@ -116,7 +120,7 @@ wallpaper_fit_mode = "zoom"
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
+        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -129,6 +133,8 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.quote_format,
         cfg.image_order_mode,
         cfg.image_avoid_repeat,
+        cfg.quote_order_mode,
+        cfg.quote_avoid_repeat,
         cfg.quote_font_size,
         cfg.quote_pos_x,
         cfg.quote_pos_y,
@@ -192,6 +198,8 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"quote_format","group":"sources","label":"Quote Format","type":"enum","required":false,"default":"lines","options":["lines","paragraphs","markdown_blocks"]},
     {"key":"image_order_mode","group":"sources","label":"Image Order","type":"enum","required":false,"default":"sequential","options":["sequential","random"]},
     {"key":"image_avoid_repeat","group":"sources","label":"Avoid Immediate Repeat","type":"bool","required":false,"default":true},
+    {"key":"quote_order_mode","group":"sources","label":"Quote Order","type":"enum","required":false,"default":"sequential","options":["sequential","random"]},
+    {"key":"quote_avoid_repeat","group":"sources","label":"Avoid Immediate Quote Repeat","type":"bool","required":false,"default":true},
 
     {"key":"quote_font_size","group":"layout","label":"Quote Font Size","type":"u32","required":false,"default":36,"min":8},
     {"key":"quote_pos_x","group":"layout","label":"Quote X","type":"i32","required":false,"default":80},
@@ -249,7 +257,9 @@ pub fn settings_ui_blueprint_json() -> &'static str {
           "quote_source_url",
           "quote_format",
           "image_order_mode",
-          "image_avoid_repeat"
+          "image_avoid_repeat",
+          "quote_order_mode",
+          "quote_avoid_repeat"
         ]
       },
       {
@@ -332,6 +342,8 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut quote_format = None::<String>;
     let mut image_order_mode = None::<String>;
     let mut image_avoid_repeat = None::<bool>;
+    let mut quote_order_mode = None::<String>;
+    let mut quote_avoid_repeat = None::<bool>;
     let mut quote_font_size = None::<u32>;
     let mut quote_pos_x = None::<i32>;
     let mut quote_pos_y = None::<i32>;
@@ -386,6 +398,8 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "quote_format" => quote_format = parse_string(value),
             "image_order_mode" => image_order_mode = parse_string(value),
             "image_avoid_repeat" => image_avoid_repeat = parse_bool(value),
+            "quote_order_mode" => quote_order_mode = parse_string(value),
+            "quote_avoid_repeat" => quote_avoid_repeat = parse_bool(value),
             "quote_font_size" => quote_font_size = parse_u32(value),
             "quote_pos_x" => quote_pos_x = parse_i32(value),
             "quote_pos_y" => quote_pos_y = parse_i32(value),
@@ -432,6 +446,8 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         quote_format: quote_format.unwrap_or_else(|| "lines".to_string()),
         image_order_mode: image_order_mode.unwrap_or_else(|| "sequential".to_string()),
         image_avoid_repeat: image_avoid_repeat.unwrap_or(true),
+        quote_order_mode: quote_order_mode.unwrap_or_else(|| "sequential".to_string()),
+        quote_avoid_repeat: quote_avoid_repeat.unwrap_or(true),
         quote_font_size: quote_font_size.unwrap_or(36).max(8),
         quote_pos_x: quote_pos_x.unwrap_or(80),
         quote_pos_y: quote_pos_y.unwrap_or(860),
@@ -557,18 +573,7 @@ pub fn pick_background_image_with_mode(
         ));
     }
 
-    let mut idx = match mode.trim().to_ascii_lowercase().as_str() {
-        "random" => pseudo_random_index(index, candidates.len()),
-        _ => (index as usize) % candidates.len(),
-    };
-
-    if avoid_repeat
-        && candidates.len() > 1
-        && previous_index.is_some()
-        && previous_index == Some(idx)
-    {
-        idx = (idx + 1) % candidates.len();
-    }
+    let idx = pick_index_with_mode(candidates.len(), index, mode, avoid_repeat, previous_index);
 
     Ok((candidates[idx].clone(), idx))
 }
@@ -721,6 +726,24 @@ pub fn pick_quote(quotes_path: &Path, index: u64) -> Result<String> {
     pick_by_index(&quotes, index, "quotes", quotes_path)
 }
 
+pub fn pick_quote_with_mode(
+    quotes_path: &Path,
+    index: u64,
+    mode: &str,
+    avoid_repeat: bool,
+    previous_index: Option<usize>,
+) -> Result<(String, usize)> {
+    let quotes = load_quotes(quotes_path)?;
+    if quotes.is_empty() {
+        return Err(anyhow::anyhow!(
+            "no quotes available in {}",
+            quotes_path.display()
+        ));
+    }
+    let idx = pick_index_with_mode(quotes.len(), index, mode, avoid_repeat, previous_index);
+    Ok((quotes[idx].clone(), idx))
+}
+
 pub fn cycle_index(refresh_seconds: u64) -> u64 {
     let seconds = refresh_seconds.max(1);
     let now = Local::now().timestamp().max(0) as u64;
@@ -736,6 +759,24 @@ fn pick_by_index<T: Clone>(items: &[T], index: u64, label: &str, context: &Path)
     }
     let idx = (index as usize) % items.len();
     Ok(items[idx].clone())
+}
+
+fn pick_index_with_mode(
+    len: usize,
+    index: u64,
+    mode: &str,
+    avoid_repeat: bool,
+    previous_index: Option<usize>,
+) -> usize {
+    let mut idx = match mode.trim().to_ascii_lowercase().as_str() {
+        "random" => pseudo_random_index(index, len),
+        _ => (index as usize) % len,
+    };
+
+    if avoid_repeat && len > 1 && previous_index == Some(idx) {
+        idx = (idx + 1) % len;
+    }
+    idx
 }
 
 fn strip_simple_markdown_prefix(line: &str) -> &str {
@@ -894,6 +935,8 @@ mod tests {
         assert_eq!(cfg.quote_format, "lines");
         assert_eq!(cfg.image_order_mode, "sequential");
         assert!(cfg.image_avoid_repeat);
+        assert_eq!(cfg.quote_order_mode, "sequential");
+        assert!(cfg.quote_avoid_repeat);
         assert_eq!(cfg.quote_font_size, 36);
         assert_eq!(cfg.quote_pos_x, 80);
         assert_eq!(cfg.quote_pos_y, 860);

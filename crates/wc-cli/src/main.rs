@@ -10,8 +10,8 @@ use wc_backend::apply_wallpaper;
 use wc_core::{
     AppConfig, build_doctor_report, builtin_image_presets, builtin_quote_presets, cycle_index,
     default_config_path, default_config_toml, expand_tilde, image_preset_endpoint, load_config,
-    pick_background_image_with_mode, pick_quote, presets_catalog_json, quote_preset_endpoint,
-    settings_schema_json, settings_ui_blueprint_json, to_config_toml,
+    pick_background_image_with_mode, pick_quote_with_mode, presets_catalog_json,
+    quote_preset_endpoint, settings_schema_json, settings_ui_blueprint_json, to_config_toml,
 };
 use wc_render::{PreviewText, render_preview_to_file};
 use wc_source::{ImageProvider, QuoteProvider, fetch_remote_image, fetch_remote_quote};
@@ -342,6 +342,13 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
             cfg.image_order_mode
         );
     }
+    let quote_order_mode = cfg.quote_order_mode.trim().to_ascii_lowercase();
+    if !["sequential", "random"].contains(&quote_order_mode.as_str()) {
+        anyhow::bail!(
+            "unsupported quote_order_mode={}; use sequential or random",
+            cfg.quote_order_mode
+        );
+    }
 
     Ok(())
 }
@@ -457,7 +464,17 @@ fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {
     match cfg.quote_source.trim().to_ascii_lowercase().as_str() {
         "local" => {
             let quotes_path = expand_tilde(&cfg.quotes_path)?;
-            pick_quote(&quotes_path, cycle)
+            let state_path = quote_pick_state_path(cfg)?;
+            let previous_index = read_quote_pick_index(&state_path);
+            let (picked, picked_idx) = pick_quote_with_mode(
+                &quotes_path,
+                cycle,
+                &cfg.quote_order_mode,
+                cfg.quote_avoid_repeat,
+                previous_index,
+            )?;
+            write_quote_pick_index(&state_path, picked_idx)?;
+            Ok(picked)
         }
         "preset" | "remote_preset" => {
             let (endpoint, provider) = resolve_quote_endpoint_from_preset(cfg)?;
@@ -473,6 +490,24 @@ fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {
             "unsupported quote_source={other}; supported: local, preset, url"
         )),
     }
+}
+
+fn quote_pick_state_path(cfg: &AppConfig) -> Result<PathBuf> {
+    let path = expand_tilde(&format!("{}.quote_pick", cfg.rotation_state_file))?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    Ok(path)
+}
+
+fn read_quote_pick_index(path: &Path) -> Option<usize> {
+    let raw = fs::read_to_string(path).ok()?;
+    raw.trim().parse::<usize>().ok()
+}
+
+fn write_quote_pick_index(path: &Path, idx: usize) -> Result<()> {
+    fs::write(path, format!("{idx}\n"))?;
+    Ok(())
 }
 
 fn resolve_image_endpoint_from_preset(cfg: &AppConfig) -> Result<(String, ImageProvider)> {
