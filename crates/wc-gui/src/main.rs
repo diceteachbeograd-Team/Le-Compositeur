@@ -28,8 +28,6 @@ struct WcGuiApp {
     thumbnails_for_dir: String,
     quote_preview: Vec<String>,
     runner: Option<Child>,
-    #[cfg(target_os = "linux")]
-    file_dialog_rt: Option<tokio::runtime::Runtime>,
 }
 
 impl WcGuiApp {
@@ -49,11 +47,6 @@ impl WcGuiApp {
             thumbnails_for_dir: String::new(),
             quote_preview: Vec::new(),
             runner: None,
-            #[cfg(target_os = "linux")]
-            file_dialog_rt: tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .ok(),
         }
     }
 
@@ -262,11 +255,7 @@ impl WcGuiApp {
     fn pick_folder_dialog(&self, start: PathBuf) -> Option<PathBuf> {
         #[cfg(target_os = "linux")]
         {
-            if let Some(rt) = &self.file_dialog_rt {
-                let _guard = rt.enter();
-                return rfd::FileDialog::new().set_directory(start).pick_folder();
-            }
-            return rfd::FileDialog::new().set_directory(start).pick_folder();
+            return pick_linux_path_dialog(&start, true);
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -277,17 +266,7 @@ impl WcGuiApp {
     fn pick_quotes_dialog(&self, base: PathBuf) -> Option<PathBuf> {
         #[cfg(target_os = "linux")]
         {
-            if let Some(rt) = &self.file_dialog_rt {
-                let _guard = rt.enter();
-                return rfd::FileDialog::new()
-                    .set_directory(base)
-                    .add_filter("Quotes", &["md", "txt"])
-                    .pick_file();
-            }
-            return rfd::FileDialog::new()
-                .set_directory(base)
-                .add_filter("Quotes", &["md", "txt"])
-                .pick_file();
+            return pick_linux_path_dialog(&base, false);
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -338,6 +317,50 @@ impl WcGuiApp {
             self.status = "No previewable images found in folder".to_string();
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn pick_linux_path_dialog(start: &Path, directory: bool) -> Option<PathBuf> {
+    run_zenity_picker(start, directory).or_else(|| run_kdialog_picker(start, directory))
+}
+
+#[cfg(target_os = "linux")]
+fn run_zenity_picker(start: &Path, directory: bool) -> Option<PathBuf> {
+    let mut cmd = Command::new("zenity");
+    cmd.arg("--file-selection");
+    if directory {
+        cmd.arg("--directory");
+    }
+    cmd.arg("--filename").arg(format!("{}/", start.display()));
+    let out = cmd.output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if value.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(value))
+}
+
+#[cfg(target_os = "linux")]
+fn run_kdialog_picker(start: &Path, directory: bool) -> Option<PathBuf> {
+    let mut cmd = Command::new("kdialog");
+    if directory {
+        cmd.arg("--getexistingdirectory");
+    } else {
+        cmd.arg("--getopenfilename");
+    }
+    cmd.arg(start.display().to_string());
+    let out = cmd.output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if value.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(value))
 }
 
 impl eframe::App for WcGuiApp {
