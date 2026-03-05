@@ -134,10 +134,21 @@ fn render_with_imagemagick(
         text,
         box_w,
         box_h,
+        author.is_some(),
     );
     let author_size = ((effective_quote_size as f32) * 0.85).round() as u32;
     let author_h = (author_size as i32 * 2).max(40);
     let quote_h = (box_h - author_h).max(80);
+    let effective_stroke_width = if text.quote_auto_fit && effective_quote_size <= 20 {
+        text.text_stroke_width.min(1)
+    } else {
+        text.text_stroke_width
+    };
+    let effective_undercolor = if text.quote_auto_fit && effective_quote_size <= 20 {
+        "none"
+    } else {
+        text.text_undercolor
+    };
     let shadow_x = text.quote_pos_x.saturating_add(text.text_shadow_offset_x);
     let shadow_y = text.quote_pos_y.saturating_add(text.text_shadow_offset_y);
 
@@ -180,9 +191,9 @@ fn render_with_imagemagick(
     args.push("-stroke".to_string());
     args.push(text.text_stroke_color.to_string());
     args.push("-strokewidth".to_string());
-    args.push(text.text_stroke_width.to_string());
+    args.push(effective_stroke_width.to_string());
     args.push("-undercolor".to_string());
-    args.push(text.text_undercolor.to_string());
+    args.push(effective_undercolor.to_string());
     args.push("-gravity".to_string());
     args.push(quote_gravity.to_string());
     args.push("-font".to_string());
@@ -240,9 +251,9 @@ fn render_with_imagemagick(
         args.push("-stroke".to_string());
         args.push(text.text_stroke_color.to_string());
         args.push("-strokewidth".to_string());
-        args.push(text.text_stroke_width.to_string());
+        args.push(effective_stroke_width.to_string());
         args.push("-undercolor".to_string());
-        args.push(text.text_undercolor.to_string());
+        args.push(effective_undercolor.to_string());
         args.push("-gravity".to_string());
         args.push(author_gravity.to_string());
         args.push("-font".to_string());
@@ -397,6 +408,7 @@ fn resolve_quote_font_size(
     text: &PreviewText<'_>,
     box_w: i32,
     box_h: i32,
+    has_author: bool,
 ) -> u32 {
     if !text.quote_auto_fit {
         return preferred.max(text.quote_min_font_size.max(8));
@@ -405,13 +417,26 @@ fn resolve_quote_font_size(
     let mut size = preferred.max(min_size);
 
     // Approximate wrap/line-height until content likely fits in text box.
+    let lines_src = quote_body.lines().collect::<Vec<_>>();
     while size > min_size {
         let char_w = (size as f32 * 0.55).max(6.0);
         let cols = ((box_w as f32) / char_w).max(8.0);
-        let chars = quote_body.chars().count() as f32;
-        let lines = (chars / cols).ceil().max(1.0);
-        let needed_h = lines * (size as f32 * 1.35);
-        let max_h = (box_h as f32 * 0.75).max(80.0);
+        let wrapped_lines = lines_src
+            .iter()
+            .map(|line| {
+                let count = line.chars().count() as f32;
+                (count / cols).ceil().max(1.0)
+            })
+            .sum::<f32>()
+            .max(1.0);
+        let needed_h = wrapped_lines * (size as f32 * 1.35);
+        let author_h = if has_author {
+            (size as f32 * 1.9).max(40.0)
+        } else {
+            0.0
+        };
+        let padding = 10.0;
+        let max_h = (box_h as f32 - author_h - padding).max(60.0);
         if needed_h <= max_h {
             break;
         }

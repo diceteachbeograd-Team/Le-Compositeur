@@ -20,6 +20,14 @@ struct ThumbnailItem {
     texture: egui::TextureHandle,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GuiTab {
+    Images,
+    Quotes,
+    Style,
+    System,
+}
+
 struct WcGuiApp {
     config_path: String,
     cfg: AppConfig,
@@ -28,6 +36,7 @@ struct WcGuiApp {
     thumbnails_for_dir: String,
     quote_preview: Vec<String>,
     runner: Option<Child>,
+    active_tab: GuiTab,
 }
 
 impl WcGuiApp {
@@ -47,6 +56,7 @@ impl WcGuiApp {
             thumbnails_for_dir: String::new(),
             quote_preview: Vec::new(),
             runner: None,
+            active_tab: GuiTab::Images,
         }
     }
 
@@ -317,6 +327,293 @@ impl WcGuiApp {
             self.status = "No previewable images found in folder".to_string();
         }
     }
+
+    fn render_images_tab(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.heading("Image Source");
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.cfg.image_source, "local".to_string(), "Local");
+            ui.selectable_value(
+                &mut self.cfg.image_source,
+                "preset".to_string(),
+                "Open Preset",
+            );
+            ui.selectable_value(&mut self.cfg.image_source, "url".to_string(), "Custom URL");
+        });
+
+        match self.cfg.image_source.as_str() {
+            "preset" => {
+                ui.horizontal(|ui| {
+                    ui.label("Preset");
+                    let mut selected = self
+                        .cfg
+                        .image_source_preset
+                        .clone()
+                        .unwrap_or_else(|| "nasa_apod".to_string());
+                    egui::ComboBox::from_id_salt("image_source_preset")
+                        .selected_text(&selected)
+                        .show_ui(ui, |ui| {
+                            for id in ["nasa_apod", "wikimedia_featured"] {
+                                ui.selectable_value(&mut selected, id.to_string(), id);
+                            }
+                        });
+                    self.cfg.image_source_preset = Some(selected);
+                });
+            }
+            "url" => {
+                ui.horizontal(|ui| {
+                    ui.label("Image URL");
+                    let mut url = self.cfg.image_source_url.clone().unwrap_or_default();
+                    ui.text_edit_singleline(&mut url);
+                    self.cfg.image_source_url = Some(url);
+                });
+            }
+            _ => {
+                ui.horizontal(|ui| {
+                    ui.label("Image dir");
+                    ui.text_edit_singleline(&mut self.cfg.image_dir)
+                        .on_hover_text("Local folder for background images (jpg/png/webp/bmp).");
+                    if ui.button("Browse...").clicked() {
+                        self.pick_image_dir(ctx);
+                    }
+                });
+            }
+        }
+
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label("Image order");
+            egui::ComboBox::from_id_salt("image_order_mode")
+                .selected_text(&self.cfg.image_order_mode)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut self.cfg.image_order_mode,
+                        "sequential".to_string(),
+                        "sequential",
+                    );
+                    ui.selectable_value(
+                        &mut self.cfg.image_order_mode,
+                        "random".to_string(),
+                        "random",
+                    );
+                });
+            ui.checkbox(&mut self.cfg.image_avoid_repeat, "Avoid repeat");
+        });
+        ui.horizontal(|ui| {
+            ui.label("Image sec");
+            ui.add(egui::DragValue::new(&mut self.cfg.image_refresh_seconds).speed(1));
+        });
+    }
+
+    fn render_quotes_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Quote Source");
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.cfg.quote_source, "local".to_string(), "Local");
+            ui.selectable_value(
+                &mut self.cfg.quote_source,
+                "preset".to_string(),
+                "Open Preset",
+            );
+            ui.selectable_value(&mut self.cfg.quote_source, "url".to_string(), "Custom URL");
+        });
+
+        match self.cfg.quote_source.as_str() {
+            "preset" => {
+                ui.horizontal(|ui| {
+                    ui.label("Preset");
+                    let mut selected = self
+                        .cfg
+                        .quote_source_preset
+                        .clone()
+                        .unwrap_or_else(|| "zenquotes_daily".to_string());
+                    egui::ComboBox::from_id_salt("quote_source_preset")
+                        .selected_text(&selected)
+                        .show_ui(ui, |ui| {
+                            for id in ["zenquotes_daily", "quotable_random"] {
+                                ui.selectable_value(&mut selected, id.to_string(), id);
+                            }
+                        });
+                    self.cfg.quote_source_preset = Some(selected);
+                });
+            }
+            "url" => {
+                ui.horizontal(|ui| {
+                    ui.label("Quote URL");
+                    let mut url = self.cfg.quote_source_url.clone().unwrap_or_default();
+                    ui.text_edit_singleline(&mut url);
+                    self.cfg.quote_source_url = Some(url);
+                });
+            }
+            _ => {
+                ui.horizontal(|ui| {
+                    ui.label("Quotes path");
+                    ui.text_edit_singleline(&mut self.cfg.quotes_path)
+                        .on_hover_text(
+                            "Quotes file. Supports ***...*** blocks and optional author syntax.",
+                        );
+                    if ui.button("Browse...").clicked() {
+                        self.pick_quotes_file();
+                    }
+                });
+            }
+        }
+
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label("Quote order");
+            egui::ComboBox::from_id_salt("quote_order_mode")
+                .selected_text(&self.cfg.quote_order_mode)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut self.cfg.quote_order_mode,
+                        "sequential".to_string(),
+                        "sequential",
+                    );
+                    ui.selectable_value(
+                        &mut self.cfg.quote_order_mode,
+                        "random".to_string(),
+                        "random",
+                    );
+                });
+            ui.checkbox(&mut self.cfg.quote_avoid_repeat, "Avoid repeat");
+        });
+        ui.horizontal(|ui| {
+            ui.label("Quote sec");
+            ui.add(egui::DragValue::new(&mut self.cfg.quote_refresh_seconds).speed(1));
+        });
+    }
+
+    fn render_style_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Text Style");
+        ui.horizontal(|ui| {
+            ui.label("Quote size");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.quote_font_size)
+                    .speed(1)
+                    .range(8..=160),
+            );
+            ui.checkbox(&mut self.cfg.quote_auto_fit, "Auto fit");
+            ui.label("Min");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.quote_min_font_size)
+                    .speed(1)
+                    .range(8..=160),
+            );
+            ui.label("X");
+            ui.add(egui::DragValue::new(&mut self.cfg.quote_pos_x).speed(1));
+            ui.label("Y");
+            ui.add(egui::DragValue::new(&mut self.cfg.quote_pos_y).speed(1));
+        });
+        ui.horizontal(|ui| {
+            ui.label("Font family");
+            egui::ComboBox::from_id_salt("font_family")
+                .selected_text(&self.cfg.font_family)
+                .show_ui(ui, |ui| {
+                    for family in [
+                        "DejaVu-Sans",
+                        "Noto-Sans",
+                        "Liberation-Sans",
+                        "Serif",
+                        "Monospace",
+                    ] {
+                        ui.selectable_value(&mut self.cfg.font_family, family.to_string(), family);
+                    }
+                });
+        });
+        ui.horizontal(|ui| {
+            ui.label("Clock size");
+            ui.add(egui::DragValue::new(&mut self.cfg.clock_font_size).speed(1));
+            ui.label("X");
+            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_x).speed(1));
+            ui.label("Y");
+            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_y).speed(1));
+        });
+        ui.horizontal(|ui| {
+            ui.label("Text box");
+            egui::ComboBox::from_id_salt("text_box_size")
+                .selected_text(&self.cfg.text_box_size)
+                .show_ui(ui, |ui| {
+                    for mode in ["quarter", "third", "half", "full", "custom"] {
+                        ui.selectable_value(&mut self.cfg.text_box_size, mode.to_string(), mode);
+                    }
+                });
+            ui.label("W%");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.text_box_width_pct)
+                    .speed(1)
+                    .range(10..=100),
+            );
+            ui.label("H%");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.text_box_height_pct)
+                    .speed(1)
+                    .range(10..=100),
+            );
+        });
+        ui.horizontal(|ui| {
+            edit_color_field(ui, "Quote color", &mut self.cfg.quote_color, false);
+            edit_color_field(ui, "Clock color", &mut self.cfg.clock_color, false);
+        });
+        ui.horizontal(|ui| {
+            edit_color_field(ui, "Stroke color", &mut self.cfg.text_stroke_color, false);
+            ui.label("Stroke width");
+            ui.add(egui::DragValue::new(&mut self.cfg.text_stroke_width).speed(1));
+        });
+        ui.horizontal(|ui| {
+            edit_color_field(ui, "Undercolor", &mut self.cfg.text_undercolor, true);
+        });
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.cfg.text_shadow_enabled, "Shadow");
+            edit_color_field(ui, "Shadow color", &mut self.cfg.text_shadow_color, true);
+            ui.label("dx");
+            ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_x).speed(1));
+            ui.label("dy");
+            ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_y).speed(1));
+        });
+    }
+
+    fn render_system_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Runtime");
+        ui.horizontal(|ui| {
+            ui.label("Runner tick");
+            ui.add(egui::DragValue::new(&mut self.cfg.refresh_seconds).speed(1));
+        });
+        ui.separator();
+        ui.heading("Wallpaper");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.cfg.apply_wallpaper, "Apply wallpaper");
+            ui.label("Backend");
+            egui::ComboBox::from_id_salt("backend")
+                .selected_text(&self.cfg.wallpaper_backend)
+                .show_ui(ui, |ui| {
+                    for mode in ["auto", "gnome", "sway", "feh", "noop"] {
+                        ui.selectable_value(
+                            &mut self.cfg.wallpaper_backend,
+                            mode.to_string(),
+                            mode,
+                        );
+                    }
+                });
+            ui.label("Fit");
+            egui::ComboBox::from_id_salt("fit")
+                .selected_text(&self.cfg.wallpaper_fit_mode)
+                .show_ui(ui, |ui| {
+                    for mode in [
+                        "zoom",
+                        "scaled",
+                        "stretched",
+                        "spanned",
+                        "centered",
+                        "wallpaper",
+                    ] {
+                        ui.selectable_value(
+                            &mut self.cfg.wallpaper_fit_mode,
+                            mode.to_string(),
+                            mode,
+                        );
+                    }
+                });
+        });
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -418,6 +715,12 @@ impl eframe::App for WcGuiApp {
                     self.stop_runner();
                 }
             });
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.active_tab, GuiTab::Images, "Images");
+                ui.selectable_value(&mut self.active_tab, GuiTab::Quotes, "Quotes");
+                ui.selectable_value(&mut self.active_tab, GuiTab::Style, "Style");
+                ui.selectable_value(&mut self.active_tab, GuiTab::System, "System");
+            });
         });
 
         egui::SidePanel::right("thumbs")
@@ -453,208 +756,11 @@ impl eframe::App for WcGuiApp {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.heading("Sources");
-                ui.horizontal(|ui| {
-                    ui.label("Image dir");
-                    ui.text_edit_singleline(&mut self.cfg.image_dir)
-                        .on_hover_text("Local folder for background images (jpg/png/webp/bmp).");
-                    if ui.button("Browse...").clicked() {
-                        self.pick_image_dir(ctx);
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Quotes path");
-                    ui.text_edit_singleline(&mut self.cfg.quotes_path)
-                        .on_hover_text(
-                            "Quotes file. Supports ***...*** blocks and optional author syntax.",
-                        );
-                    if ui.button("Browse...").clicked() {
-                        self.pick_quotes_file();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Image order");
-                    egui::ComboBox::from_id_salt("image_order_mode")
-                        .selected_text(&self.cfg.image_order_mode)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.cfg.image_order_mode,
-                                "sequential".to_string(),
-                                "sequential",
-                            );
-                            ui.selectable_value(
-                                &mut self.cfg.image_order_mode,
-                                "random".to_string(),
-                                "random",
-                            );
-                        });
-                    ui.checkbox(&mut self.cfg.image_avoid_repeat, "Avoid repeat");
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Quote order");
-                    egui::ComboBox::from_id_salt("quote_order_mode")
-                        .selected_text(&self.cfg.quote_order_mode)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.cfg.quote_order_mode,
-                                "sequential".to_string(),
-                                "sequential",
-                            );
-                            ui.selectable_value(
-                                &mut self.cfg.quote_order_mode,
-                                "random".to_string(),
-                                "random",
-                            );
-                        });
-                    ui.checkbox(&mut self.cfg.quote_avoid_repeat, "Avoid repeat");
-                });
-
-                ui.separator();
-                ui.heading("Timing");
-                ui.horizontal(|ui| {
-                    ui.label("Runner tick");
-                    ui.add(egui::DragValue::new(&mut self.cfg.refresh_seconds).speed(1));
-                    ui.label("Image sec");
-                    ui.add(egui::DragValue::new(&mut self.cfg.image_refresh_seconds).speed(1));
-                    ui.label("Quote sec");
-                    ui.add(egui::DragValue::new(&mut self.cfg.quote_refresh_seconds).speed(1));
-                });
-
-                ui.separator();
-                ui.heading("Layout");
-                ui.horizontal(|ui| {
-                    ui.label("Quote size");
-                    ui.add(
-                        egui::DragValue::new(&mut self.cfg.quote_font_size)
-                            .speed(1)
-                            .range(8..=160),
-                    );
-                    ui.checkbox(&mut self.cfg.quote_auto_fit, "Auto fit");
-                    ui.label("Min");
-                    ui.add(
-                        egui::DragValue::new(&mut self.cfg.quote_min_font_size)
-                            .speed(1)
-                            .range(8..=160),
-                    );
-                    ui.label("X");
-                    ui.add(egui::DragValue::new(&mut self.cfg.quote_pos_x).speed(1));
-                    ui.label("Y");
-                    ui.add(egui::DragValue::new(&mut self.cfg.quote_pos_y).speed(1));
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Font family");
-                    egui::ComboBox::from_id_salt("font_family")
-                        .selected_text(&self.cfg.font_family)
-                        .show_ui(ui, |ui| {
-                            for family in [
-                                "DejaVu-Sans",
-                                "Noto-Sans",
-                                "Liberation-Sans",
-                                "Serif",
-                                "Monospace",
-                            ] {
-                                ui.selectable_value(
-                                    &mut self.cfg.font_family,
-                                    family.to_string(),
-                                    family,
-                                );
-                            }
-                        });
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Clock size");
-                    ui.add(egui::DragValue::new(&mut self.cfg.clock_font_size).speed(1));
-                    ui.label("X");
-                    ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_x).speed(1));
-                    ui.label("Y");
-                    ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_y).speed(1));
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label("Text box");
-                    egui::ComboBox::from_id_salt("text_box_size")
-                        .selected_text(&self.cfg.text_box_size)
-                        .show_ui(ui, |ui| {
-                            for mode in ["quarter", "third", "half", "full", "custom"] {
-                                ui.selectable_value(
-                                    &mut self.cfg.text_box_size,
-                                    mode.to_string(),
-                                    mode,
-                                );
-                            }
-                        });
-                    ui.label("W%");
-                    ui.add(
-                        egui::DragValue::new(&mut self.cfg.text_box_width_pct)
-                            .speed(1)
-                            .range(10..=100),
-                    );
-                    ui.label("H%");
-                    ui.add(
-                        egui::DragValue::new(&mut self.cfg.text_box_height_pct)
-                            .speed(1)
-                            .range(10..=100),
-                    );
-                });
-
-                ui.horizontal(|ui| {
-                    edit_color_field(ui, "Quote color", &mut self.cfg.quote_color, false);
-                    edit_color_field(ui, "Clock color", &mut self.cfg.clock_color, false);
-                });
-                ui.horizontal(|ui| {
-                    edit_color_field(ui, "Stroke color", &mut self.cfg.text_stroke_color, false);
-                    ui.label("Stroke width");
-                    ui.add(egui::DragValue::new(&mut self.cfg.text_stroke_width).speed(1));
-                });
-                ui.horizontal(|ui| {
-                    edit_color_field(ui, "Undercolor", &mut self.cfg.text_undercolor, true);
-                });
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.cfg.text_shadow_enabled, "Shadow");
-                    edit_color_field(ui, "Shadow color", &mut self.cfg.text_shadow_color, true);
-                    ui.label("dx");
-                    ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_x).speed(1));
-                    ui.label("dy");
-                    ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_y).speed(1));
-                });
-
-                ui.separator();
-                ui.heading("Wallpaper");
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.cfg.apply_wallpaper, "Apply wallpaper");
-                    ui.label("Backend");
-                    egui::ComboBox::from_id_salt("backend")
-                        .selected_text(&self.cfg.wallpaper_backend)
-                        .show_ui(ui, |ui| {
-                            for mode in ["auto", "gnome", "sway", "feh", "noop"] {
-                                ui.selectable_value(
-                                    &mut self.cfg.wallpaper_backend,
-                                    mode.to_string(),
-                                    mode,
-                                );
-                            }
-                        });
-                    ui.label("Fit");
-                    egui::ComboBox::from_id_salt("fit")
-                        .selected_text(&self.cfg.wallpaper_fit_mode)
-                        .show_ui(ui, |ui| {
-                            for mode in [
-                                "zoom",
-                                "scaled",
-                                "stretched",
-                                "spanned",
-                                "centered",
-                                "wallpaper",
-                            ] {
-                                ui.selectable_value(
-                                    &mut self.cfg.wallpaper_fit_mode,
-                                    mode.to_string(),
-                                    mode,
-                                );
-                            }
-                        });
-                });
+            egui::ScrollArea::vertical().show(ui, |ui| match self.active_tab {
+                GuiTab::Images => self.render_images_tab(ui, ctx),
+                GuiTab::Quotes => self.render_quotes_tab(ui),
+                GuiTab::Style => self.render_style_tab(ui),
+                GuiTab::System => self.render_system_tab(ui),
             });
         });
 
