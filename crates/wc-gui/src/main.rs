@@ -366,6 +366,9 @@ fn run_kdialog_picker(start: &Path, directory: bool) -> Option<PathBuf> {
 impl eframe::App for WcGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_runner_state();
+        if self.cfg.quote_min_font_size > self.cfg.quote_font_size {
+            self.cfg.quote_min_font_size = self.cfg.quote_font_size;
+        }
 
         if self.thumbnails.is_empty() || self.thumbnails_for_dir != self.cfg.image_dir {
             self.refresh_thumbnails(ctx);
@@ -522,7 +525,18 @@ impl eframe::App for WcGuiApp {
                 ui.heading("Layout");
                 ui.horizontal(|ui| {
                     ui.label("Quote size");
-                    ui.add(egui::DragValue::new(&mut self.cfg.quote_font_size).speed(1));
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.quote_font_size)
+                            .speed(1)
+                            .range(8..=160),
+                    );
+                    ui.checkbox(&mut self.cfg.quote_auto_fit, "Auto fit");
+                    ui.label("Min");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.quote_min_font_size)
+                            .speed(1)
+                            .range(8..=160),
+                    );
                     ui.label("X");
                     ui.add(egui::DragValue::new(&mut self.cfg.quote_pos_x).speed(1));
                     ui.label("Y");
@@ -700,6 +714,8 @@ fn default_cfg() -> AppConfig {
         quote_font_size: 36,
         quote_pos_x: 80,
         quote_pos_y: 860,
+        quote_auto_fit: true,
+        quote_min_font_size: 18,
         font_family: "DejaVu-Sans".to_string(),
         quote_color: "#FFFFFF".to_string(),
         clock_font_size: 44,

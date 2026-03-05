@@ -171,6 +171,8 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             quote_font_size: cfg.quote_font_size,
             quote_pos_x: cfg.quote_pos_x,
             quote_pos_y: cfg.quote_pos_y,
+            quote_auto_fit: cfg.quote_auto_fit,
+            quote_min_font_size: cfg.quote_min_font_size,
             font_family: &cfg.font_family,
             quote_color: &cfg.quote_color,
             clock_font_size: cfg.clock_font_size,
@@ -290,6 +292,12 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
 
     if cfg.quote_font_size < 8 || cfg.clock_font_size < 8 {
         anyhow::bail!("quote_font_size and clock_font_size must be >= 8");
+    }
+    if cfg.quote_min_font_size < 8 {
+        anyhow::bail!("quote_min_font_size must be >= 8");
+    }
+    if cfg.quote_min_font_size > cfg.quote_font_size {
+        anyhow::bail!("quote_min_font_size must be <= quote_font_size");
     }
     if cfg.text_stroke_width > 20 {
         anyhow::bail!("text_stroke_width must be <= 20");

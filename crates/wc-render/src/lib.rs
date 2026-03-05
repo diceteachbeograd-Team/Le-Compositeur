@@ -9,6 +9,8 @@ pub struct PreviewText<'a> {
     pub quote_font_size: u32,
     pub quote_pos_x: i32,
     pub quote_pos_y: i32,
+    pub quote_auto_fit: bool,
+    pub quote_min_font_size: u32,
     pub font_family: &'a str,
     pub quote_color: &'a str,
     pub clock_font_size: u32,
@@ -55,13 +57,15 @@ pub fn render_preview_to_file(
 
     let meta_path = metadata_path_for(output_image);
     let metadata = format!(
-        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nsource_image = {:?}\n",
+        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nsource_image = {:?}\n",
         render_mode,
         text.quote,
         text.clock,
         text.quote_font_size,
         text.quote_pos_x,
         text.quote_pos_y,
+        text.quote_auto_fit,
+        text.quote_min_font_size,
         text.font_family,
         text.quote_color,
         text.clock_font_size,
@@ -124,7 +128,15 @@ fn render_with_imagemagick(
     let (box_w_pct, box_h_pct) = resolve_text_box_pct(text);
     let box_w = ((img_w * box_w_pct as i32) / 100).max(240);
     let box_h = ((img_h * box_h_pct as i32) / 100).max(160);
-    let author_h = (text.quote_font_size as i32 * 2).max(40);
+    let effective_quote_size = resolve_quote_font_size(
+        quote_body.as_str(),
+        text.quote_font_size,
+        text,
+        box_w,
+        box_h,
+    );
+    let author_size = ((effective_quote_size as f32) * 0.85).round() as u32;
+    let author_h = (author_size as i32 * 2).max(40);
     let quote_h = (box_h - author_h).max(80);
     let shadow_x = text.quote_pos_x.saturating_add(text.text_shadow_offset_x);
     let shadow_y = text.quote_pos_y.saturating_add(text.text_shadow_offset_y);
@@ -147,7 +159,7 @@ fn render_with_imagemagick(
         args.push("-font".to_string());
         args.push(text.font_family.to_string());
         args.push("-pointsize".to_string());
-        args.push(text.quote_font_size.to_string());
+        args.push(effective_quote_size.to_string());
         args.push(format!("caption:{quote_body}"));
         args.push(")".to_string());
         args.push("-gravity".to_string());
@@ -176,7 +188,7 @@ fn render_with_imagemagick(
     args.push("-font".to_string());
     args.push(text.font_family.to_string());
     args.push("-pointsize".to_string());
-    args.push(text.quote_font_size.to_string());
+    args.push(effective_quote_size.to_string());
     args.push(format!("caption:{quote_body}"));
     args.push(")".to_string());
     args.push("-gravity".to_string());
@@ -204,7 +216,7 @@ fn render_with_imagemagick(
             args.push("-font".to_string());
             args.push(text.font_family.to_string());
             args.push("-pointsize".to_string());
-            args.push(text.quote_font_size.to_string());
+            args.push(author_size.to_string());
             args.push(format!("caption:- {author_text}"));
             args.push(")".to_string());
             args.push("-gravity".to_string());
@@ -236,7 +248,7 @@ fn render_with_imagemagick(
         args.push("-font".to_string());
         args.push(text.font_family.to_string());
         args.push("-pointsize".to_string());
-        args.push(text.quote_font_size.to_string());
+        args.push(author_size.to_string());
         args.push(format!("caption:- {author_text}"));
         args.push(")".to_string());
         args.push("-gravity".to_string());
@@ -377,6 +389,36 @@ fn resolve_text_box_pct(text: &PreviewText<'_>) -> (u32, u32) {
         ),
         _ => (50, 50),
     }
+}
+
+fn resolve_quote_font_size(
+    quote_body: &str,
+    preferred: u32,
+    text: &PreviewText<'_>,
+    box_w: i32,
+    box_h: i32,
+) -> u32 {
+    if !text.quote_auto_fit {
+        return preferred.max(text.quote_min_font_size.max(8));
+    }
+    let min_size = text.quote_min_font_size.max(8);
+    let mut size = preferred.max(min_size);
+
+    // Approximate wrap/line-height until content likely fits in text box.
+    while size > min_size {
+        let char_w = (size as f32 * 0.55).max(6.0);
+        let cols = ((box_w as f32) / char_w).max(8.0);
+        let chars = quote_body.chars().count() as f32;
+        let lines = (chars / cols).ceil().max(1.0);
+        let needed_h = lines * (size as f32 * 1.35);
+        let max_h = (box_h as f32 * 0.75).max(80.0);
+        if needed_h <= max_h {
+            break;
+        }
+        size -= 1;
+    }
+
+    size.max(min_size)
 }
 
 fn render_with_native_bmp(
@@ -736,6 +778,8 @@ mod tests {
                 quote_font_size: 24,
                 quote_pos_x: 10,
                 quote_pos_y: 20,
+                quote_auto_fit: true,
+                quote_min_font_size: 14,
                 font_family: "DejaVu-Sans",
                 quote_color: "#FFFFFF",
                 clock_font_size: 28,
@@ -783,6 +827,8 @@ mod tests {
                 quote_font_size: 24,
                 quote_pos_x: 2,
                 quote_pos_y: 2,
+                quote_auto_fit: true,
+                quote_min_font_size: 14,
                 font_family: "DejaVu-Sans",
                 quote_color: "#FFFFFF",
                 clock_font_size: 24,

@@ -41,6 +41,8 @@ pub struct AppConfig {
     pub quote_font_size: u32,
     pub quote_pos_x: i32,
     pub quote_pos_y: i32,
+    pub quote_auto_fit: bool,
+    pub quote_min_font_size: u32,
     pub font_family: String,
     pub quote_color: String,
     pub clock_font_size: u32,
@@ -88,6 +90,8 @@ quote_avoid_repeat = true
 quote_font_size = 36
 quote_pos_x = 80
 quote_pos_y = 860
+quote_auto_fit = true
+quote_min_font_size = 18
 font_family = "DejaVu-Sans"
 quote_color = "#FFFFFF"
 clock_font_size = 44
@@ -120,7 +124,7 @@ wallpaper_fit_mode = "zoom"
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
+        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -138,6 +142,8 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.quote_font_size,
         cfg.quote_pos_x,
         cfg.quote_pos_y,
+        cfg.quote_auto_fit,
+        cfg.quote_min_font_size,
         cfg.font_family,
         cfg.quote_color,
         cfg.clock_font_size,
@@ -204,6 +210,8 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"quote_font_size","group":"layout","label":"Quote Font Size","type":"u32","required":false,"default":36,"min":8},
     {"key":"quote_pos_x","group":"layout","label":"Quote X","type":"i32","required":false,"default":80},
     {"key":"quote_pos_y","group":"layout","label":"Quote Y","type":"i32","required":false,"default":860},
+    {"key":"quote_auto_fit","group":"layout","label":"Auto Fit Quote","type":"bool","required":false,"default":true},
+    {"key":"quote_min_font_size","group":"layout","label":"Quote Min Font Size","type":"u32","required":false,"default":18,"min":8},
     {"key":"font_family","group":"layout","label":"Font Family","type":"enum","required":false,"default":"DejaVu-Sans","options":["DejaVu-Sans","Noto-Sans","Liberation-Sans","Serif","Monospace"]},
     {"key":"quote_color","group":"layout","label":"Quote Color","type":"string","required":false,"default":"#FFFFFF"},
     {"key":"clock_font_size","group":"layout","label":"Clock Font Size","type":"u32","required":false,"default":44,"min":8},
@@ -269,6 +277,8 @@ pub fn settings_ui_blueprint_json() -> &'static str {
           "quote_font_size",
           "quote_pos_x",
           "quote_pos_y",
+          "quote_auto_fit",
+          "quote_min_font_size",
           "font_family",
           "quote_color",
           "clock_font_size",
@@ -347,6 +357,8 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut quote_font_size = None::<u32>;
     let mut quote_pos_x = None::<i32>;
     let mut quote_pos_y = None::<i32>;
+    let mut quote_auto_fit = None::<bool>;
+    let mut quote_min_font_size = None::<u32>;
     let mut font_family = None::<String>;
     let mut quote_color = None::<String>;
     let mut clock_font_size = None::<u32>;
@@ -403,6 +415,8 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "quote_font_size" => quote_font_size = parse_u32(value),
             "quote_pos_x" => quote_pos_x = parse_i32(value),
             "quote_pos_y" => quote_pos_y = parse_i32(value),
+            "quote_auto_fit" => quote_auto_fit = parse_bool(value),
+            "quote_min_font_size" => quote_min_font_size = parse_u32(value),
             "font_family" => font_family = parse_string(value),
             "quote_color" => quote_color = parse_string(value),
             "clock_font_size" => clock_font_size = parse_u32(value),
@@ -451,6 +465,8 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         quote_font_size: quote_font_size.unwrap_or(36).max(8),
         quote_pos_x: quote_pos_x.unwrap_or(80),
         quote_pos_y: quote_pos_y.unwrap_or(860),
+        quote_auto_fit: quote_auto_fit.unwrap_or(true),
+        quote_min_font_size: quote_min_font_size.unwrap_or(18).max(8),
         font_family: font_family.unwrap_or_else(|| "DejaVu-Sans".to_string()),
         quote_color: quote_color.unwrap_or_else(|| "#FFFFFF".to_string()),
         clock_font_size: clock_font_size.unwrap_or(44).max(8),
@@ -940,6 +956,8 @@ mod tests {
         assert_eq!(cfg.quote_font_size, 36);
         assert_eq!(cfg.quote_pos_x, 80);
         assert_eq!(cfg.quote_pos_y, 860);
+        assert!(cfg.quote_auto_fit);
+        assert_eq!(cfg.quote_min_font_size, 18);
         assert_eq!(cfg.font_family, "DejaVu-Sans");
         assert_eq!(cfg.quote_color, "#FFFFFF");
         assert_eq!(cfg.clock_font_size, 44);
