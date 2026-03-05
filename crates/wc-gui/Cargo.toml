@@ -1,0 +1,11 @@
+[package]
+name = "wc-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+eframe = { package = "eframe", version = "0.31" }
+egui = "0.31"
+wc-core = { path = "../wc-core" }
