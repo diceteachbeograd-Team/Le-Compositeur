@@ -28,7 +28,8 @@ Implemented:
   - `render-preview` (image/quote rotation + metadata sidecar)
   - `run` (`--once` for single cycle, loop mode otherwise)
 - shared rotation timer (`refresh_seconds`) for both image and quote updates
-- no-repeat history for local sources (last 3 image/quote picks)
+- no-repeat history for local sources (history-based rotation memory)
+- dynamic canvas sizing from current desktop resolution (auto-detected at runtime, fallback `1920x1080`)
 - ImageMagick render path with explicit background layer + quote/clock overlay
 - quote box size presets (`quarter`, `third`, `half`, `full`, `custom`) applied relative to current image dimensions
 - quote font rendered at configured size (no image-size-based downscale)
@@ -161,6 +162,7 @@ just migrate
 - optionally applies wallpaper if enabled in config
 - supports source selection via `local`, `preset`, `url` for both images and quotes
 - local source mode supports no-repeat history over the last 3 picks for images and quotes (when `*_avoid_repeat = true`)
+- in random mode, no-repeat uses source-count-aware history windows to reduce quick repeats
 
 `run [--config <PATH>] [--once]`
 - runs the generation cycle

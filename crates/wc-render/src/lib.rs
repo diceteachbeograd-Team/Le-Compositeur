@@ -2,9 +2,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const DEFAULT_CANVAS_W: i32 = 1920;
-const DEFAULT_CANVAS_H: i32 = 1080;
-
 #[derive(Debug, Clone)]
 pub struct PreviewText<'a> {
     pub quote: &'a str,
@@ -30,6 +27,8 @@ pub struct PreviewText<'a> {
     pub text_box_size: &'a str,
     pub text_box_width_pct: u32,
     pub text_box_height_pct: u32,
+    pub canvas_width: u32,
+    pub canvas_height: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -60,7 +59,7 @@ pub fn render_preview_to_file(
 
     let meta_path = metadata_path_for(output_image);
     let metadata = format!(
-        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nsource_image = {:?}\n",
+        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
         render_mode,
         text.quote,
         text.clock,
@@ -85,6 +84,8 @@ pub fn render_preview_to_file(
         text.text_box_size,
         text.text_box_width_pct,
         text.text_box_height_pct,
+        text.canvas_width,
+        text.canvas_height,
         source_image.display().to_string()
     );
 
@@ -125,7 +126,8 @@ fn render_with_imagemagick(
     let rtl = is_rtl_text(&quote_body);
     let quote_gravity = if rtl { "East" } else { "West" };
     let author_gravity = if rtl { "West" } else { "East" };
-    let (canvas_w, canvas_h) = (DEFAULT_CANVAS_W, DEFAULT_CANVAS_H);
+    let canvas_w = text.canvas_width.max(1);
+    let canvas_h = text.canvas_height.max(1);
 
     // Build an explicit background layer first so image scaling/placement is independent
     // from the quote box/text layer rendered afterwards.
@@ -140,8 +142,8 @@ fn render_with_imagemagick(
     args.push(")".to_string());
 
     let (box_w_pct, box_h_pct) = resolve_text_box_pct(text);
-    let box_w = ((canvas_w * box_w_pct as i32) / 100).max(240);
-    let box_h = ((canvas_h * box_h_pct as i32) / 100).max(160);
+    let box_w = (((canvas_w as i32) * box_w_pct as i32) / 100).max(240);
+    let box_h = (((canvas_h as i32) * box_h_pct as i32) / 100).max(160);
     let effective_quote_size = resolve_quote_font_size(text.quote_font_size, text);
     let author_size = ((effective_quote_size as f32) * 0.85).round() as u32;
     let author_h = (author_size as i32 * 2).max(40);
@@ -767,6 +769,8 @@ mod tests {
                 text_box_size: "quarter",
                 text_box_width_pct: 50,
                 text_box_height_pct: 50,
+                canvas_width: 1920,
+                canvas_height: 1080,
             },
         )
         .expect("render should succeed");
@@ -816,6 +820,8 @@ mod tests {
                 text_box_size: "quarter",
                 text_box_width_pct: 50,
                 text_box_height_pct: 50,
+                canvas_width: 1920,
+                canvas_height: 1080,
             },
         )
         .expect("native bmp render should return status");

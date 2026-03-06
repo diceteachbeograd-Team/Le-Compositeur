@@ -3,20 +3,22 @@ use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use wc_backend::apply_wallpaper;
 use wc_core::{
     AppConfig, build_doctor_report, builtin_image_presets, builtin_quote_presets, cycle_index,
-    default_config_path, default_config_toml, expand_tilde, image_preset_endpoint, load_config,
-    pick_background_image_with_mode, pick_quote_with_mode, presets_catalog_json,
-    quote_preset_endpoint, settings_schema_json, settings_ui_blueprint_json, to_config_toml,
+    default_config_path, default_config_toml, expand_tilde, image_preset_endpoint,
+    list_background_images, load_config, load_quotes, pick_background_image_with_mode,
+    pick_quote_with_mode, presets_catalog_json, quote_preset_endpoint, settings_schema_json,
+    settings_ui_blueprint_json, to_config_toml,
 };
 use wc_render::{PreviewText, render_preview_to_file};
 use wc_source::{ImageProvider, QuoteProvider, fetch_remote_image, fetch_remote_quote};
 
-const NO_REPEAT_HISTORY_SIZE: usize = 3;
+const MAX_STORED_HISTORY: usize = 64;
 
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
@@ -160,6 +162,8 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     let source_image = resolve_source_image(cfg, image_cycle)?;
     let quote = resolve_quote(cfg, quote_cycle)?;
     let clock = chrono::Local::now().format(&cfg.time_format).to_string();
+    let (canvas_width, canvas_height) = detect_canvas_size();
+    let (image_pool_size, quote_pool_size) = detect_local_pool_sizes(cfg);
 
     ensure_parent_dir(&output_path)?;
     let render = render_preview_to_file(
@@ -189,6 +193,8 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             text_box_size: &cfg.text_box_size,
             text_box_width_pct: cfg.text_box_width_pct,
             text_box_height_pct: cfg.text_box_height_pct,
+            canvas_width,
+            canvas_height,
         },
     )
     .map_err(anyhow::Error::msg)?;
@@ -196,8 +202,15 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     println!("image_cycle: {}", image_cycle);
     println!("quote_cycle: {}", quote_cycle);
     println!("source_image: {}", source_image.display());
+    if let Some(count) = image_pool_size {
+        println!("image_pool_size: {}", count);
+    }
+    if let Some(count) = quote_pool_size {
+        println!("quote_pool_size: {}", count);
+    }
     println!("quote: {}", quote);
     println!("clock: {}", clock);
+    println!("canvas: {}x{}", canvas_width, canvas_height);
     println!("preview_mode: {}", render.preview_mode);
     println!("preview_output: {}", output_path.display());
     println!("preview_metadata: {}", render.meta_path.display());
@@ -212,6 +225,24 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     println!("wallpaper_apply: {}", apply_status);
 
     Ok(())
+}
+
+fn detect_local_pool_sizes(cfg: &AppConfig) -> (Option<usize>, Option<usize>) {
+    let image_count = if cfg.image_source.trim().eq_ignore_ascii_case("local") {
+        expand_tilde(&cfg.image_dir)
+            .ok()
+            .and_then(|dir| list_background_images(&dir).ok().map(|v| v.len()))
+    } else {
+        None
+    };
+    let quote_count = if cfg.quote_source.trim().eq_ignore_ascii_case("local") {
+        expand_tilde(&cfg.quotes_path)
+            .ok()
+            .and_then(|path| load_quotes(&path).ok().map(|v| v.len()))
+    } else {
+        None
+    };
+    (image_count, quote_count)
 }
 
 fn validate_config(cfg: &AppConfig) -> Result<()> {
@@ -418,6 +449,67 @@ fn now_epoch_seconds() -> u64 {
         .unwrap_or(0)
 }
 
+fn detect_canvas_size() -> (u32, u32) {
+    if let Some(size) = detect_resolution_via_xrandr() {
+        return size;
+    }
+    if let Some(size) = detect_resolution_via_xdpyinfo() {
+        return size;
+    }
+    (1920, 1080)
+}
+
+fn detect_resolution_via_xrandr() -> Option<(u32, u32)> {
+    let out = Command::new("xrandr").arg("--current").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8_lossy(&out.stdout);
+    for line in raw.lines() {
+        if !line.contains('*') {
+            continue;
+        }
+        for token in line.split_whitespace() {
+            if let Some((w, h)) = parse_resolution_token(token) {
+                return Some((w, h));
+            }
+        }
+    }
+    None
+}
+
+fn detect_resolution_via_xdpyinfo() -> Option<(u32, u32)> {
+    let out = Command::new("xdpyinfo").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8_lossy(&out.stdout);
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("dimensions:") {
+            continue;
+        }
+        for token in trimmed.split_whitespace() {
+            if let Some((w, h)) = parse_resolution_token(token) {
+                return Some((w, h));
+            }
+        }
+    }
+    None
+}
+
+fn parse_resolution_token(token: &str) -> Option<(u32, u32)> {
+    let clean = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != 'x');
+    let (w_raw, h_raw) = clean.split_once('x')?;
+    let w = w_raw.parse::<u32>().ok()?;
+    let h = h_raw.parse::<u32>().ok()?;
+    if w >= 320 && h >= 200 {
+        Some((w, h))
+    } else {
+        None
+    }
+}
+
 fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {
     match cfg.image_source.trim().to_ascii_lowercase().as_str() {
         "local" => {
@@ -502,14 +594,14 @@ fn read_recent_indices(path: &Path) -> Vec<usize> {
     let raw = fs::read_to_string(path).unwrap_or_default();
     raw.split(',')
         .filter_map(|part| part.trim().parse::<usize>().ok())
-        .take(NO_REPEAT_HISTORY_SIZE)
+        .take(MAX_STORED_HISTORY)
         .collect::<Vec<_>>()
 }
 
 fn write_recent_indices(path: &Path, previous: &[usize], next_idx: usize) -> Result<()> {
     let mut merged = vec![next_idx];
     for idx in previous.iter().copied() {
-        if idx != next_idx && merged.len() < NO_REPEAT_HISTORY_SIZE {
+        if idx != next_idx && merged.len() < MAX_STORED_HISTORY {
             merged.push(idx);
         }
     }

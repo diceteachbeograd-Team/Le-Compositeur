@@ -790,9 +790,16 @@ fn pick_index_with_mode(
     };
 
     if avoid_repeat && len > 1 {
+        let history_window = if mode.trim().eq_ignore_ascii_case("random") {
+            // Use collection size to reduce quick repeats in random mode.
+            (len / 3).clamp(3, 8).min(len.saturating_sub(1))
+        } else {
+            1
+        };
         let blocked = recent_indices
             .iter()
             .copied()
+            .take(history_window)
             .filter(|i| *i < len)
             .collect::<Vec<_>>();
         if blocked.len() < len && blocked.contains(&idx) {
@@ -1173,8 +1180,8 @@ mod tests {
 
     #[test]
     fn pick_index_avoids_last_three_when_enabled() {
-        let idx = super::pick_index_with_mode(6, 0, "sequential", true, &[0, 1, 2]);
-        assert_eq!(idx, 3);
+        let idx = super::pick_index_with_mode(12, 0, "random", true, &[0, 1, 2, 3]);
+        assert!(![0, 1, 2, 3].contains(&idx));
     }
 
     #[test]

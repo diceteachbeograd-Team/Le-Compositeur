@@ -25,13 +25,14 @@ Rotation strategy:
 - Time-based cycle index remains baseline.
 - Shared timer strategy: one cycle timer (`refresh_seconds`) drives both image and quote updates.
 - Optional persistent state file stores last used cycle so sequence continues across restarts.
-- Local no-repeat history keeps last 3 picks for images and quotes to avoid short repeat loops.
+- Local no-repeat history stores a rolling pick history and applies source-count-aware windows (especially in `random`) to avoid short repeat loops.
 
 Render layering strategy:
 - Background image is prepared first as independent layer.
 - Quote/author/clock overlays are composed afterwards.
 - Text box sizes (`quarter/third/half/full/custom`) are resolved against current image dimensions.
 - Quote font size follows configured value and is not downscaled by image-size heuristics.
+- Canvas size is auto-detected from current desktop resolution each cycle (fallback `1920x1080`).
 
 GUI contract strategy:
 - `export-schema` provides a machine-readable contract for settings UI generation.
