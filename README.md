@@ -47,7 +47,7 @@ Not implemented yet:
 ### 3. Technology stack and versions
 Core stack:
 - Language: Rust (edition `2024`)
-- Workspace version: `0.1.0`
+- Workspace version: `1.20260306.1`
 - License: `GPL-3.0-or-later`
 
 Crates currently in use:
@@ -145,17 +145,31 @@ just migrate
 
 Alpha packaging helpers:
 ```bash
-./scripts/build-alpha-rpm.sh 0.1.0
-./scripts/build-alpha-deb.sh 0.1.0
+./scripts/build-alpha-rpm.sh 1.20260306.1
+./scripts/build-alpha-deb.sh 1.20260306.1
 ```
 
-### 6.1 Run on your system (alpha)
-Download artifacts from GitHub Releases (tag `alpha-v...`) or from the `Release Alpha Artifacts` workflow.
+### 6.1 Run on your system (release)
+Versioning scheme:
+- release version format: `1.YYYYMMDD.N`
+- example: `1.20260306.1`
+- if multiple builds happen on the same date, increment `N` (`.2`, `.3`, ...)
+
+You can choose either path:
+- `Option A`: install prebuilt packages from GitHub Releases (`v...`) or from `packaging/releases/<version>/`
+- `Option B`: build packages locally from source
 
 Fedora / RHEL (RPM):
 ```bash
+# Option A: install prebuilt RPM
 # install
 sudo dnf install ./wallpaper-composer-*.rpm
+
+# Option B: local build + install
+sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
+rpmdev-setuptree
+./scripts/build-alpha-rpm.sh 1.20260306.1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-1.20260306.1-1*.rpm
 
 # start GUI
 wc-gui
@@ -166,8 +180,15 @@ wc-cli run --once
 
 Ubuntu / Debian (DEB):
 ```bash
+# Option A: install prebuilt DEB
 # install
 sudo apt install ./wallpaper-composer_*_amd64.deb
+
+# Option B: local build + install
+sudo apt update
+sudo apt install -y rustc cargo dpkg-dev
+./scripts/build-alpha-deb.sh 1.20260306.1
+sudo apt install ./dist/wallpaper-composer_1.20260306.1_amd64.deb
 
 # start GUI
 wc-gui
@@ -197,7 +218,7 @@ wc-cli init
 # ~/Documents/wallpaper-composer/quotes.md
 ```
 
-### 6.2 Size and runtime profile (alpha, reference values)
+### 6.2 Size and runtime profile (reference values)
 Measured release binary sizes:
 - `wc-cli`: about `1.3 MB`
 - `wc-gui`: about `11 MB`
@@ -452,7 +473,7 @@ Noch offen:
 
 ### 3. Technologien und Versionen
 - Sprache: Rust (Edition `2024`)
-- Projektversion: `0.1.0`
+- Projektversion: `1.20260306.1`
 - Lizenz: `GPL-3.0-or-later`
 
 Aktuell genutzte Crates:
@@ -509,23 +530,46 @@ cargo run -p wc-gui
 
 Alpha-Paket-Helfer:
 ```bash
-./scripts/build-alpha-rpm.sh 0.1.0
-./scripts/build-alpha-deb.sh 0.1.0
+./scripts/build-alpha-rpm.sh 1.20260306.1
+./scripts/build-alpha-deb.sh 1.20260306.1
 ```
 
-### 6.1 Auf deinem System starten (alpha)
-Artefakte kommen uber GitHub Releases (Tag `alpha-v...`) oder den Workflow `Release Alpha Artifacts`.
+### 6.1 Auf deinem System starten (release)
+Versionsschema:
+- Release-Format: `1.YYYYMMDD.N`
+- Beispiel: `1.20260306.1`
+- bei mehreren Builds am gleichen Tag `N` hochzahlen (`.2`, `.3`, ...)
+
+Zwei Wege:
+- `Option A`: fertige Pakete aus GitHub Releases (`v...`) oder `packaging/releases/<version>/`
+- `Option B`: lokal aus Source bauen
 
 Fedora / RHEL (RPM):
 ```bash
+# Option A
 sudo dnf install ./wallpaper-composer-*.rpm
+
+# Option B
+sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
+rpmdev-setuptree
+./scripts/build-alpha-rpm.sh 1.20260306.1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-1.20260306.1-1*.rpm
+
 wc-gui
 wc-cli run --once
 ```
 
 Ubuntu / Debian (DEB):
 ```bash
+# Option A
 sudo apt install ./wallpaper-composer_*_amd64.deb
+
+# Option B
+sudo apt update
+sudo apt install -y rustc cargo dpkg-dev
+./scripts/build-alpha-deb.sh 1.20260306.1
+sudo apt install ./dist/wallpaper-composer_1.20260306.1_amd64.deb
+
 wc-gui
 wc-cli run --once
 ```
@@ -676,7 +720,7 @@ Nije jos uradjeno:
 
 ### 3. Tehnologije i verzije
 - Jezik: Rust (edition `2024`)
-- Verzija projekta: `0.1.0`
+- Verzija projekta: `1.20260306.1`
 - Licenca: `GPL-3.0-or-later`
 
 Crate-ovi:
@@ -733,23 +777,46 @@ cargo run -p wc-gui
 
 Alpha helper skripte:
 ```bash
-./scripts/build-alpha-rpm.sh 0.1.0
-./scripts/build-alpha-deb.sh 0.1.0
+./scripts/build-alpha-rpm.sh 1.20260306.1
+./scripts/build-alpha-deb.sh 1.20260306.1
 ```
 
-### 6.1 Pokretanje na svom sistemu (alpha)
-Artefakti su dostupni preko GitHub Releases (`alpha-v...`) ili workflow-a `Release Alpha Artifacts`.
+### 6.1 Pokretanje na svom sistemu (release)
+Verzionisanje:
+- format izdanja: `1.YYYYMMDD.N`
+- primer: `1.20260306.1`
+- za vise buildova istog dana povecaj `N` (`.2`, `.3`, ...)
+
+Imas dve opcije:
+- `Option A`: prebuilt paketi iz GitHub Releases (`v...`) ili iz `packaging/releases/<version>/`
+- `Option B`: lokalni build iz source koda
 
 Fedora / RHEL (RPM):
 ```bash
+# Option A
 sudo dnf install ./wallpaper-composer-*.rpm
+
+# Option B
+sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
+rpmdev-setuptree
+./scripts/build-alpha-rpm.sh 1.20260306.1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-1.20260306.1-1*.rpm
+
 wc-gui
 wc-cli run --once
 ```
 
 Ubuntu / Debian (DEB):
 ```bash
+# Option A
 sudo apt install ./wallpaper-composer_*_amd64.deb
+
+# Option B
+sudo apt update
+sudo apt install -y rustc cargo dpkg-dev
+./scripts/build-alpha-deb.sh 1.20260306.1
+sudo apt install ./dist/wallpaper-composer_1.20260306.1_amd64.deb
+
 wc-gui
 wc-cli run --once
 ```
@@ -843,7 +910,7 @@ Napomene:
 
 CI:
 - `.github/workflows/ci.yml` (fmt/clippy/test)
-- `.github/workflows/release-alpha.yml` (alpha artefakti za Linux/Windows/macOS)
+- `.github/workflows/release-alpha.yml` (release artefakti za Linux/Windows/macOS)
 
 ### 10. Plan
 MVP:
@@ -900,7 +967,7 @@ Wallpaper Composer 是一个面向 Linux 桌面环境的 Rust 开源项目。
 
 ### 3. 技术栈与版本
 - 语言：Rust（edition `2024`）
-- 项目版本：`0.1.0`
+- 项目版本：`1.20260306.1`
 - 许可证：`GPL-3.0-or-later`
 
 当前依赖：
@@ -957,23 +1024,46 @@ cargo run -p wc-gui
 
 Alpha 打包脚本：
 ```bash
-./scripts/build-alpha-rpm.sh 0.1.0
-./scripts/build-alpha-deb.sh 0.1.0
+./scripts/build-alpha-rpm.sh 1.20260306.1
+./scripts/build-alpha-deb.sh 1.20260306.1
 ```
 
-### 6.1 在你的系统上启动（alpha）
-可从 GitHub Releases（`alpha-v...`）或 `Release Alpha Artifacts` 工作流下载构建产物。
+### 6.1 在你的系统上启动（release）
+版本规则：
+- 发布格式：`1.YYYYMMDD.N`
+- 示例：`1.20260306.1`
+- 同一天多次构建时递增 `N`（`.2`、`.3`）
+
+可选两种方式：
+- `Option A`：使用 GitHub Releases（`v...`）或 `packaging/releases/<version>/` 里的预构建包
+- `Option B`：本地从源码构建
 
 Fedora / RHEL（RPM）：
 ```bash
+# Option A
 sudo dnf install ./wallpaper-composer-*.rpm
+
+# Option B
+sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
+rpmdev-setuptree
+./scripts/build-alpha-rpm.sh 1.20260306.1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-1.20260306.1-1*.rpm
+
 wc-gui
 wc-cli run --once
 ```
 
 Ubuntu / Debian（DEB）：
 ```bash
+# Option A
 sudo apt install ./wallpaper-composer_*_amd64.deb
+
+# Option B
+sudo apt update
+sudo apt install -y rustc cargo dpkg-dev
+./scripts/build-alpha-deb.sh 1.20260306.1
+sudo apt install ./dist/wallpaper-composer_1.20260306.1_amd64.deb
+
 wc-gui
 wc-cli run --once
 ```
@@ -1067,7 +1157,7 @@ Author Name
 
 CI：
 - `.github/workflows/ci.yml`（fmt/clippy/test）
-- `.github/workflows/release-alpha.yml`（Linux/Windows/macOS alpha 构建产物）
+- `.github/workflows/release-alpha.yml`（Linux/Windows/macOS release 构建产物）
 
 ### 10. 路线图
 MVP：

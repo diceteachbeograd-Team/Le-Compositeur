@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.20260306.1 - 2026-03-06
+- First release-line version with scheme `1.YYYYMMDD.N`.
+- Added dynamic release staging folder layout under `packaging/releases/1.20260306.1/`.
+- Unified image/quote timer handling and improved run-loop timing stability in VM usage.
+- Added multi-URL support for custom image/quote endpoints (newline/`;`/`|` separators).
+- Refreshed image presets and improved remote source robustness/fallback behavior.
+- Added packaged local multilingual quotes defaults and expanded README formatting docs.
+- Moved wallpaper settings into the Images tab and aligned Linux app icon mapping for GNOME.
+- Switched Linux desktop icon packaging to explicit PNG usage to avoid stale theme overrides.
+
 ## 0.1.0 - 2026-03-04
 - Initial Rust workspace with `wc-cli`, `wc-core`, `wc-render`.
 - Added first CLI subcommands: `doctor`, `render-preview`.
