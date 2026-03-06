@@ -1,8 +1,8 @@
 # Changelog
 
-## 1.20260306.1 - 2026-03-06
+## 1.20260307.2 - 2026-03-06
 - First release-line version with scheme `1.YYYYMMDD.N`.
-- Added dynamic release staging folder layout under `packaging/releases/1.20260306.1/`.
+- Added dynamic release staging folder layout under `packaging/releases/1.20260307.2/`.
 - Unified image/quote timer handling and improved run-loop timing stability in VM usage.
 - Added multi-URL support for custom image/quote endpoints (newline/`;`/`|` separators).
 - Refreshed image presets and improved remote source robustness/fallback behavior.

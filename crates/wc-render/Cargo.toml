@@ -1,6 +1,6 @@
 [package]
 name = "wc-render"
-version = "1.20260306.1"
+version = "1.20260307.2"
 edition.workspace = true
 license.workspace = true
 
