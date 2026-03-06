@@ -660,6 +660,44 @@ impl WcGuiApp {
             ui.add(egui::DragValue::new(&mut self.cfg.image_refresh_seconds).speed(1))
                 .on_hover_text(self.hover_text("image_refresh"));
         });
+
+        ui.separator();
+        ui.heading("Wallpaper");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.cfg.apply_wallpaper, "Apply wallpaper")
+                .on_hover_text(self.hover_text("apply_wallpaper"));
+            ui.label("Backend");
+            egui::ComboBox::from_id_salt("backend_images_tab")
+                .selected_text(&self.cfg.wallpaper_backend)
+                .show_ui(ui, |ui| {
+                    for mode in ["auto", "gnome", "sway", "feh", "noop"] {
+                        ui.selectable_value(
+                            &mut self.cfg.wallpaper_backend,
+                            mode.to_string(),
+                            mode,
+                        );
+                    }
+                });
+            ui.label("Fit");
+            egui::ComboBox::from_id_salt("fit_images_tab")
+                .selected_text(&self.cfg.wallpaper_fit_mode)
+                .show_ui(ui, |ui| {
+                    for mode in [
+                        "zoom",
+                        "scaled",
+                        "stretched",
+                        "spanned",
+                        "centered",
+                        "wallpaper",
+                    ] {
+                        ui.selectable_value(
+                            &mut self.cfg.wallpaper_fit_mode,
+                            mode.to_string(),
+                            mode,
+                        );
+                    }
+                });
+        });
     }
 
     fn render_quotes_tab(&mut self, ui: &mut egui::Ui) {
@@ -898,43 +936,6 @@ impl WcGuiApp {
             if ui.button("Remove Autostart").clicked() {
                 self.remove_autostart();
             }
-        });
-        ui.separator();
-        ui.heading("Wallpaper");
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut self.cfg.apply_wallpaper, "Apply wallpaper")
-                .on_hover_text(self.hover_text("apply_wallpaper"));
-            ui.label("Backend");
-            egui::ComboBox::from_id_salt("backend")
-                .selected_text(&self.cfg.wallpaper_backend)
-                .show_ui(ui, |ui| {
-                    for mode in ["auto", "gnome", "sway", "feh", "noop"] {
-                        ui.selectable_value(
-                            &mut self.cfg.wallpaper_backend,
-                            mode.to_string(),
-                            mode,
-                        );
-                    }
-                });
-            ui.label("Fit");
-            egui::ComboBox::from_id_salt("fit")
-                .selected_text(&self.cfg.wallpaper_fit_mode)
-                .show_ui(ui, |ui| {
-                    for mode in [
-                        "zoom",
-                        "scaled",
-                        "stretched",
-                        "spanned",
-                        "centered",
-                        "wallpaper",
-                    ] {
-                        ui.selectable_value(
-                            &mut self.cfg.wallpaper_fit_mode,
-                            mode.to_string(),
-                            mode,
-                        );
-                    }
-                });
         });
     }
 }
