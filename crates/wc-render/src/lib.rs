@@ -2,6 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+const DEFAULT_CANVAS_W: i32 = 1920;
+const DEFAULT_CANVAS_H: i32 = 1080;
+
 #[derive(Debug, Clone)]
 pub struct PreviewText<'a> {
     pub quote: &'a str,
@@ -122,24 +125,23 @@ fn render_with_imagemagick(
     let rtl = is_rtl_text(&quote_body);
     let quote_gravity = if rtl { "East" } else { "West" };
     let author_gravity = if rtl { "West" } else { "East" };
-    let (img_w, img_h) =
-        detect_image_dimensions(&source_image.display().to_string()).unwrap_or((1920, 1080));
+    let (canvas_w, canvas_h) = (DEFAULT_CANVAS_W, DEFAULT_CANVAS_H);
 
     // Build an explicit background layer first so image scaling/placement is independent
     // from the quote box/text layer rendered afterwards.
     args.push("(".to_string());
     args.push(source_image.display().to_string());
     args.push("-resize".to_string());
-    args.push(format!("{img_w}x{img_h}^"));
+    args.push(format!("{canvas_w}x{canvas_h}^"));
     args.push("-gravity".to_string());
     args.push("Center".to_string());
     args.push("-extent".to_string());
-    args.push(format!("{img_w}x{img_h}"));
+    args.push(format!("{canvas_w}x{canvas_h}"));
     args.push(")".to_string());
 
     let (box_w_pct, box_h_pct) = resolve_text_box_pct(text);
-    let box_w = ((img_w * box_w_pct as i32) / 100).max(240);
-    let box_h = ((img_h * box_h_pct as i32) / 100).max(160);
+    let box_w = ((canvas_w * box_w_pct as i32) / 100).max(240);
+    let box_h = ((canvas_h * box_h_pct as i32) / 100).max(160);
     let effective_quote_size = resolve_quote_font_size(text.quote_font_size, text);
     let author_size = ((effective_quote_size as f32) * 0.85).round() as u32;
     let author_h = (author_size as i32 * 2).max(40);
@@ -369,21 +371,6 @@ fn is_rtl_char(c: char) -> bool {
             | 0xFB50..=0xFDFF // Arabic Presentation Forms-A
             | 0xFE70..=0xFEFF // Arabic Presentation Forms-B
     )
-}
-
-fn detect_image_dimensions(path: &str) -> Option<(i32, i32)> {
-    let out = Command::new("identify")
-        .args(["-format", "%w %h", path])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let raw = String::from_utf8_lossy(&out.stdout);
-    let mut parts = raw.split_whitespace();
-    let w = parts.next()?.parse::<i32>().ok()?;
-    let h = parts.next()?.parse::<i32>().ok()?;
-    Some((w, h))
 }
 
 fn resolve_text_box_pct(text: &PreviewText<'_>) -> (u32, u32) {
