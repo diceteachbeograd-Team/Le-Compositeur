@@ -28,6 +28,8 @@ install -Dpm0755 target/release/wc-gui %{buildroot}%{_bindir}/wc-gui
 install -Dpm0644 README.md %{buildroot}%{_docdir}/%{name}/README.md
 install -Dpm0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 install -Dpm0644 assets/icons/wallpaper-composer.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/wallpaper-composer.svg
+install -Dpm0644 assets/icons/wallpaper-composer.png %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/wallpaper-composer.png
+install -Dpm0644 assets/quotes/local/local-quotes.md %{buildroot}%{_datadir}/wallpaper-composer/quotes/local-quotes.md
 install -Dpm0644 packaging/linux/wallpaper-composer.desktop %{buildroot}%{_datadir}/applications/wallpaper-composer.desktop
 install -Dpm0644 packaging/linux/wallpaper-composer.metainfo.xml %{buildroot}%{_datadir}/metainfo/wallpaper-composer.metainfo.xml
 
@@ -37,6 +39,8 @@ install -Dpm0644 packaging/linux/wallpaper-composer.metainfo.xml %{buildroot}%{_
 %{_bindir}/wc-cli
 %{_bindir}/wc-gui
 %{_datadir}/icons/hicolor/scalable/apps/wallpaper-composer.svg
+%{_datadir}/icons/hicolor/512x512/apps/wallpaper-composer.png
+%{_datadir}/wallpaper-composer/quotes/local-quotes.md
 %{_datadir}/applications/wallpaper-composer.desktop
 %{_datadir}/metainfo/wallpaper-composer.metainfo.xml
 

@@ -7,12 +7,47 @@ use wc_core::{
 };
 
 fn main() -> eframe::Result<()> {
-    let native_options = eframe::NativeOptions::default();
+    let mut native_options = eframe::NativeOptions::default();
+    if let Some(icon) = load_app_icon() {
+        native_options.viewport = egui::ViewportBuilder::default().with_icon(icon);
+    }
     eframe::run_native(
         "Wallpaper Composer Settings",
         native_options,
         Box::new(|_cc| Ok(Box::new(WcGuiApp::new()))),
     )
+}
+
+fn load_app_icon() -> Option<egui::IconData> {
+    let mut candidates = Vec::<PathBuf>::new();
+    if let Ok(p) = std::env::var("WC_GUI_ICON") {
+        candidates.push(PathBuf::from(p));
+    }
+    candidates.push(PathBuf::from("assets/icons/wallpaper-composer.png"));
+    candidates.push(PathBuf::from(
+        "/usr/share/icons/hicolor/512x512/apps/wallpaper-composer.png",
+    ));
+    candidates.push(PathBuf::from(
+        "/usr/share/icons/hicolor/256x256/apps/wallpaper-composer.png",
+    ));
+
+    for path in candidates {
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let Ok(img) = image::load_from_memory(&bytes) else {
+            continue;
+        };
+        let rgba = img.into_rgba8();
+        let width = rgba.width();
+        let height = rgba.height();
+        return Some(egui::IconData {
+            rgba: rgba.into_raw(),
+            width,
+            height,
+        });
+    }
+    None
 }
 
 struct ThumbnailItem {
@@ -94,16 +129,16 @@ impl WcGuiApp {
                 "作用: 选择图片来源。方法: 本地文件夹、内置在线预设或自定义 URL。建议: 先用本地来源更稳定。"
             ),
             "image_preset" => self.t(
-                "What: online image catalog/source. How: pick a preset and run preview/once. Recommended: Picsum or NASA for quick tests.",
-                "Was: Online-Bildquelle/Katalog. Wie: Preset wählen und Vorschau/Einmallauf starten. Empfehlung: Picsum oder NASA für schnelle Tests.",
-                "Sta: online izvor/katalog slika. Kako: izaberi preset i pokreni pregled/jednom. Preporuka: Picsum ili NASA za brze testove.",
-                "作用: 在线图片来源/库。方法: 选择预设后运行预览或单次执行。建议: 测试时优先 Picsum 或 NASA。"
+                "What: online image source preset. How: pick one and test with Run Once. Recommended: start with Picsum; then try Wallhaven/LoremFlickr for variety.",
+                "Was: Online-Bildquellen-Preset. Wie: auswählen und mit Run Once testen. Empfehlung: mit Picsum starten, danach Wallhaven/LoremFlickr für Vielfalt.",
+                "Sta: preset za online slike. Kako: izaberi i testiraj sa Run Once. Preporuka: prvo Picsum, pa Wallhaven/LoremFlickr za raznolikost.",
+                "作用: 在线图片预设来源。方法: 选中后用 Run Once 测试。建议: 先用 Picsum，再试 Wallhaven/LoremFlickr。"
             ),
             "image_url" => self.t(
-                "What: direct remote image endpoint. How: paste a stable HTTPS URL that returns an image. Recommended: use presets unless you control the URL.",
-                "Was: direkte Remote-Bild-URL. Wie: stabile HTTPS-URL eintragen, die ein Bild liefert. Empfehlung: Presets nutzen, falls URL nicht unter eigener Kontrolle ist.",
-                "Sta: direktan udaljeni URL slike. Kako: unesi stabilan HTTPS URL koji vraća sliku. Preporuka: koristi preset ako ne kontrolišeš URL.",
-                "作用: 远程图片直链。方法: 填写返回图片的稳定 HTTPS URL。建议: 若 URL 不可控，优先用预设。"
+                "What: custom image URL list. How: add multiple URLs (one per line, or separated by ';'). Requirements: endpoint must return a real image (jpg/png/webp/bmp), preferably >=1920x1080, reachable within ~8s. Recommended: keep 3-10 stable sources.",
+                "Was: eigene Bild-URL-Liste. Wie: mehrere URLs eintragen (eine pro Zeile oder mit ';' trennen). Anforderungen: Endpoint muss ein echtes Bild liefern (jpg/png/webp/bmp), ideal >=1920x1080, erreichbar in ~8s. Empfehlung: 3-10 stabile Quellen verwenden.",
+                "Sta: lista prilagođenih URL-ova za slike. Kako: unesi više URL-ova (jedan po redu ili odvojeno sa ';'). Uslovi: endpoint mora da vrati pravu sliku (jpg/png/webp/bmp), poželjno >=1920x1080, dostupan za ~8s. Preporuka: koristi 3-10 stabilnih izvora.",
+                "作用: 自定义图片 URL 列表。方法: 可填多个 URL（每行一个，或用 ';' 分隔）。要求: 必须直接返回图片（jpg/png/webp/bmp），建议 >=1920x1080，约 8 秒内可访问。建议: 保持 3-10 个稳定来源。"
             ),
             "image_dir" => self.t(
                 "What: local wallpaper folder. How: choose a folder with jpg/png/webp/bmp files. Recommended: dedicated folder with curated images.",
@@ -124,10 +159,10 @@ impl WcGuiApp {
                 "作用: 在线引文提供方。方法: 选择后运行预览或单次执行。建议: 测试优先 ZenQuotes 或 DummyJSON。"
             ),
             "quote_url" => self.t(
-                "What: custom quote API URL. How: use an endpoint returning JSON/text quote content. Recommended: confirm rate limits and uptime first.",
-                "Was: eigene Zitat-API-URL. Wie: Endpoint mit JSON/Text für Zitatinhalt eintragen. Empfehlung: vorher Rate Limits und Verfügbarkeit prüfen.",
-                "Sta: prilagođeni URL za citate. Kako: koristi endpoint koji vraća JSON/tekst citata. Preporuka: proveri limit i dostupnost pre upotrebe.",
-                "作用: 自定义引文 API URL。方法: 使用返回 JSON/文本引文内容的接口。建议: 先确认限流和可用性。"
+                "What: custom quote URL list. How: add multiple endpoints (one per line, or separated by ';'). Requirements: each endpoint should return usable text/JSON quickly and consistently. Recommended: keep a small set of reliable APIs.",
+                "Was: eigene Zitat-URL-Liste. Wie: mehrere Endpoints eintragen (eine pro Zeile oder mit ';' trennen). Anforderungen: jeder Endpoint sollte schnell und zuverlässig nutzbaren Text/JSON liefern. Empfehlung: kleine, stabile API-Liste verwenden.",
+                "Sta: lista prilagođenih URL-ova za citate. Kako: unesi više endpointa (jedan po redu ili odvojeno sa ';'). Uslovi: svaki endpoint treba brzo i pouzdano da vrati upotrebljiv tekst/JSON. Preporuka: drži malu listu stabilnih API-ja.",
+                "作用: 自定义语录 URL 列表。方法: 可填多个接口（每行一个，或用 ';' 分隔）。要求: 每个接口都应稳定、快速返回可用文本/JSON。建议: 保持少量可靠 API。"
             ),
             "quotes_path" => self.t(
                 "What: local quote file path. How: choose .txt or .md file, then reload quotes preview. Recommended: keep short clean entries.",
@@ -287,6 +322,37 @@ impl WcGuiApp {
         self.status = "Runner started (continuous updates active)".to_string();
     }
 
+    fn start_detached_runner(&mut self) {
+        if let Err(e) = self.save_to_path_inner() {
+            self.status = format!("Cannot start detached runner before save: {e}");
+            return;
+        }
+
+        let path = self.config_path.clone();
+        let spawn_direct = self
+            .build_wc_cli_direct(&["run"], &path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        let result = match spawn_direct {
+            Ok(_child) => Ok(()),
+            Err(_) => self
+                .build_wc_cli_cargo(&["run"], &path)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map(|_child| ()),
+        };
+
+        match result {
+            Ok(()) => {
+                self.status =
+                    "Detached runner started (GUI can be closed; reopen GUI manually).".to_string()
+            }
+            Err(e) => self.status = format!("Detached runner start failed: {e}"),
+        }
+    }
+
     fn stop_runner(&mut self) {
         let Some(mut child) = self.runner.take() else {
             self.status = "Runner is not active".to_string();
@@ -295,6 +361,66 @@ impl WcGuiApp {
         let _ = child.kill();
         let _ = child.wait();
         self.status = "Runner stopped".to_string();
+    }
+
+    fn autostart_path() -> Option<PathBuf> {
+        #[cfg(target_os = "linux")]
+        {
+            let home = std::env::var_os("HOME")?;
+            return Some(
+                PathBuf::from(home)
+                    .join(".config")
+                    .join("autostart")
+                    .join("wallpaper-composer.desktop"),
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
+        }
+    }
+
+    fn autostart_enabled() -> bool {
+        Self::autostart_path().is_some_and(|p| p.exists())
+    }
+
+    fn install_autostart(&mut self) {
+        let Some(path) = Self::autostart_path() else {
+            self.status = "Autostart install is currently supported on Linux only.".to_string();
+            return;
+        };
+
+        let config = self.config_path.clone();
+        if let Some(parent) = path.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            self.status = format!("Autostart install failed (mkdir): {e}");
+            return;
+        }
+
+        let content = format!(
+            "[Desktop Entry]\nType=Application\nName=Wallpaper Composer Runner\nComment=Start Wallpaper Composer background runner on login\nExec=wc-cli run --config {}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+            config
+        );
+        match std::fs::write(&path, content) {
+            Ok(()) => self.status = format!("Autostart installed: {}", path.display()),
+            Err(e) => self.status = format!("Autostart install failed: {e}"),
+        }
+    }
+
+    fn remove_autostart(&mut self) {
+        let Some(path) = Self::autostart_path() else {
+            self.status = "Autostart remove is currently supported on Linux only.".to_string();
+            return;
+        };
+        if !path.exists() {
+            self.status = "Autostart file not present.".to_string();
+            return;
+        }
+        match std::fs::remove_file(&path) {
+            Ok(()) => self.status = format!("Autostart removed: {}", path.display()),
+            Err(e) => self.status = format!("Autostart remove failed: {e}"),
+        }
     }
 
     fn poll_runner_state(&mut self) {
@@ -468,7 +594,7 @@ impl WcGuiApp {
                         .cfg
                         .image_source_preset
                         .clone()
-                        .unwrap_or_else(|| "nasa_apod".to_string());
+                        .unwrap_or_else(|| "picsum_random_hd".to_string());
                     egui::ComboBox::from_id_salt("image_source_preset")
                         .selected_text(&selected)
                         .show_ui(ui, |ui| {
@@ -487,10 +613,14 @@ impl WcGuiApp {
             }
             "url" => {
                 ui.horizontal(|ui| {
-                    ui.label("Image URL");
+                    ui.label("Image URL(s)");
                     let mut url = self.cfg.image_source_url.clone().unwrap_or_default();
-                    ui.text_edit_singleline(&mut url)
-                        .on_hover_text(self.hover_text("image_url"));
+                    ui.add(
+                        egui::TextEdit::multiline(&mut url)
+                            .desired_rows(3)
+                            .desired_width(360.0),
+                    )
+                    .on_hover_text(self.hover_text("image_url"));
                     self.cfg.image_source_url = Some(url);
                 });
             }
@@ -529,6 +659,44 @@ impl WcGuiApp {
             ui.label("Image sec");
             ui.add(egui::DragValue::new(&mut self.cfg.image_refresh_seconds).speed(1))
                 .on_hover_text(self.hover_text("image_refresh"));
+        });
+
+        ui.separator();
+        ui.heading("Wallpaper");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.cfg.apply_wallpaper, "Apply wallpaper")
+                .on_hover_text(self.hover_text("apply_wallpaper"));
+            ui.label("Backend");
+            egui::ComboBox::from_id_salt("backend_images_tab")
+                .selected_text(&self.cfg.wallpaper_backend)
+                .show_ui(ui, |ui| {
+                    for mode in ["auto", "gnome", "sway", "feh", "noop"] {
+                        ui.selectable_value(
+                            &mut self.cfg.wallpaper_backend,
+                            mode.to_string(),
+                            mode,
+                        );
+                    }
+                });
+            ui.label("Fit");
+            egui::ComboBox::from_id_salt("fit_images_tab")
+                .selected_text(&self.cfg.wallpaper_fit_mode)
+                .show_ui(ui, |ui| {
+                    for mode in [
+                        "zoom",
+                        "scaled",
+                        "stretched",
+                        "spanned",
+                        "centered",
+                        "wallpaper",
+                    ] {
+                        ui.selectable_value(
+                            &mut self.cfg.wallpaper_fit_mode,
+                            mode.to_string(),
+                            mode,
+                        );
+                    }
+                });
         });
     }
 
@@ -575,10 +743,14 @@ impl WcGuiApp {
             }
             "url" => {
                 ui.horizontal(|ui| {
-                    ui.label("Quote URL");
+                    ui.label("Quote URL(s)");
                     let mut url = self.cfg.quote_source_url.clone().unwrap_or_default();
-                    ui.text_edit_singleline(&mut url)
-                        .on_hover_text(self.hover_text("quote_url"));
+                    ui.add(
+                        egui::TextEdit::multiline(&mut url)
+                            .desired_rows(3)
+                            .desired_width(360.0),
+                    )
+                    .on_hover_text(self.hover_text("quote_url"));
                     self.cfg.quote_source_url = Some(url);
                 });
             }
@@ -751,41 +923,19 @@ impl WcGuiApp {
             ui.monospace(format!("{}s", self.cfg.image_refresh_seconds));
         });
         ui.separator();
-        ui.heading("Wallpaper");
+        ui.heading("Autostart");
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.cfg.apply_wallpaper, "Apply wallpaper")
-                .on_hover_text(self.hover_text("apply_wallpaper"));
-            ui.label("Backend");
-            egui::ComboBox::from_id_salt("backend")
-                .selected_text(&self.cfg.wallpaper_backend)
-                .show_ui(ui, |ui| {
-                    for mode in ["auto", "gnome", "sway", "feh", "noop"] {
-                        ui.selectable_value(
-                            &mut self.cfg.wallpaper_backend,
-                            mode.to_string(),
-                            mode,
-                        );
-                    }
-                });
-            ui.label("Fit");
-            egui::ComboBox::from_id_salt("fit")
-                .selected_text(&self.cfg.wallpaper_fit_mode)
-                .show_ui(ui, |ui| {
-                    for mode in [
-                        "zoom",
-                        "scaled",
-                        "stretched",
-                        "spanned",
-                        "centered",
-                        "wallpaper",
-                    ] {
-                        ui.selectable_value(
-                            &mut self.cfg.wallpaper_fit_mode,
-                            mode.to_string(),
-                            mode,
-                        );
-                    }
-                });
+            ui.label(if Self::autostart_enabled() {
+                "Status: enabled"
+            } else {
+                "Status: disabled"
+            });
+            if ui.button("Install Autostart").clicked() {
+                self.install_autostart();
+            }
+            if ui.button("Remove Autostart").clicked() {
+                self.remove_autostart();
+            }
         });
     }
 }
@@ -916,8 +1066,18 @@ impl eframe::App for WcGuiApp {
                 if ui.button("Start Loop").clicked() {
                     self.start_runner();
                 }
+                if ui.button("Start Loop + Hide").clicked() {
+                    self.start_runner();
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                }
+                if ui.button("Run Detached").clicked() {
+                    self.start_detached_runner();
+                }
                 if ui.button("Stop Loop").clicked() {
                     self.stop_runner();
+                }
+                if ui.button("Hide Window").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                 }
             });
             ui.horizontal(|ui| {
@@ -1013,7 +1173,7 @@ fn default_cfg() -> AppConfig {
         quotes_path: "~/Documents/wallpaper-composer/quotes.md".to_string(),
         image_source: "local".to_string(),
         image_source_url: None,
-        image_source_preset: Some("nasa_apod".to_string()),
+        image_source_preset: Some("picsum_random_hd".to_string()),
         quote_source: "local".to_string(),
         quote_source_url: None,
         quote_source_preset: Some("zenquotes_daily".to_string()),

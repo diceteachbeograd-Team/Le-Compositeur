@@ -4,6 +4,7 @@ EN | DE | SR | 中文
 
 Project status: active early-stage prototype.
 Documentation note: the English section is the canonical up-to-date reference during rapid iteration.
+Important: hobby project, use at your own risk ("auf eigene Gefahr"). Bugs can be reported, but fix timing is not guaranteed.
 
 ## English
 
@@ -148,6 +149,92 @@ Alpha packaging helpers:
 ./scripts/build-alpha-deb.sh 0.1.0
 ```
 
+### 6.1 Run on your system (alpha)
+Download artifacts from GitHub Releases (tag `alpha-v...`) or from the `Release Alpha Artifacts` workflow.
+
+Fedora / RHEL (RPM):
+```bash
+# install
+sudo dnf install ./wallpaper-composer-*.rpm
+
+# start GUI
+wc-gui
+
+# one-shot CLI run
+wc-cli run --once
+```
+
+Ubuntu / Debian (DEB):
+```bash
+# install
+sudo apt install ./wallpaper-composer_*_amd64.deb
+
+# start GUI
+wc-gui
+
+# one-shot CLI run
+wc-cli run --once
+```
+
+Windows (ZIP artifact):
+```powershell
+# unpack and run
+.\wallpaper-composer-windows-x86_64\bin\wc-gui.exe
+```
+
+macOS Intel / Apple Silicon (tar.gz artifact):
+```bash
+# unpack and run
+./wallpaper-composer-macos-*/bin/wc-gui
+```
+
+First-run setup (all platforms):
+```bash
+# create starter config
+wc-cli init
+
+# init also creates local quotes at:
+# ~/Documents/wallpaper-composer/quotes.md
+```
+
+### 6.2 Size and runtime profile (alpha, reference values)
+Measured release binary sizes:
+- `wc-cli`: about `1.3 MB`
+- `wc-gui`: about `11 MB`
+
+Expected runtime usage (typical desktop Linux):
+- `wc-cli run` loop: low CPU between wake-ups, usually near idle except render/apply moments
+- `wc-gui`: mostly UI-idle load; higher only during thumbnail decode and preview actions
+- Memory depends on desktop/driver stack and image sizes; verify on your target VM/device
+
+Quick local checks:
+```bash
+ls -lh target/release/wc-cli target/release/wc-gui
+top -p "$(pgrep -d',' -f 'wc-cli|wc-gui')"
+```
+
+### 6.3 Install, update, uninstall (Linux package manager)
+Fedora / RHEL:
+```bash
+# install
+sudo dnf install ./wallpaper-composer-*.rpm
+
+# update to a newer local RPM
+sudo dnf upgrade ./wallpaper-composer-*.rpm
+
+# uninstall
+sudo dnf remove wallpaper-composer
+```
+
+Ubuntu / Debian:
+```bash
+# install
+sudo apt install ./wallpaper-composer_*_amd64.deb
+
+# remove
+sudo apt remove wallpaper-composer
+```
+
 ### 7. CLI reference
 `doctor`
 - prints local diagnostic information (project/profile/local time)
@@ -214,7 +301,7 @@ image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
 image_source = "local"
 image_source_url = ""
-image_source_preset = "nasa_apod"
+image_source_preset = "picsum_random_hd"
 quote_source = "local"
 quote_source_url = ""
 quote_source_preset = "zenquotes_daily"
@@ -234,8 +321,29 @@ apply_wallpaper = false
 wallpaper_backend = "auto"
 ```
 
-Local quote template:
-- `assets/examples/quotes.md`
+Local quote templates:
+- `assets/quotes/local/local-quotes.md` (default multilingual pack-in file)
+- `assets/examples/quotes.md` (short English example)
+
+Installed package path (RPM/DEB):
+- `/usr/share/wallpaper-composer/quotes/local-quotes.md`
+
+Local quote file format (block mode, recommended):
+```txt
+***
+German line
+English line
+Serbian line
+:
+Author Name
+***
+```
+
+Rules:
+- each quote block starts and ends with `***`
+- keep one quote text line per language (or any text lines you want)
+- optional `:` line marks the next non-empty line as the author
+- save as `.txt` or `.md` and set `quotes_path` to this file
 
 Field meanings:
 - `image_dir`: source folder for wallpaper images
@@ -243,7 +351,7 @@ Field meanings:
 - `image_source`: `local` today; remote/public modes are prepared for GUI phase
 - `image_source`: `local`, `preset`, `url`
 - `image_source_preset`: built-in public image source id
-- `image_source_url`: custom public image endpoint
+- `image_source_url`: custom public image endpoint(s), one per line or `;`-separated
 - `quote_source`: `local`, `preset`, `url`
 - `quote_source_preset`: built-in public quote source id
 - `quote_source_url`: custom public quote endpoint
@@ -265,8 +373,8 @@ Quote file authoring rules are documented in:
 
 Remote source notes:
 - remote fetching currently uses `curl` and local cache under XDG cache/home tmp fallback
-- presets are starter integrations and may require provider-specific API keys/rate-limit handling for production
-- provider-specific parsing exists for NASA APOD, ZenQuotes, and Quotable presets
+- presets are starter integrations and may change availability based on third-party providers
+- custom URL mode supports multiple endpoints (one per line or `;`-separated), cycled over time
 - visual text/clock rendering currently relies on ImageMagick availability for overlay mode
 - fallback render order: `imagemagick-overlay` -> `native-bmp-overlay` (for 24-bit BMP input) -> `copy-source`
 - wallpaper backend execution is handled through a dedicated `wc-backend` crate
@@ -306,33 +414,40 @@ This software is provided "as is", without warranty of any kind.
 ---
 
 ## Deutsch
+Wichtiger Hinweis: Dieses Projekt ist ein Hobby-Projekt und Nutzung erfolgt auf eigene Gefahr. Bugs konnen gemeldet werden, aber es gibt keine garantierte Bearbeitungszeit.
 
 ### 1. Projektziel
 Wallpaper Composer ist eine Open-Source-Anwendung in Rust fur Linux-Desktops.
-Das Programm soll dynamische Hintergrunde erzeugen aus:
+Das Programm erzeugt dynamische Hintergrunde aus:
 - einem Bildordner,
 - rotierenden Spruchen aus `.txt`/`.md`,
 - eingeblendeter Uhrzeit.
 
-Spater optional: Login-Screen- und Boot-Screen-Integration (je nach Distro/Display-Manager unterschiedlich aufwendig).
+Spater optional: Login-Screen- und Boot-Screen-Integration (je nach Distribution/Display-Manager).
 
-### 2. Aktueller Stand (2026-03-04)
+### 2. Aktueller Stand (2026-03-06)
 Bereits umgesetzt:
 - Rust-Workspace mit:
   - `wc-cli`
   - `wc-core`
   - `wc-render`
+  - `wc-gui`
 - CLI-Kommandos:
   - `doctor`
   - `init`
-  - `render-preview` (derzeit Platzhalter)
+  - `render-preview`
+  - `run` (`--once` oder Loop)
+- Master-Timer: Bildtimer (`image_refresh_seconds`) steuert auch den Spruchwechsel
+- Dynamische Canvas-Grosse pro Lauf anhand aktueller Bildschirmauflosung (Fallback `1920x1080`)
+- No-repeat-Logik mit Verlaufsspeicher (insbesondere fur `random` verbessert)
+- ImageMagick-Overlay mit getrenntem Hintergrund-/Text-Layer
+- GUI-Hilfetexte (mehrsprachig) und erweiterte Source-Presets
 - Erzeugung einer Starter-Konfiguration (`init`)
 - Basis-Tests und Lint/Test-Workflow
 
 Noch offen:
-- echte Bild-Komposition
-- Wallpaper-Backends fur GNOME/KDE/Sway
-- Paketierung (`rpm`, `deb`)
+- letzte Produktionsdetails fur alle Desktop-Backends
+- stabile Paket-Publish-Pipeline
 - Login/Boot-Integration
 
 ### 3. Technologien und Versionen
@@ -356,9 +471,13 @@ Toolchain-Basis:
   CHANGELOG.md
   README.md
   docs/
+  packaging/
+  assets/
+  scripts/
   crates/
     wc-cli/
     wc-core/
+    wc-gui/
     wc-render/
 ```
 
@@ -384,6 +503,41 @@ cargo build
 cargo run -p wc-cli -- doctor
 cargo run -p wc-cli -- init
 cargo run -p wc-cli -- render-preview
+cargo run -p wc-cli -- run --once
+cargo run -p wc-gui
+```
+
+Alpha-Paket-Helfer:
+```bash
+./scripts/build-alpha-rpm.sh 0.1.0
+./scripts/build-alpha-deb.sh 0.1.0
+```
+
+### 6.1 Auf deinem System starten (alpha)
+Artefakte kommen uber GitHub Releases (Tag `alpha-v...`) oder den Workflow `Release Alpha Artifacts`.
+
+Fedora / RHEL (RPM):
+```bash
+sudo dnf install ./wallpaper-composer-*.rpm
+wc-gui
+wc-cli run --once
+```
+
+Ubuntu / Debian (DEB):
+```bash
+sudo apt install ./wallpaper-composer_*_amd64.deb
+wc-gui
+wc-cli run --once
+```
+
+Windows (ZIP-Artefakt):
+```powershell
+.\wallpaper-composer-windows-x86_64\bin\wc-gui.exe
+```
+
+macOS Intel / Apple Silicon (tar.gz-Artefakt):
+```bash
+./wallpaper-composer-macos-*/bin/wc-gui
 ```
 
 ### 7. CLI-Referenz
@@ -395,25 +549,66 @@ cargo run -p wc-cli -- render-preview
 - Standardpfad: `~/.config/wallpaper-composer/config.toml`
 - `--force` uberschreibt vorhandene Datei
 
-`render-preview`
-- Platzhalter fur die kommende Rendering-Pipeline
+`render-preview [--config <PFAD>]`
+- rendert ein Ausgabe-Bild mit aktuellem Bild, Spruch und Uhrzeit
+- nutzt lokale oder Remote-Quellen (`local`, `preset`, `url`)
+
+`run [--config <PFAD>] [--once]`
+- startet den Zyklus
+- `--once`: genau ein Lauf
+- ohne `--once`: Endlosschleife mit Timer
+- Spruche folgen dem Bild-Master-Timer (`image_refresh_seconds`)
 
 ### 8. Konfigurationsreferenz
 ```toml
 # Wallpaper Composer config
 image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
+image_source = "local"
+quote_source = "local"
+image_order_mode = "sequential"
+quote_order_mode = "random"
+quote_avoid_repeat = true
+quote_font_size = 36
+quote_pos_x = 80
+quote_pos_y = 860
+clock_font_size = 44
+clock_pos_x = 1600
+clock_pos_y = 960
 output_image = "/tmp/wallpaper-composer-current.png"
-refresh_seconds = 300
+image_refresh_seconds = 300
+quote_refresh_seconds = 300
 time_format = "%H:%M"
 ```
 
 Bedeutung:
 - `image_dir`: Quellordner fur Bilder
 - `quotes_path`: Datei mit Spruchen (`.txt`/`.md`)
+- `image_source` / `quote_source`: Quelle (`local`, `preset`, `url`)
+- `image_order_mode` / `quote_order_mode`: `sequential` oder `random`
+- `quote_avoid_repeat`: reduziert schnelle Wiederholungen
+- `quote_font_size`, `quote_pos_x`, `quote_pos_y`: Textstil/Position
+- `clock_font_size`, `clock_pos_x`, `clock_pos_y`: Uhrstil/Position
 - `output_image`: Zielbild
-- `refresh_seconds`: Aktualisierungsintervall
+- `image_refresh_seconds`: Master-Zeitintervall
+- `quote_refresh_seconds`: wird an den Master angeglichen
 - `time_format`: Uhrzeitformat (chrono-Stil)
+
+Lokale Quote-Datei (empfohlenes Block-Format):
+```txt
+***
+Deutsche Zeile
+English line
+Srpska linija
+:
+Autorname
+***
+```
+
+Hinweise:
+- Standarddatei im Repo: `assets/quotes/local/local-quotes.md`
+- `wc-cli init` erstellt automatisch: `~/Documents/wallpaper-composer/quotes.md`
+- Installierter Paketpfad (RPM/DEB): `/usr/share/wallpaper-composer/quotes/local-quotes.md`
 
 ### 9. Beitragen/Weiterentwickeln
 1. Zuerst `docs/PROJECT_PLAYBOOK.md` lesen.
@@ -421,6 +616,10 @@ Bedeutung:
 3. Kleine fokussierte Branches (`codex/<topic>`).
 4. Vor jedem PR: `fmt`, `clippy`, `test`.
 5. Nutzerrelevante Anderungen in README/CHANGELOG dokumentieren.
+
+CI:
+- `.github/workflows/ci.yml` (fmt/clippy/test)
+- `.github/workflows/release-alpha.yml` (Alpha-Artefakte fur Linux/Windows/macOS)
 
 ### 10. Roadmap
 MVP:
@@ -430,7 +629,7 @@ MVP:
 
 Danach:
 - Backend-Abstraktion pro Desktop/Compositor
-- Paketierung fur Fedora/Ubuntu
+- stabile Paketierung fur Fedora/Ubuntu + Release-Uploads
 - Alpha/Beta auf VM-Matrix
 
 ### 11. Lizenz und Haftung
@@ -440,33 +639,39 @@ Bereitstellung ohne Gewahrleistung.
 ---
 
 ## Srpski
+Vazna napomena: ovo je hobi projekat i koristi se na sopstvenu odgovornost. Bug prijave su dobrodosle, ali vreme ispravke nije garantovano.
 
 ### 1. Cilj projekta
 Wallpaper Composer je open-source aplikacija u Rust-u za Linux desktop okruzenja.
-Program treba da pravi dinamicne pozadine iz:
+Program pravi dinamicne pozadine iz:
 - foldera sa slikama,
 - rotirajucih citata iz `.txt`/`.md`,
 - prikaza trenutnog vremena.
 
 Kasnije opcionalno: integracija login ekrana i boot ekrana (zavisno od distribucije i display manager-a).
 
-### 2. Trenutni status (2026-03-04)
+### 2. Trenutni status (2026-03-06)
 Uradjeno:
 - Rust workspace sa paketima:
   - `wc-cli`
   - `wc-core`
   - `wc-render`
+  - `wc-gui`
 - CLI komande:
   - `doctor`
   - `init`
-  - `render-preview` (trenutno placeholder)
+  - `render-preview`
+  - `run` (`--once` ili loop)
+- Master tajmer: `image_refresh_seconds` upravlja i promenom citata
+- Dinamicko odredjivanje rezolucije pri renderu (fallback `1920x1080`)
+- No-repeat logika sa istorijom izbora (bolje ponasanje u `random`)
+- ImageMagick overlay sa odvojenim layer-ima (pozadina/tekst)
 - generisanje pocetnog config fajla (`init`)
 - osnovni test/lint workflow
 
 Nije jos uradjeno:
-- prava kompozicija slike
-- backend za postavljanje pozadine na GNOME/KDE/Sway
-- pakovanje (`rpm`, `deb`)
+- finalna produkciona stabilizacija backend-a
+- potpuno automatizovan publishing paketa
 - login/boot integracija
 
 ### 3. Tehnologije i verzije
@@ -490,9 +695,13 @@ Toolchain:
   CHANGELOG.md
   README.md
   docs/
+  packaging/
+  assets/
+  scripts/
   crates/
     wc-cli/
     wc-core/
+    wc-gui/
     wc-render/
 ```
 
@@ -518,6 +727,41 @@ cargo build
 cargo run -p wc-cli -- doctor
 cargo run -p wc-cli -- init
 cargo run -p wc-cli -- render-preview
+cargo run -p wc-cli -- run --once
+cargo run -p wc-gui
+```
+
+Alpha helper skripte:
+```bash
+./scripts/build-alpha-rpm.sh 0.1.0
+./scripts/build-alpha-deb.sh 0.1.0
+```
+
+### 6.1 Pokretanje na svom sistemu (alpha)
+Artefakti su dostupni preko GitHub Releases (`alpha-v...`) ili workflow-a `Release Alpha Artifacts`.
+
+Fedora / RHEL (RPM):
+```bash
+sudo dnf install ./wallpaper-composer-*.rpm
+wc-gui
+wc-cli run --once
+```
+
+Ubuntu / Debian (DEB):
+```bash
+sudo apt install ./wallpaper-composer_*_amd64.deb
+wc-gui
+wc-cli run --once
+```
+
+Windows (ZIP):
+```powershell
+.\wallpaper-composer-windows-x86_64\bin\wc-gui.exe
+```
+
+macOS Intel / Apple Silicon (tar.gz):
+```bash
+./wallpaper-composer-macos-*/bin/wc-gui
 ```
 
 ### 7. CLI referenca
@@ -529,25 +773,66 @@ cargo run -p wc-cli -- render-preview
 - podrazumevana putanja: `~/.config/wallpaper-composer/config.toml`
 - `--force` pregazi postojeci fajl
 
-`render-preview`
-- placeholder za buduci render pipeline
+`render-preview [--config <PUTANJA>]`
+- renderuje sliku sa pozadinom, citatom i satom
+- podrzava `local`, `preset`, `url` izvore
+
+`run [--config <PUTANJA>] [--once]`
+- pokrece ciklus
+- `--once`: jedan prolaz
+- bez `--once`: loop
+- citat koristi isti master tajmer kao slike (`image_refresh_seconds`)
 
 ### 8. Config referenca
 ```toml
 # Wallpaper Composer config
 image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
+image_source = "local"
+quote_source = "local"
+image_order_mode = "sequential"
+quote_order_mode = "random"
+quote_avoid_repeat = true
+quote_font_size = 36
+quote_pos_x = 80
+quote_pos_y = 860
+clock_font_size = 44
+clock_pos_x = 1600
+clock_pos_y = 960
 output_image = "/tmp/wallpaper-composer-current.png"
-refresh_seconds = 300
+image_refresh_seconds = 300
+quote_refresh_seconds = 300
 time_format = "%H:%M"
 ```
 
 Znacenje polja:
 - `image_dir`: folder sa slikama
 - `quotes_path`: fajl sa citatima (`.txt`/`.md`)
+- `image_source` / `quote_source`: izvor (`local`, `preset`, `url`)
+- `image_order_mode` / `quote_order_mode`: `sequential` ili `random`
+- `quote_avoid_repeat`: smanjuje brzo ponavljanje
+- `quote_font_size`, `quote_pos_x`, `quote_pos_y`: stil/pozicija citata
+- `clock_font_size`, `clock_pos_x`, `clock_pos_y`: stil/pozicija sata
 - `output_image`: izlazna slika
-- `refresh_seconds`: interval osvezavanja
+- `image_refresh_seconds`: master interval
+- `quote_refresh_seconds`: uskladjuje se sa master tajmerom
 - `time_format`: format vremena (`chrono`)
+
+Lokalni format citata (preporucen block mode):
+```txt
+***
+Nemacki red
+English line
+Srpski red
+:
+Ime autora
+***
+```
+
+Napomene:
+- podrazumevani fajl u repou: `assets/quotes/local/local-quotes.md`
+- `wc-cli init` automatski pravi: `~/Documents/wallpaper-composer/quotes.md`
+- instalirana putanja paketa (RPM/DEB): `/usr/share/wallpaper-composer/quotes/local-quotes.md`
 
 ### 9. Dalji razvoj
 1. Prvo procitati `docs/PROJECT_PLAYBOOK.md`.
@@ -555,6 +840,10 @@ Znacenje polja:
 3. Raditi male tematske grane (`codex/<topic>`).
 4. Pre svakog PR-a pokrenuti `fmt`, `clippy`, `test`.
 5. Sve korisnicke promene upisati u README/CHANGELOG.
+
+CI:
+- `.github/workflows/ci.yml` (fmt/clippy/test)
+- `.github/workflows/release-alpha.yml` (alpha artefakti za Linux/Windows/macOS)
 
 ### 10. Plan
 MVP:
@@ -564,7 +853,7 @@ MVP:
 
 Posle toga:
 - backend apstrakcija po desktop/compositor okruzenju
-- pakovanje za Fedora/Ubuntu
+- stabilno pakovanje za Fedora/Ubuntu + release upload
 - alpha/beta testiranje na VM matrici
 
 ### 11. Licenca i odgovornost
@@ -574,6 +863,7 @@ Softver se isporucuje bez garancije.
 ---
 
 ## 中文
+重要提示：本项目是兴趣项目，使用风险由你自行承担。欢迎提交 bug，但修复时间不作保证。
 
 ### 1. 项目目标
 Wallpaper Composer 是一个面向 Linux 桌面环境的 Rust 开源项目。
@@ -584,23 +874,28 @@ Wallpaper Composer 是一个面向 Linux 桌面环境的 Rust 开源项目。
 
 后续可选功能：登录界面背景与启动画面集成（取决于发行版和显示管理器）。
 
-### 2. 当前实现状态（截至 2026-03-04）
+### 2. 当前实现状态（截至 2026-03-06）
 已完成：
 - Rust 工作区，包含：
   - `wc-cli`
   - `wc-core`
   - `wc-render`
+  - `wc-gui`
 - CLI 命令：
   - `doctor`
   - `init`
-  - `render-preview`（目前为占位实现）
+  - `render-preview`
+  - `run`（`--once` 或循环）
+- 主计时器：`image_refresh_seconds` 同时驱动图片与语录切换
+- 每轮渲染动态读取当前屏幕分辨率（回退 `1920x1080`）
+- `random` 模式下基于来源数量的历史去重，减少快速重复
+- ImageMagick 渲染为分层流程（背景层 + 文本层）
 - 初始配置文件生成（`init`）
 - 基础测试与 lint/test 流程
 
 尚未完成：
-- 真正的图像合成渲染
-- GNOME/KDE/Sway 壁纸设置后端
-- 软件打包（`rpm`、`deb`）
+- 全平台生产级后端细节收敛
+- 完整的打包发布自动化
 - 登录/启动画面集成
 
 ### 3. 技术栈与版本
@@ -624,9 +919,13 @@ Wallpaper Composer 是一个面向 Linux 桌面环境的 Rust 开源项目。
   CHANGELOG.md
   README.md
   docs/
+  packaging/
+  assets/
+  scripts/
   crates/
     wc-cli/
     wc-core/
+    wc-gui/
     wc-render/
 ```
 
@@ -652,6 +951,41 @@ cargo build
 cargo run -p wc-cli -- doctor
 cargo run -p wc-cli -- init
 cargo run -p wc-cli -- render-preview
+cargo run -p wc-cli -- run --once
+cargo run -p wc-gui
+```
+
+Alpha 打包脚本：
+```bash
+./scripts/build-alpha-rpm.sh 0.1.0
+./scripts/build-alpha-deb.sh 0.1.0
+```
+
+### 6.1 在你的系统上启动（alpha）
+可从 GitHub Releases（`alpha-v...`）或 `Release Alpha Artifacts` 工作流下载构建产物。
+
+Fedora / RHEL（RPM）：
+```bash
+sudo dnf install ./wallpaper-composer-*.rpm
+wc-gui
+wc-cli run --once
+```
+
+Ubuntu / Debian（DEB）：
+```bash
+sudo apt install ./wallpaper-composer_*_amd64.deb
+wc-gui
+wc-cli run --once
+```
+
+Windows（ZIP）：
+```powershell
+.\wallpaper-composer-windows-x86_64\bin\wc-gui.exe
+```
+
+macOS Intel / Apple Silicon（tar.gz）：
+```bash
+./wallpaper-composer-macos-*/bin/wc-gui
 ```
 
 ### 7. CLI 说明
@@ -663,25 +997,66 @@ cargo run -p wc-cli -- render-preview
 - 默认路径：`~/.config/wallpaper-composer/config.toml`
 - 使用 `--force` 可覆盖已有文件
 
-`render-preview`
-- 后续渲染流程的占位命令
+`render-preview [--config <路径>]`
+- 渲染输出图像（背景 + 语录 + 时钟）
+- 支持来源：`local`、`preset`、`url`
+
+`run [--config <路径>] [--once]`
+- 启动循环
+- `--once` 执行一次
+- 不加 `--once` 持续运行
+- 语录切换跟随图片主计时器（`image_refresh_seconds`）
 
 ### 8. 配置说明
 ```toml
 # Wallpaper Composer config
 image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
+image_source = "local"
+quote_source = "local"
+image_order_mode = "sequential"
+quote_order_mode = "random"
+quote_avoid_repeat = true
+quote_font_size = 36
+quote_pos_x = 80
+quote_pos_y = 860
+clock_font_size = 44
+clock_pos_x = 1600
+clock_pos_y = 960
 output_image = "/tmp/wallpaper-composer-current.png"
-refresh_seconds = 300
+image_refresh_seconds = 300
+quote_refresh_seconds = 300
 time_format = "%H:%M"
 ```
 
 字段含义：
 - `image_dir`：壁纸图片目录
 - `quotes_path`：语录来源文件（`.txt`/`.md`）
+- `image_source` / `quote_source`：来源（`local`/`preset`/`url`）
+- `image_order_mode` / `quote_order_mode`：顺序或随机
+- `quote_avoid_repeat`：降低快速重复
+- `quote_font_size`, `quote_pos_x`, `quote_pos_y`：语录样式/位置
+- `clock_font_size`, `clock_pos_x`, `clock_pos_y`：时钟样式/位置
 - `output_image`：渲染输出路径
-- `refresh_seconds`：刷新间隔（秒）
+- `image_refresh_seconds`：主刷新间隔
+- `quote_refresh_seconds`：会与主计时器保持一致
 - `time_format`：时间格式（`chrono` 格式）
+
+本地语录文件格式（推荐区块模式）：
+```txt
+***
+German line
+English line
+Serbian line
+:
+Author Name
+***
+```
+
+说明：
+- 仓库内默认文件：`assets/quotes/local/local-quotes.md`
+- `wc-cli init` 会自动创建：`~/Documents/wallpaper-composer/quotes.md`
+- RPM/DEB 安装后的路径：`/usr/share/wallpaper-composer/quotes/local-quotes.md`
 
 ### 9. 协作开发流程
 1. 先阅读 `docs/PROJECT_PLAYBOOK.md`。
@@ -689,6 +1064,10 @@ time_format = "%H:%M"
 3. 使用小而聚焦的分支（建议 `codex/<topic>`）。
 4. 每次 PR 前运行 `fmt`、`clippy`、`test`。
 5. 所有用户可见变更同步更新 README/CHANGELOG。
+
+CI：
+- `.github/workflows/ci.yml`（fmt/clippy/test）
+- `.github/workflows/release-alpha.yml`（Linux/Windows/macOS alpha 构建产物）
 
 ### 10. 路线图
 MVP：
@@ -698,7 +1077,7 @@ MVP：
 
 下一阶段：
 - 按桌面/合成器抽象后端
-- Fedora/Ubuntu 打包
+- Fedora/Ubuntu 稳定打包与发布
 - 多 VM 的 alpha/beta 测试矩阵
 
 ### 11. 许可证与免责声明

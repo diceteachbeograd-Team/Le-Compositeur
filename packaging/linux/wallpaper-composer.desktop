@@ -8,3 +8,5 @@ Terminal=false
 Categories=Graphics;Utility;
 Keywords=wallpaper;quotes;clock;background;
 StartupNotify=true
+StartupWMClass=wc-gui
+X-GNOME-WMClass=wc-gui

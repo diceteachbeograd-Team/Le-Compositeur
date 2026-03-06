@@ -6,6 +6,8 @@ use std::process::Command;
 pub enum ImageProvider {
     Generic,
     NasaApod,
+    WikimediaApi,
+    WallhavenApi,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -23,18 +25,47 @@ pub fn fetch_remote_image(endpoint: String, provider: ImageProvider) -> Result<P
         return Ok(path);
     }
 
-    let body = fetch_text_via_curl(&endpoint)?;
+    let body = match fetch_text_via_curl(&endpoint) {
+        Ok(body) => body,
+        Err(err) => {
+            if let Some(path) = fallback_image_for_endpoint(&endpoint)
+                .and_then(|fallback| try_direct_image_download(fallback).ok().flatten())
+            {
+                return Ok(path);
+            }
+            return Err(err);
+        }
+    };
 
     let image_url = match provider {
-        ImageProvider::NasaApod => parse_nasa_apod_image_url(&body).unwrap_or(endpoint),
-        ImageProvider::Generic => extract_image_url(&body).unwrap_or(endpoint),
+        ImageProvider::NasaApod => parse_nasa_apod_image_url(&body)
+            .or_else(|| fallback_image_for_endpoint(&endpoint).map(ToOwned::to_owned))
+            .unwrap_or_else(|| endpoint.clone()),
+        ImageProvider::WikimediaApi => parse_wikimedia_image_url(&body)
+            .or_else(|| extract_image_url(&body))
+            .or_else(|| extract_image_url(&unescape_json_like(&body)))
+            .or_else(|| fallback_image_for_endpoint(&endpoint).map(ToOwned::to_owned))
+            .unwrap_or_else(|| endpoint.clone()),
+        ImageProvider::WallhavenApi => parse_wallhaven_image_url(&body)
+            .or_else(|| extract_image_url(&body))
+            .or_else(|| extract_image_url(&unescape_json_like(&body)))
+            .or_else(|| fallback_image_for_endpoint(&endpoint).map(ToOwned::to_owned))
+            .unwrap_or_else(|| endpoint.clone()),
+        ImageProvider::Generic => extract_image_url(&body)
+            .or_else(|| extract_image_url(&unescape_json_like(&body)))
+            .or_else(|| fallback_image_for_endpoint(&endpoint).map(ToOwned::to_owned))
+            .unwrap_or_else(|| endpoint.clone()),
     };
 
     let ext = guess_image_extension(&image_url);
     let cache_dir = cache_dir_for("images")?;
     let file_name = format!("remote-{}.{}", stable_hash(&image_url), ext);
     let target = cache_dir.join(file_name);
-    download_file_via_curl(&image_url, &target)?;
+    if download_file_via_curl(&image_url, &target).is_err()
+        && let Some(fallback) = fallback_image_for_endpoint(&endpoint)
+    {
+        download_file_via_curl(fallback, &target)?;
+    }
     Ok(target)
 }
 
@@ -88,7 +119,7 @@ fn ensure_curl_available() -> Result<(), String> {
 
 fn fetch_text_via_curl(url: &str) -> Result<String, String> {
     let output = Command::new("curl")
-        .args(["-fsSL", url])
+        .args(["-fsSL", "--connect-timeout", "8", "--max-time", "25", url])
         .output()
         .map_err(|e| format!("failed to run curl: {e}"))?;
 
@@ -105,7 +136,7 @@ fn fetch_text_via_curl(url: &str) -> Result<String, String> {
 
 fn download_file_via_curl(url: &str, target: &Path) -> Result<(), String> {
     let status = Command::new("curl")
-        .args(["-fsSL", "-o"])
+        .args(["-fsSL", "--connect-timeout", "8", "--max-time", "30", "-o"])
         .arg(target)
         .arg(url)
         .status()
@@ -124,6 +155,48 @@ fn parse_nasa_apod_image_url(payload: &str) -> Option<String> {
         return None;
     }
     json_field(payload, "hdurl").or_else(|| json_field(payload, "url"))
+}
+
+fn parse_wikimedia_image_url(payload: &str) -> Option<String> {
+    if let Some(url) = json_field(payload, "thumburl")
+        && is_supported_image_url(&url)
+    {
+        return Some(url);
+    }
+    if let Some(url) = json_field(payload, "url")
+        && is_supported_image_url(&url)
+    {
+        return Some(url);
+    }
+    extract_image_url(payload).map(|u| normalize_wikimedia_thumb_url(&u))
+}
+
+fn parse_wallhaven_image_url(payload: &str) -> Option<String> {
+    if let Some(path) = json_field(payload, "path")
+        && is_supported_image_url(&path)
+    {
+        return Some(path);
+    }
+    if let Some(url) = json_field(payload, "url")
+        && is_supported_image_url(&url)
+    {
+        return Some(url);
+    }
+    None
+}
+
+fn normalize_wikimedia_thumb_url(url: &str) -> String {
+    if !url.contains("upload.wikimedia.org") || !url.contains("/thumb/") {
+        return url.to_string();
+    }
+    let without_thumb = url.replacen("/thumb/", "/", 1);
+    if let Some(idx) = without_thumb.rfind('/') {
+        let tail = &without_thumb[idx + 1..];
+        if let Some(name_idx) = tail.find('.') {
+            return format!("{}{}", &without_thumb[..idx + 1], &tail[name_idx + 1..]);
+        }
+    }
+    without_thumb
 }
 
 fn parse_zenquotes_payload(payload: &str) -> String {
@@ -152,6 +225,16 @@ fn extract_image_url(payload: &str) -> Option<String> {
     extract_urls(payload)
         .into_iter()
         .find(|url| is_supported_image_url(url))
+}
+
+fn fallback_image_for_endpoint(endpoint: &str) -> Option<&'static str> {
+    if endpoint.contains("source.unsplash.com")
+        || endpoint.contains("api.nasa.gov")
+        || endpoint.contains("wallhaven.cc/api/")
+    {
+        return Some("https://picsum.photos/3840/2160.jpg");
+    }
+    None
 }
 
 fn extract_urls(payload: &str) -> Vec<String> {

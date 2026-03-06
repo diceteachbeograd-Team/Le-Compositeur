@@ -78,7 +78,7 @@ image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
 image_source = "local"
 image_source_url = ""
-image_source_preset = "nasa_apod"
+image_source_preset = "picsum_random_hd"
 quote_source = "local"
 quote_source_url = ""
 quote_source_preset = "zenquotes_daily"
@@ -197,7 +197,7 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"quotes_path","group":"sources","label":"Quotes File","type":"string","required":true,"ui_widget":"file-picker"},
     {"key":"image_source","group":"sources","label":"Image Source Mode","type":"enum","required":false,"default":"local","options":["local","preset","url"]},
     {"key":"image_source_url","group":"sources","label":"Image Source URL","type":"string","required":false,"default":"","visible_when":{"field":"image_source","equals":"url"},"enabled_when":{"field":"image_source","equals":"url"}},
-    {"key":"image_source_preset","group":"sources","label":"Image Source Preset","type":"string","required":false,"default":"nasa_apod","visible_when":{"field":"image_source","equals":"preset"},"enabled_when":{"field":"image_source","equals":"preset"}},
+    {"key":"image_source_preset","group":"sources","label":"Image Source Preset","type":"string","required":false,"default":"picsum_random_hd","visible_when":{"field":"image_source","equals":"preset"},"enabled_when":{"field":"image_source","equals":"preset"}},
     {"key":"quote_source","group":"sources","label":"Quote Source Mode","type":"enum","required":false,"default":"local","options":["local","preset","url"]},
     {"key":"quote_source_url","group":"sources","label":"Quote Source URL","type":"string","required":false,"default":"","visible_when":{"field":"quote_source","equals":"url"},"enabled_when":{"field":"quote_source","equals":"url"}},
     {"key":"quote_source_preset","group":"sources","label":"Quote Source Preset","type":"string","required":false,"default":"zenquotes_daily","visible_when":{"field":"quote_source","equals":"preset"},"enabled_when":{"field":"quote_source","equals":"preset"}},
@@ -834,26 +834,6 @@ pub struct SourcePreset {
 pub fn builtin_image_presets() -> Vec<SourcePreset> {
     vec![
         SourcePreset {
-            id: "nasa_apod",
-            display_label: "NASA APOD (Daily Space Image)",
-            name: "NASA APOD",
-            endpoint: "https://api.nasa.gov/planetary/apod",
-            category: "space",
-            auth: "api-key",
-            rate_limit: "provider-defined",
-            notes: "Public NASA image metadata API; API key required for production usage.",
-        },
-        SourcePreset {
-            id: "wikimedia_featured",
-            display_label: "Wikimedia Featured Images",
-            name: "Wikimedia Featured",
-            endpoint: "https://commons.wikimedia.org/wiki/Commons:Featured_pictures",
-            category: "public-archive",
-            auth: "none",
-            rate_limit: "provider-defined",
-            notes: "Curated public-domain/CC media hub; scraping strategy must respect terms.",
-        },
-        SourcePreset {
             id: "picsum_random_hd",
             display_label: "Picsum Random HD",
             name: "Picsum Random",
@@ -864,14 +844,34 @@ pub fn builtin_image_presets() -> Vec<SourcePreset> {
             notes: "Direct random photo endpoint that returns an image file via redirect.",
         },
         SourcePreset {
-            id: "unsplash_nature_hd",
-            display_label: "Unsplash Nature HD",
-            name: "Unsplash Nature",
-            endpoint: "https://source.unsplash.com/3840x2160/?nature,landscape",
+            id: "wallhaven_random_4k",
+            display_label: "Wallhaven Random 4K",
+            name: "Wallhaven Random",
+            endpoint: "https://wallhaven.cc/api/v1/search?sorting=random&atleast=3840x2160&purity=100",
+            category: "wallpapers",
+            auth: "none",
+            rate_limit: "provider-defined",
+            notes: "Wallhaven random search API filtered to SFW and minimum 4K resolution.",
+        },
+        SourcePreset {
+            id: "loremflickr_landscape_4k",
+            display_label: "LoremFlickr Landscape 4K",
+            name: "LoremFlickr Landscape",
+            endpoint: "https://loremflickr.com/3840/2160/landscape,nature/all",
             category: "photos",
             auth: "none",
             rate_limit: "provider-defined",
-            notes: "Unsplash Source endpoint for rotating nature/landscape backgrounds.",
+            notes: "Random large landscape photo endpoint.",
+        },
+        SourcePreset {
+            id: "pexels_curated_4k",
+            display_label: "LoremFlickr City 4K",
+            name: "LoremFlickr City",
+            endpoint: "https://loremflickr.com/3840/2160/city,architecture/all",
+            category: "photos",
+            auth: "none",
+            rate_limit: "provider-defined",
+            notes: "Random city/architecture 4K-like endpoint.",
         },
     ]
 }
@@ -922,7 +922,20 @@ pub fn builtin_quote_presets() -> Vec<SourcePreset> {
 }
 
 pub fn image_preset_endpoint(id: &str) -> Option<&'static str> {
-    preset_endpoint(&builtin_image_presets(), id)
+    if let Some(endpoint) = preset_endpoint(&builtin_image_presets(), id) {
+        return Some(endpoint);
+    }
+    // Backward-compatibility for older configs.
+    match id {
+        "nasa_apod" => {
+            Some("https://wallhaven.cc/api/v1/search?sorting=random&atleast=3840x2160&purity=100")
+        }
+        "wikimedia_featured" => Some("https://loremflickr.com/3840/2160/landscape,nature/all"),
+        "unsplash_nature_hd" => Some(
+            "https://images.pexels.com/photos/1103970/pexels-photo-1103970.jpeg?auto=compress&cs=tinysrgb&h=2160&w=3840",
+        ),
+        _ => None,
+    }
 }
 
 pub fn quote_preset_endpoint(id: &str) -> Option<&'static str> {
@@ -1134,12 +1147,16 @@ mod tests {
     fn builtin_presets_are_available() {
         assert!(!builtin_image_presets().is_empty());
         assert!(!builtin_quote_presets().is_empty());
-        assert!(builtin_image_presets()[0].display_label.contains("NASA"));
+        assert!(
+            builtin_image_presets()
+                .iter()
+                .any(|p| p.id == "picsum_random_hd")
+        );
     }
 
     #[test]
     fn preset_endpoint_lookup_works() {
-        assert!(super::image_preset_endpoint("nasa_apod").is_some());
+        assert!(super::image_preset_endpoint("picsum_random_hd").is_some());
         assert!(super::quote_preset_endpoint("zenquotes_daily").is_some());
         assert!(super::quote_preset_endpoint("missing").is_none());
     }

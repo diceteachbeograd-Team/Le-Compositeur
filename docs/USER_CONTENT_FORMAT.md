@@ -58,6 +58,14 @@ Verfasser
 
 Repository sample file:
 - `assets/examples/quotes.md` (10 English quotes, block format)
+- `assets/quotes/local/local-quotes.md` (packaged multilingual default quotes)
+
+`wc-cli init` bootstrap behavior:
+- creates config at `~/.config/wallpaper-composer/config.toml`
+- auto-creates local quotes file at `~/Documents/wallpaper-composer/quotes.md` if missing
+
+Installed package path (RPM/DEB):
+- `/usr/share/wallpaper-composer/quotes/local-quotes.md`
 
 ## Planned parsing modes
 These modes are reserved for GUI settings and future parser upgrades:
@@ -82,6 +90,16 @@ Supported source values:
 - `url`
 
 Remote mode currently uses `curl` and cached downloads/response processing.
+
+Custom URL list format:
+- you can provide multiple endpoints in one field
+- supported separators: newline, `;`, or `|`
+- the runner cycles through URLs across runs
+
+Recommended image endpoint quality:
+- return a direct image file (`jpg`, `jpeg`, `png`, `webp`, `bmp`)
+- prefer at least `1920x1080`
+- keep endpoint response stable and reasonably fast
 
 ## Text and clock layout settings
 These settings are already available for GUI mapping:
