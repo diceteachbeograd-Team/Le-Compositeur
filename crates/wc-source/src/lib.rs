@@ -17,6 +17,12 @@ pub enum QuoteProvider {
 
 pub fn fetch_remote_image(endpoint: String, provider: ImageProvider) -> Result<PathBuf, String> {
     ensure_curl_available()?;
+    if matches!(provider, ImageProvider::Generic)
+        && let Some(path) = try_direct_image_download(&endpoint)?
+    {
+        return Ok(path);
+    }
+
     let body = fetch_text_via_curl(&endpoint)?;
 
     let image_url = match provider {
@@ -30,6 +36,24 @@ pub fn fetch_remote_image(endpoint: String, provider: ImageProvider) -> Result<P
     let target = cache_dir.join(file_name);
     download_file_via_curl(&image_url, &target)?;
     Ok(target)
+}
+
+fn try_direct_image_download(endpoint: &str) -> Result<Option<PathBuf>, String> {
+    let ext = guess_image_extension(endpoint);
+    let cache_dir = cache_dir_for("images")?;
+    let file_name = format!("direct-{}.{}", stable_hash(endpoint), ext);
+    let target = cache_dir.join(file_name);
+
+    if download_file_via_curl(endpoint, &target).is_err() {
+        return Ok(None);
+    }
+
+    if looks_like_image_file(&target)? {
+        return Ok(Some(target));
+    }
+
+    let _ = fs::remove_file(&target);
+    Ok(None)
 }
 
 pub fn fetch_remote_quote(endpoint: String, provider: QuoteProvider) -> Result<String, String> {
@@ -173,6 +197,20 @@ fn guess_image_extension(url: &str) -> &'static str {
     "jpg"
 }
 
+fn looks_like_image_file(path: &Path) -> Result<bool, String> {
+    let bytes = fs::read(path).map_err(|e| format!("failed to inspect downloaded file: {e}"))?;
+    if bytes.len() < 12 {
+        return Ok(false);
+    }
+
+    let is_jpeg = bytes[0] == 0xFF && bytes[1] == 0xD8;
+    let is_png = bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+    let is_bmp = bytes.starts_with(b"BM");
+    let is_gif = bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a");
+    let is_webp = bytes.starts_with(b"RIFF") && bytes[8..12] == *b"WEBP";
+    Ok(is_jpeg || is_png || is_bmp || is_gif || is_webp)
+}
+
 fn parse_quote_from_payload(payload: &str) -> String {
     if let Some(q) = json_field(payload, "q") {
         if let Some(a) = json_field(payload, "a") {
@@ -190,6 +228,25 @@ fn parse_quote_from_payload(payload: &str) -> String {
             );
         }
         return unescape_json_like(&content);
+    }
+
+    if let Some(quote) = json_field(payload, "quote") {
+        if let Some(author) = json_field(payload, "author") {
+            return format!(
+                "{} - {}",
+                unescape_json_like(&quote),
+                unescape_json_like(&author)
+            );
+        }
+        return unescape_json_like(&quote);
+    }
+
+    if let Some(advice) = json_field(payload, "advice") {
+        return unescape_json_like(&advice);
+    }
+
+    if let Some(text) = json_field(payload, "text") {
+        return unescape_json_like(&text);
     }
 
     payload

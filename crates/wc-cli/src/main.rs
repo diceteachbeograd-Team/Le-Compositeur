@@ -88,8 +88,8 @@ fn main() -> Result<()> {
             let config_path = resolve_config_path(config)?;
             let cfg = load_config(&config_path)?;
             validate_config(&cfg)?;
-            let image_cycle = determine_cycle(&cfg, cfg.image_refresh_seconds, "image")?;
-            let quote_cycle = determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote")?;
+            let image_cycle = determine_cycle(&cfg, cfg.image_refresh_seconds, "image_rotation")?;
+            let quote_cycle = determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote_rotation")?;
             run_cycle(&cfg, image_cycle, quote_cycle)?;
         }
         Commands::Init { config, force } => {
@@ -119,8 +119,10 @@ fn main() -> Result<()> {
             loop {
                 let cfg = load_config(&config_path)?;
                 validate_config(&cfg)?;
-                let image_cycle = determine_cycle(&cfg, cfg.image_refresh_seconds, "image")?;
-                let quote_cycle = determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote")?;
+                let image_cycle =
+                    determine_cycle(&cfg, cfg.image_refresh_seconds, "image_rotation")?;
+                let quote_cycle =
+                    determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote_rotation")?;
                 run_cycle(&cfg, image_cycle, quote_cycle)?;
 
                 if once {
@@ -626,10 +628,45 @@ fn backup_path_for(config_path: &Path) -> PathBuf {
 }
 
 fn loop_tick_seconds(cfg: &AppConfig) -> u64 {
-    // Clock must stay current; enforce a max tick of 60s while still respecting tighter user settings.
-    cfg.refresh_seconds
-        .max(1)
-        .min(cfg.image_refresh_seconds.max(1))
-        .min(cfg.quote_refresh_seconds.max(1))
-        .min(60)
+    // Single timer drives both image and quote rotation; keep clock reasonably current.
+    cfg.refresh_seconds.max(1).min(60)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{determine_cycle, loop_tick_seconds};
+    use std::fs;
+    use wc_core::{default_config_toml, load_config};
+
+    #[test]
+    fn loop_tick_is_capped_to_keep_clock_current() {
+        let cfg_path = std::env::temp_dir().join("wc-cli-loop-tick-test.toml");
+        fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
+        let mut cfg = load_config(&cfg_path).expect("default config should parse");
+        cfg.refresh_seconds = 300;
+        assert_eq!(loop_tick_seconds(&cfg), 60);
+
+        cfg.refresh_seconds = 15;
+        assert_eq!(loop_tick_seconds(&cfg), 15);
+    }
+
+    #[test]
+    fn image_and_quote_cycles_use_independent_intervals() {
+        let cfg_path = std::env::temp_dir().join("wc-cli-cycle-test.toml");
+        fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
+        let mut cfg = load_config(&cfg_path).expect("default config should parse");
+        cfg.rotation_use_persistent_state = false;
+        cfg.image_refresh_seconds = 120;
+        cfg.quote_refresh_seconds = 30;
+
+        let image_cycle =
+            determine_cycle(&cfg, cfg.image_refresh_seconds, "image_rotation").expect("cycle ok");
+        let quote_cycle =
+            determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote_rotation").expect("cycle ok");
+
+        assert!(
+            quote_cycle >= image_cycle,
+            "quote cycle should advance at least as fast as image cycle"
+        );
+    }
 }

@@ -833,6 +833,26 @@ pub fn builtin_image_presets() -> Vec<SourcePreset> {
             rate_limit: "provider-defined",
             notes: "Curated public-domain/CC media hub; scraping strategy must respect terms.",
         },
+        SourcePreset {
+            id: "picsum_random_hd",
+            display_label: "Picsum Random HD",
+            name: "Picsum Random",
+            endpoint: "https://picsum.photos/3840/2160.jpg",
+            category: "photos",
+            auth: "none",
+            rate_limit: "provider-defined",
+            notes: "Direct random photo endpoint that returns an image file via redirect.",
+        },
+        SourcePreset {
+            id: "unsplash_nature_hd",
+            display_label: "Unsplash Nature HD",
+            name: "Unsplash Nature",
+            endpoint: "https://source.unsplash.com/3840x2160/?nature,landscape",
+            category: "photos",
+            auth: "none",
+            rate_limit: "provider-defined",
+            notes: "Unsplash Source endpoint for rotating nature/landscape backgrounds.",
+        },
     ]
 }
 
@@ -857,6 +877,26 @@ pub fn builtin_quote_presets() -> Vec<SourcePreset> {
             auth: "none",
             rate_limit: "provider-defined",
             notes: "Public quote endpoint; availability can change over time.",
+        },
+        SourcePreset {
+            id: "dummyjson_quote",
+            display_label: "DummyJSON Random Quote",
+            name: "DummyJSON Quote",
+            endpoint: "https://dummyjson.com/quotes/random",
+            category: "quotes",
+            auth: "none",
+            rate_limit: "provider-defined",
+            notes: "Simple random quote payload for integration testing and demos.",
+        },
+        SourcePreset {
+            id: "advice_slip",
+            display_label: "Advice Slip",
+            name: "Advice Slip",
+            endpoint: "https://api.adviceslip.com/advice",
+            category: "advice",
+            auth: "none",
+            rate_limit: "provider-defined",
+            notes: "Short advice text endpoint; useful as non-book quote source.",
         },
     ]
 }
