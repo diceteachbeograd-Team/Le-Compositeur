@@ -5,7 +5,25 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${1:-0.1.0}"
 PKG_DIR="${ROOT_DIR}/dist/deb-root"
 
+need_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "error: missing required command: $1" >&2
+    return 1
+  fi
+}
+
+hint_missing_deb_deps() {
+  cat >&2 <<'EOF'
+hint: install Debian/Ubuntu build dependencies:
+  sudo apt update
+  sudo apt install -y rustc cargo dpkg-dev
+EOF
+}
+
 cd "$ROOT_DIR"
+
+need_cmd cargo || { hint_missing_deb_deps; exit 1; }
+need_cmd dpkg-deb || { hint_missing_deb_deps; exit 1; }
 
 cargo build --release -p wc-cli -p wc-gui
 
@@ -30,4 +48,5 @@ install -m0644 assets/icons/wallpaper-composer.svg "$PKG_DIR/usr/share/icons/hic
 
 dpkg-deb --build "$PKG_DIR" "${ROOT_DIR}/dist/wallpaper-composer_${VERSION}_amd64.deb"
 
-echo "DEB build complete: dist/wallpaper-composer_${VERSION}_amd64.deb"
+echo "DEB build complete:"
+ls -lah "${ROOT_DIR}/dist/wallpaper-composer_${VERSION}_amd64.deb"

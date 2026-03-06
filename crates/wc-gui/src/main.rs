@@ -287,6 +287,37 @@ impl WcGuiApp {
         self.status = "Runner started (continuous updates active)".to_string();
     }
 
+    fn start_detached_runner(&mut self) {
+        if let Err(e) = self.save_to_path_inner() {
+            self.status = format!("Cannot start detached runner before save: {e}");
+            return;
+        }
+
+        let path = self.config_path.clone();
+        let spawn_direct = self
+            .build_wc_cli_direct(&["run"], &path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        let result = match spawn_direct {
+            Ok(_child) => Ok(()),
+            Err(_) => self
+                .build_wc_cli_cargo(&["run"], &path)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map(|_child| ()),
+        };
+
+        match result {
+            Ok(()) => {
+                self.status =
+                    "Detached runner started (GUI can be closed; reopen GUI manually).".to_string()
+            }
+            Err(e) => self.status = format!("Detached runner start failed: {e}"),
+        }
+    }
+
     fn stop_runner(&mut self) {
         let Some(mut child) = self.runner.take() else {
             self.status = "Runner is not active".to_string();
@@ -295,6 +326,66 @@ impl WcGuiApp {
         let _ = child.kill();
         let _ = child.wait();
         self.status = "Runner stopped".to_string();
+    }
+
+    fn autostart_path() -> Option<PathBuf> {
+        #[cfg(target_os = "linux")]
+        {
+            let home = std::env::var_os("HOME")?;
+            return Some(
+                PathBuf::from(home)
+                    .join(".config")
+                    .join("autostart")
+                    .join("wallpaper-composer.desktop"),
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
+        }
+    }
+
+    fn autostart_enabled() -> bool {
+        Self::autostart_path().is_some_and(|p| p.exists())
+    }
+
+    fn install_autostart(&mut self) {
+        let Some(path) = Self::autostart_path() else {
+            self.status = "Autostart install is currently supported on Linux only.".to_string();
+            return;
+        };
+
+        let config = self.config_path.clone();
+        if let Some(parent) = path.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            self.status = format!("Autostart install failed (mkdir): {e}");
+            return;
+        }
+
+        let content = format!(
+            "[Desktop Entry]\nType=Application\nName=Wallpaper Composer Runner\nComment=Start Wallpaper Composer background runner on login\nExec=wc-cli run --config {}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+            config
+        );
+        match std::fs::write(&path, content) {
+            Ok(()) => self.status = format!("Autostart installed: {}", path.display()),
+            Err(e) => self.status = format!("Autostart install failed: {e}"),
+        }
+    }
+
+    fn remove_autostart(&mut self) {
+        let Some(path) = Self::autostart_path() else {
+            self.status = "Autostart remove is currently supported on Linux only.".to_string();
+            return;
+        };
+        if !path.exists() {
+            self.status = "Autostart file not present.".to_string();
+            return;
+        }
+        match std::fs::remove_file(&path) {
+            Ok(()) => self.status = format!("Autostart removed: {}", path.display()),
+            Err(e) => self.status = format!("Autostart remove failed: {e}"),
+        }
     }
 
     fn poll_runner_state(&mut self) {
@@ -751,6 +842,21 @@ impl WcGuiApp {
             ui.monospace(format!("{}s", self.cfg.image_refresh_seconds));
         });
         ui.separator();
+        ui.heading("Autostart");
+        ui.horizontal(|ui| {
+            ui.label(if Self::autostart_enabled() {
+                "Status: enabled"
+            } else {
+                "Status: disabled"
+            });
+            if ui.button("Install Autostart").clicked() {
+                self.install_autostart();
+            }
+            if ui.button("Remove Autostart").clicked() {
+                self.remove_autostart();
+            }
+        });
+        ui.separator();
         ui.heading("Wallpaper");
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.cfg.apply_wallpaper, "Apply wallpaper")
@@ -916,8 +1022,18 @@ impl eframe::App for WcGuiApp {
                 if ui.button("Start Loop").clicked() {
                     self.start_runner();
                 }
+                if ui.button("Start Loop + Hide").clicked() {
+                    self.start_runner();
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                }
+                if ui.button("Run Detached").clicked() {
+                    self.start_detached_runner();
+                }
                 if ui.button("Stop Loop").clicked() {
                     self.stop_runner();
+                }
+                if ui.button("Hide Window").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                 }
             });
             ui.horizontal(|ui| {
