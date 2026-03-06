@@ -7,10 +7,14 @@ use wc_core::{
 };
 
 fn main() -> eframe::Result<()> {
-    let mut native_options = eframe::NativeOptions::default();
+    let mut viewport = egui::ViewportBuilder::default().with_app_id("wallpaper-composer");
     if let Some(icon) = load_app_icon() {
-        native_options.viewport = egui::ViewportBuilder::default().with_icon(icon);
+        viewport = viewport.with_icon(icon);
     }
+    let native_options = eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    };
     eframe::run_native(
         "Wallpaper Composer Settings",
         native_options,
