@@ -187,6 +187,9 @@ impl WcGuiApp {
     }
 
     fn save_to_path_inner(&mut self) -> Result<(), String> {
+        // Keep one effective rotation timer: image interval drives quote and loop cadence.
+        self.cfg.refresh_seconds = self.cfg.image_refresh_seconds.max(1);
+        self.cfg.quote_refresh_seconds = self.cfg.image_refresh_seconds.max(1);
         let path = PathBuf::from(&self.config_path);
         if let Some(parent) = path.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
@@ -610,12 +613,6 @@ impl WcGuiApp {
                 });
             ui.checkbox(&mut self.cfg.quote_avoid_repeat, "Avoid repeat");
         });
-        ui.horizontal(|ui| {
-            ui.label("Quote sec");
-            ui.add(egui::DragValue::new(&mut self.cfg.quote_refresh_seconds).speed(1))
-                .on_hover_text(self.hover_text("quote_refresh"));
-        });
-
         ui.separator();
         ui.heading("Quote Layout");
         ui.horizontal(|ui| {
@@ -748,9 +745,10 @@ impl WcGuiApp {
     fn render_system_tab(&mut self, ui: &mut egui::Ui) {
         ui.heading("Runtime");
         ui.horizontal(|ui| {
-            ui.label("Runner tick");
-            ui.add(egui::DragValue::new(&mut self.cfg.refresh_seconds).speed(1))
-                .on_hover_text(self.hover_text("runner_tick"));
+            self.cfg.refresh_seconds = self.cfg.image_refresh_seconds.max(1);
+            self.cfg.quote_refresh_seconds = self.cfg.image_refresh_seconds.max(1);
+            ui.label("Master timer (from Images tab)");
+            ui.monospace(format!("{}s", self.cfg.image_refresh_seconds));
         });
         ui.separator();
         ui.heading("Wallpaper");

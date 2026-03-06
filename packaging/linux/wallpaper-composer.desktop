@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Wallpaper Composer
+Comment=Dynamic wallpaper composer with quotes and clock overlays
+Exec=wc-gui
+Icon=wallpaper-composer
+Terminal=false
+Categories=Graphics;Utility;
+Keywords=wallpaper;quotes;clock;background;
+StartupNotify=true

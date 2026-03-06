@@ -92,7 +92,7 @@ fn main() -> Result<()> {
             let config_path = resolve_config_path(config)?;
             let cfg = load_config(&config_path)?;
             validate_config(&cfg)?;
-            let cycle = determine_cycle(&cfg, cfg.refresh_seconds, "rotation")?;
+            let cycle = determine_cycle(&cfg, master_rotation_interval(&cfg), "rotation")?;
             run_cycle(&cfg, cycle, cycle)?;
         }
         Commands::Init { config, force } => {
@@ -122,7 +122,7 @@ fn main() -> Result<()> {
             loop {
                 let cfg = load_config(&config_path)?;
                 validate_config(&cfg)?;
-                let cycle = determine_cycle(&cfg, cfg.refresh_seconds, "rotation")?;
+                let cycle = determine_cycle(&cfg, master_rotation_interval(&cfg), "rotation")?;
                 run_cycle(&cfg, cycle, cycle)?;
 
                 if once {
@@ -306,11 +306,8 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
         other => anyhow::bail!("unsupported quote_source={other}; use local, preset, or url"),
     }
 
-    if cfg.refresh_seconds == 0 {
-        anyhow::bail!("refresh_seconds must be greater than 0");
-    }
-    if cfg.image_refresh_seconds == 0 || cfg.quote_refresh_seconds == 0 {
-        anyhow::bail!("image_refresh_seconds and quote_refresh_seconds must be greater than 0");
+    if cfg.image_refresh_seconds == 0 {
+        anyhow::bail!("image_refresh_seconds must be greater than 0");
     }
 
     let backend = cfg.wallpaper_backend.trim().to_ascii_lowercase();
@@ -722,8 +719,12 @@ fn backup_path_for(config_path: &Path) -> PathBuf {
 }
 
 fn loop_tick_seconds(cfg: &AppConfig) -> u64 {
-    // Single timer drives both image and quote rotation; keep clock reasonably current.
-    cfg.refresh_seconds.max(1).min(60)
+    // Image timer is the master interval; quote rotation follows this timer.
+    master_rotation_interval(cfg).min(60)
+}
+
+fn master_rotation_interval(cfg: &AppConfig) -> u64 {
+    cfg.image_refresh_seconds.max(1)
 }
 
 #[cfg(test)]
@@ -737,10 +738,10 @@ mod tests {
         let cfg_path = std::env::temp_dir().join("wc-cli-loop-tick-test.toml");
         fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
         let mut cfg = load_config(&cfg_path).expect("default config should parse");
-        cfg.refresh_seconds = 300;
+        cfg.image_refresh_seconds = 300;
         assert_eq!(loop_tick_seconds(&cfg), 60);
 
-        cfg.refresh_seconds = 15;
+        cfg.image_refresh_seconds = 15;
         assert_eq!(loop_tick_seconds(&cfg), 15);
     }
 
@@ -750,10 +751,12 @@ mod tests {
         fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
         let mut cfg = load_config(&cfg_path).expect("default config should parse");
         cfg.rotation_use_persistent_state = false;
-        cfg.refresh_seconds = 45;
+        cfg.image_refresh_seconds = 45;
 
-        let image_cycle = determine_cycle(&cfg, cfg.refresh_seconds, "rotation").expect("cycle ok");
-        let quote_cycle = determine_cycle(&cfg, cfg.refresh_seconds, "rotation").expect("cycle ok");
+        let image_cycle =
+            determine_cycle(&cfg, cfg.image_refresh_seconds, "rotation").expect("cycle ok");
+        let quote_cycle =
+            determine_cycle(&cfg, cfg.image_refresh_seconds, "rotation").expect("cycle ok");
 
         assert_eq!(image_cycle, quote_cycle);
     }

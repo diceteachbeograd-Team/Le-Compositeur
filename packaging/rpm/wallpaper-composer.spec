@@ -4,11 +4,12 @@ Release:        1%{?dist}
 Summary:        Dynamic Linux wallpaper composer (Rust)
 
 License:        GPL-3.0-or-later
-URL:            https://github.com/<org-or-user>/wallpaper-composer
+URL:            https://github.com/diceteachbeograd-Team/wallpaper-composer
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  rust
 BuildRequires:  cargo
+BuildRequires:  desktop-file-utils
 
 %description
 Wallpaper Composer renders dynamic wallpapers using local or public image/quote sources,
@@ -19,18 +20,26 @@ clock overlays, and desktop backend integration.
 
 %build
 cargo build --release -p wc-cli
+cargo build --release -p wc-gui
 
 %install
 install -Dpm0755 target/release/wc-cli %{buildroot}%{_bindir}/wc-cli
+install -Dpm0755 target/release/wc-gui %{buildroot}%{_bindir}/wc-gui
 install -Dpm0644 README.md %{buildroot}%{_docdir}/%{name}/README.md
 install -Dpm0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
+install -Dpm0644 assets/icons/wallpaper-composer.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/wallpaper-composer.svg
+install -Dpm0644 packaging/linux/wallpaper-composer.desktop %{buildroot}%{_datadir}/applications/wallpaper-composer.desktop
+install -Dpm0644 packaging/linux/wallpaper-composer.metainfo.xml %{buildroot}%{_datadir}/metainfo/wallpaper-composer.metainfo.xml
 
 %files
 %license %{_licensedir}/%{name}/LICENSE
 %doc %{_docdir}/%{name}/README.md
 %{_bindir}/wc-cli
+%{_bindir}/wc-gui
+%{_datadir}/icons/hicolor/scalable/apps/wallpaper-composer.svg
+%{_datadir}/applications/wallpaper-composer.desktop
+%{_datadir}/metainfo/wallpaper-composer.metainfo.xml
 
 %changelog
-* Wed Mar 04 2026 Wallpaper Composer Contributors <opensource@example.com> - 0.1.0-1
-- Initial RPM packaging skeleton.
-
+* Fri Mar 06 2026 Wallpaper Composer Contributors <opensource@example.com> - 0.1.0-1
+- Alpha packaging update with GUI binary, desktop entry, icon, and metainfo.

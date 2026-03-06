@@ -142,6 +142,12 @@ just ui-blueprint
 just migrate
 ```
 
+Alpha packaging helpers:
+```bash
+./scripts/build-alpha-rpm.sh 0.1.0
+./scripts/build-alpha-deb.sh 0.1.0
+```
+
 ### 7. CLI reference
 `doctor`
 - prints local diagnostic information (project/profile/local time)
@@ -168,7 +174,7 @@ just migrate
 - runs the generation cycle
 - with `--once`, executes exactly one cycle and exits
 - without `--once`, loops using `refresh_seconds` from config
-- image and quote changes use the same cycle timer (`refresh_seconds`)
+- image timer is the master interval (`image_refresh_seconds`) and quote changes follow it
 
 `presets`
 - prints built-in public source presets (for future GUI/source settings)

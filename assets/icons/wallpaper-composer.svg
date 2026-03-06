@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Wallpaper Composer icon">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B3D91"/>
+      <stop offset="100%" stop-color="#15A39C"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFD54A"/>
+      <stop offset="100%" stop-color="#FF8A3D"/>
+    </linearGradient>
+  </defs>
+  <rect x="24" y="24" width="464" height="464" rx="96" fill="url(#bg)"/>
+  <circle cx="388" cy="128" r="58" fill="url(#sun)" opacity="0.95"/>
+  <path d="M64 372 L180 242 L260 322 L338 220 L448 372 Z" fill="#0C1F36" opacity="0.82"/>
+  <path d="M64 404 L170 292 L248 356 L320 286 L448 404 Z" fill="#17375F" opacity="0.9"/>
+  <rect x="90" y="92" width="332" height="246" rx="20" fill="none" stroke="#FFFFFF" stroke-opacity="0.6" stroke-width="10"/>
+  <rect x="108" y="286" width="272" height="22" rx="10" fill="#FFFFFF" fill-opacity="0.85"/>
+  <rect x="108" y="324" width="208" height="18" rx="9" fill="#FFFFFF" fill-opacity="0.75"/>
+</svg>
