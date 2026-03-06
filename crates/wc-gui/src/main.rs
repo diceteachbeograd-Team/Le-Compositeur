@@ -530,6 +530,7 @@ impl WcGuiApp {
     }
 
     fn render_quotes_tab(&mut self, ui: &mut egui::Ui) {
+        let color_help = self.hover_text("color_format").to_string();
         ui.heading("Quote Source");
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.cfg.quote_source, "local".to_string(), "Local")
@@ -614,11 +615,9 @@ impl WcGuiApp {
             ui.add(egui::DragValue::new(&mut self.cfg.quote_refresh_seconds).speed(1))
                 .on_hover_text(self.hover_text("quote_refresh"));
         });
-    }
 
-    fn render_style_tab(&mut self, ui: &mut egui::Ui) {
-        let color_help = self.hover_text("color_format").to_string();
-        ui.heading("Text Style");
+        ui.separator();
+        ui.heading("Quote Layout");
         ui.horizontal(|ui| {
             ui.label("Quote size");
             ui.add(
@@ -640,7 +639,7 @@ impl WcGuiApp {
         });
         ui.horizontal(|ui| {
             ui.label("Font family");
-            egui::ComboBox::from_id_salt("font_family")
+            egui::ComboBox::from_id_salt("font_family_quotes")
                 .selected_text(&self.cfg.font_family)
                 .show_ui(ui, |ui| {
                     for family in [
@@ -655,16 +654,8 @@ impl WcGuiApp {
                 });
         });
         ui.horizontal(|ui| {
-            ui.label("Clock size");
-            ui.add(egui::DragValue::new(&mut self.cfg.clock_font_size).speed(1));
-            ui.label("X");
-            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_x).speed(1));
-            ui.label("Y");
-            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_y).speed(1));
-        });
-        ui.horizontal(|ui| {
             ui.label("Text box");
-            egui::ComboBox::from_id_salt("text_box_size")
+            egui::ComboBox::from_id_salt("text_box_size_quotes")
                 .selected_text(&self.cfg.text_box_size)
                 .show_ui(ui, |ui| {
                     for mode in ["quarter", "third", "half", "full", "custom"] {
@@ -692,6 +683,19 @@ impl WcGuiApp {
                 false,
                 &color_help,
             );
+        });
+
+        ui.separator();
+        ui.heading("Clock Layout");
+        ui.horizontal(|ui| {
+            ui.label("Clock size");
+            ui.add(egui::DragValue::new(&mut self.cfg.clock_font_size).speed(1));
+            ui.label("X");
+            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_x).speed(1));
+            ui.label("Y");
+            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_y).speed(1));
+        });
+        ui.horizontal(|ui| {
             edit_color_field(
                 ui,
                 "Clock color",
@@ -700,6 +704,11 @@ impl WcGuiApp {
                 &color_help,
             );
         });
+    }
+
+    fn render_style_tab(&mut self, ui: &mut egui::Ui) {
+        let color_help = self.hover_text("color_format").to_string();
+        ui.heading("Text Style");
         ui.horizontal(|ui| {
             edit_color_field(
                 ui,

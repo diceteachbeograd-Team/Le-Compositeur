@@ -124,8 +124,6 @@ fn render_with_imagemagick(
     let author_gravity = if rtl { "West" } else { "East" };
     let (img_w, img_h) =
         detect_image_dimensions(&source_image.display().to_string()).unwrap_or((1920, 1080));
-    let layout_w = 1920;
-    let layout_h = 1080;
 
     // Build an explicit background layer first so image scaling/placement is independent
     // from the quote box/text layer rendered afterwards.
@@ -140,8 +138,8 @@ fn render_with_imagemagick(
     args.push(")".to_string());
 
     let (box_w_pct, box_h_pct) = resolve_text_box_pct(text);
-    let box_w = ((layout_w * box_w_pct as i32) / 100).max(240);
-    let box_h = ((layout_h * box_h_pct as i32) / 100).max(160);
+    let box_w = ((img_w * box_w_pct as i32) / 100).max(240);
+    let box_h = ((img_h * box_h_pct as i32) / 100).max(160);
     let effective_quote_size = resolve_quote_font_size(text.quote_font_size, text);
     let author_size = ((effective_quote_size as f32) * 0.85).round() as u32;
     let author_h = (author_size as i32 * 2).max(40);

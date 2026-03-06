@@ -16,6 +16,7 @@ Alternative block format (recommended for multi-line quotes):
 - delimiter markers are never displayed
 - optional short first line header inside a block (for example `T1`, `Text 1`) is treated as a label and hidden
 - optional author separator line `:` inside a block: content after `:` is displayed as author line (`- Author`)
+- this format is recommended for reliable rotation in loop mode
 - rendering alignment is automatic by script direction:
   - LTR: quote left-aligned, author right-aligned
   - RTL (Arabic/Hebrew/Syriac etc.): quote right-aligned, author left-aligned
@@ -55,6 +56,9 @@ Verfasser
 ***
 ```
 
+Repository sample file:
+- `assets/examples/quotes.md` (10 English quotes, block format)
+
 ## Planned parsing modes
 These modes are reserved for GUI settings and future parser upgrades:
 - `lines`: one quote per line (current)
@@ -86,5 +90,7 @@ These settings are already available for GUI mapping:
 - `clock_font_size` (minimum 8)
 - `clock_pos_x`, `clock_pos_y`
 
-Current renderer mode writes these values into preview metadata sidecar.
-In a later rendering phase, the same settings will directly control drawn text placement and size.
+Current renderer applies these values directly:
+- text box size presets are resolved against current image dimensions
+- quote font size stays at configured value (no auto downscale from image size)
+- quote/clock are rendered on top of a prepared background layer
