@@ -627,7 +627,11 @@ fn resolve_image_endpoint_from_preset(cfg: &AppConfig) -> Result<(String, ImageP
     let endpoint = image_preset_endpoint(id)
         .ok_or_else(|| anyhow::anyhow!("unknown image_source_preset: {id}"))?;
 
-    Ok((with_nasa_demo_key(endpoint), ImageProvider::Generic))
+    let provider = match id {
+        "wallhaven_random_4k" => ImageProvider::WallhavenApi,
+        _ => ImageProvider::Generic,
+    };
+    Ok((with_nasa_demo_key(endpoint), provider))
 }
 
 fn resolve_quote_endpoint_from_preset(cfg: &AppConfig) -> Result<(String, QuoteProvider)> {

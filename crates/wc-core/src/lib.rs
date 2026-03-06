@@ -865,13 +865,13 @@ pub fn builtin_image_presets() -> Vec<SourcePreset> {
         },
         SourcePreset {
             id: "pexels_curated_4k",
-            display_label: "Pexels Curated 4K",
-            name: "Pexels Curated",
-            endpoint: "https://images.pexels.com/photos/1103970/pexels-photo-1103970.jpeg?auto=compress&cs=tinysrgb&h=2160&w=3840",
+            display_label: "LoremFlickr City 4K",
+            name: "LoremFlickr City",
+            endpoint: "https://loremflickr.com/3840/2160/city,architecture/all",
             category: "photos",
             auth: "none",
             rate_limit: "provider-defined",
-            notes: "Static high-resolution curated image endpoint from Pexels CDN.",
+            notes: "Random city/architecture 4K-like endpoint.",
         },
     ]
 }

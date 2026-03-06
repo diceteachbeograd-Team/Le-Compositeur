@@ -7,6 +7,7 @@ pub enum ImageProvider {
     Generic,
     NasaApod,
     WikimediaApi,
+    WallhavenApi,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -42,9 +43,16 @@ pub fn fetch_remote_image(endpoint: String, provider: ImageProvider) -> Result<P
             .unwrap_or_else(|| endpoint.clone()),
         ImageProvider::WikimediaApi => parse_wikimedia_image_url(&body)
             .or_else(|| extract_image_url(&body))
+            .or_else(|| extract_image_url(&unescape_json_like(&body)))
+            .or_else(|| fallback_image_for_endpoint(&endpoint).map(ToOwned::to_owned))
+            .unwrap_or_else(|| endpoint.clone()),
+        ImageProvider::WallhavenApi => parse_wallhaven_image_url(&body)
+            .or_else(|| extract_image_url(&body))
+            .or_else(|| extract_image_url(&unescape_json_like(&body)))
             .or_else(|| fallback_image_for_endpoint(&endpoint).map(ToOwned::to_owned))
             .unwrap_or_else(|| endpoint.clone()),
         ImageProvider::Generic => extract_image_url(&body)
+            .or_else(|| extract_image_url(&unescape_json_like(&body)))
             .or_else(|| fallback_image_for_endpoint(&endpoint).map(ToOwned::to_owned))
             .unwrap_or_else(|| endpoint.clone()),
     };
@@ -163,6 +171,20 @@ fn parse_wikimedia_image_url(payload: &str) -> Option<String> {
     extract_image_url(payload).map(|u| normalize_wikimedia_thumb_url(&u))
 }
 
+fn parse_wallhaven_image_url(payload: &str) -> Option<String> {
+    if let Some(path) = json_field(payload, "path")
+        && is_supported_image_url(&path)
+    {
+        return Some(path);
+    }
+    if let Some(url) = json_field(payload, "url")
+        && is_supported_image_url(&url)
+    {
+        return Some(url);
+    }
+    None
+}
+
 fn normalize_wikimedia_thumb_url(url: &str) -> String {
     if !url.contains("upload.wikimedia.org") || !url.contains("/thumb/") {
         return url.to_string();
@@ -206,7 +228,10 @@ fn extract_image_url(payload: &str) -> Option<String> {
 }
 
 fn fallback_image_for_endpoint(endpoint: &str) -> Option<&'static str> {
-    if endpoint.contains("source.unsplash.com") || endpoint.contains("api.nasa.gov") {
+    if endpoint.contains("source.unsplash.com")
+        || endpoint.contains("api.nasa.gov")
+        || endpoint.contains("wallhaven.cc/api/")
+    {
         return Some("https://picsum.photos/3840/2160.jpg");
     }
     None
