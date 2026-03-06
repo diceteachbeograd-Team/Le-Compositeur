@@ -91,6 +91,16 @@ Supported source values:
 
 Remote mode currently uses `curl` and cached downloads/response processing.
 
+Custom URL list format:
+- you can provide multiple endpoints in one field
+- supported separators: newline, `;`, or `|`
+- the runner cycles through URLs across runs
+
+Recommended image endpoint quality:
+- return a direct image file (`jpg`, `jpeg`, `png`, `webp`, `bmp`)
+- prefer at least `1920x1080`
+- keep endpoint response stable and reasonably fast
+
 ## Text and clock layout settings
 These settings are already available for GUI mapping:
 - `quote_font_size` (minimum 8)

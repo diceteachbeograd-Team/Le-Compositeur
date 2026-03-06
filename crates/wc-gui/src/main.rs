@@ -129,16 +129,16 @@ impl WcGuiApp {
                 "作用: 选择图片来源。方法: 本地文件夹、内置在线预设或自定义 URL。建议: 先用本地来源更稳定。"
             ),
             "image_preset" => self.t(
-                "What: online image catalog/source. How: pick a preset and run preview/once. Recommended: Picsum or NASA for quick tests.",
-                "Was: Online-Bildquelle/Katalog. Wie: Preset wählen und Vorschau/Einmallauf starten. Empfehlung: Picsum oder NASA für schnelle Tests.",
-                "Sta: online izvor/katalog slika. Kako: izaberi preset i pokreni pregled/jednom. Preporuka: Picsum ili NASA za brze testove.",
-                "作用: 在线图片来源/库。方法: 选择预设后运行预览或单次执行。建议: 测试时优先 Picsum 或 NASA。"
+                "What: online image source preset. How: pick one and test with Run Once. Recommended: start with Picsum; then try Wallhaven/LoremFlickr for variety.",
+                "Was: Online-Bildquellen-Preset. Wie: auswählen und mit Run Once testen. Empfehlung: mit Picsum starten, danach Wallhaven/LoremFlickr für Vielfalt.",
+                "Sta: preset za online slike. Kako: izaberi i testiraj sa Run Once. Preporuka: prvo Picsum, pa Wallhaven/LoremFlickr za raznolikost.",
+                "作用: 在线图片预设来源。方法: 选中后用 Run Once 测试。建议: 先用 Picsum，再试 Wallhaven/LoremFlickr。"
             ),
             "image_url" => self.t(
-                "What: direct remote image endpoint. How: paste a stable HTTPS URL that returns an image. Recommended: use presets unless you control the URL.",
-                "Was: direkte Remote-Bild-URL. Wie: stabile HTTPS-URL eintragen, die ein Bild liefert. Empfehlung: Presets nutzen, falls URL nicht unter eigener Kontrolle ist.",
-                "Sta: direktan udaljeni URL slike. Kako: unesi stabilan HTTPS URL koji vraća sliku. Preporuka: koristi preset ako ne kontrolišeš URL.",
-                "作用: 远程图片直链。方法: 填写返回图片的稳定 HTTPS URL。建议: 若 URL 不可控，优先用预设。"
+                "What: custom image URL list. How: add multiple URLs (one per line, or separated by ';'). Requirements: endpoint must return a real image (jpg/png/webp/bmp), preferably >=1920x1080, reachable within ~8s. Recommended: keep 3-10 stable sources.",
+                "Was: eigene Bild-URL-Liste. Wie: mehrere URLs eintragen (eine pro Zeile oder mit ';' trennen). Anforderungen: Endpoint muss ein echtes Bild liefern (jpg/png/webp/bmp), ideal >=1920x1080, erreichbar in ~8s. Empfehlung: 3-10 stabile Quellen verwenden.",
+                "Sta: lista prilagođenih URL-ova za slike. Kako: unesi više URL-ova (jedan po redu ili odvojeno sa ';'). Uslovi: endpoint mora da vrati pravu sliku (jpg/png/webp/bmp), poželjno >=1920x1080, dostupan za ~8s. Preporuka: koristi 3-10 stabilnih izvora.",
+                "作用: 自定义图片 URL 列表。方法: 可填多个 URL（每行一个，或用 ';' 分隔）。要求: 必须直接返回图片（jpg/png/webp/bmp），建议 >=1920x1080，约 8 秒内可访问。建议: 保持 3-10 个稳定来源。"
             ),
             "image_dir" => self.t(
                 "What: local wallpaper folder. How: choose a folder with jpg/png/webp/bmp files. Recommended: dedicated folder with curated images.",
@@ -159,10 +159,10 @@ impl WcGuiApp {
                 "作用: 在线引文提供方。方法: 选择后运行预览或单次执行。建议: 测试优先 ZenQuotes 或 DummyJSON。"
             ),
             "quote_url" => self.t(
-                "What: custom quote API URL. How: use an endpoint returning JSON/text quote content. Recommended: confirm rate limits and uptime first.",
-                "Was: eigene Zitat-API-URL. Wie: Endpoint mit JSON/Text für Zitatinhalt eintragen. Empfehlung: vorher Rate Limits und Verfügbarkeit prüfen.",
-                "Sta: prilagođeni URL za citate. Kako: koristi endpoint koji vraća JSON/tekst citata. Preporuka: proveri limit i dostupnost pre upotrebe.",
-                "作用: 自定义引文 API URL。方法: 使用返回 JSON/文本引文内容的接口。建议: 先确认限流和可用性。"
+                "What: custom quote URL list. How: add multiple endpoints (one per line, or separated by ';'). Requirements: each endpoint should return usable text/JSON quickly and consistently. Recommended: keep a small set of reliable APIs.",
+                "Was: eigene Zitat-URL-Liste. Wie: mehrere Endpoints eintragen (eine pro Zeile oder mit ';' trennen). Anforderungen: jeder Endpoint sollte schnell und zuverlässig nutzbaren Text/JSON liefern. Empfehlung: kleine, stabile API-Liste verwenden.",
+                "Sta: lista prilagođenih URL-ova za citate. Kako: unesi više endpointa (jedan po redu ili odvojeno sa ';'). Uslovi: svaki endpoint treba brzo i pouzdano da vrati upotrebljiv tekst/JSON. Preporuka: drži malu listu stabilnih API-ja.",
+                "作用: 自定义语录 URL 列表。方法: 可填多个接口（每行一个，或用 ';' 分隔）。要求: 每个接口都应稳定、快速返回可用文本/JSON。建议: 保持少量可靠 API。"
             ),
             "quotes_path" => self.t(
                 "What: local quote file path. How: choose .txt or .md file, then reload quotes preview. Recommended: keep short clean entries.",
@@ -594,7 +594,7 @@ impl WcGuiApp {
                         .cfg
                         .image_source_preset
                         .clone()
-                        .unwrap_or_else(|| "nasa_apod".to_string());
+                        .unwrap_or_else(|| "picsum_random_hd".to_string());
                     egui::ComboBox::from_id_salt("image_source_preset")
                         .selected_text(&selected)
                         .show_ui(ui, |ui| {
@@ -613,10 +613,14 @@ impl WcGuiApp {
             }
             "url" => {
                 ui.horizontal(|ui| {
-                    ui.label("Image URL");
+                    ui.label("Image URL(s)");
                     let mut url = self.cfg.image_source_url.clone().unwrap_or_default();
-                    ui.text_edit_singleline(&mut url)
-                        .on_hover_text(self.hover_text("image_url"));
+                    ui.add(
+                        egui::TextEdit::multiline(&mut url)
+                            .desired_rows(3)
+                            .desired_width(360.0),
+                    )
+                    .on_hover_text(self.hover_text("image_url"));
                     self.cfg.image_source_url = Some(url);
                 });
             }
@@ -701,10 +705,14 @@ impl WcGuiApp {
             }
             "url" => {
                 ui.horizontal(|ui| {
-                    ui.label("Quote URL");
+                    ui.label("Quote URL(s)");
                     let mut url = self.cfg.quote_source_url.clone().unwrap_or_default();
-                    ui.text_edit_singleline(&mut url)
-                        .on_hover_text(self.hover_text("quote_url"));
+                    ui.add(
+                        egui::TextEdit::multiline(&mut url)
+                            .desired_rows(3)
+                            .desired_width(360.0),
+                    )
+                    .on_hover_text(self.hover_text("quote_url"));
                     self.cfg.quote_source_url = Some(url);
                 });
             }
@@ -1164,7 +1172,7 @@ fn default_cfg() -> AppConfig {
         quotes_path: "~/Documents/wallpaper-composer/quotes.md".to_string(),
         image_source: "local".to_string(),
         image_source_url: None,
-        image_source_preset: Some("nasa_apod".to_string()),
+        image_source_preset: Some("picsum_random_hd".to_string()),
         quote_source: "local".to_string(),
         quote_source_url: None,
         quote_source_preset: Some("zenquotes_daily".to_string()),

@@ -301,7 +301,7 @@ image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
 image_source = "local"
 image_source_url = ""
-image_source_preset = "nasa_apod"
+image_source_preset = "picsum_random_hd"
 quote_source = "local"
 quote_source_url = ""
 quote_source_preset = "zenquotes_daily"
@@ -351,7 +351,7 @@ Field meanings:
 - `image_source`: `local` today; remote/public modes are prepared for GUI phase
 - `image_source`: `local`, `preset`, `url`
 - `image_source_preset`: built-in public image source id
-- `image_source_url`: custom public image endpoint
+- `image_source_url`: custom public image endpoint(s), one per line or `;`-separated
 - `quote_source`: `local`, `preset`, `url`
 - `quote_source_preset`: built-in public quote source id
 - `quote_source_url`: custom public quote endpoint
@@ -373,8 +373,8 @@ Quote file authoring rules are documented in:
 
 Remote source notes:
 - remote fetching currently uses `curl` and local cache under XDG cache/home tmp fallback
-- presets are starter integrations and may require provider-specific API keys/rate-limit handling for production
-- provider-specific parsing exists for NASA APOD, ZenQuotes, and Quotable presets
+- presets are starter integrations and may change availability based on third-party providers
+- custom URL mode supports multiple endpoints (one per line or `;`-separated), cycled over time
 - visual text/clock rendering currently relies on ImageMagick availability for overlay mode
 - fallback render order: `imagemagick-overlay` -> `native-bmp-overlay` (for 24-bit BMP input) -> `copy-source`
 - wallpaper backend execution is handled through a dedicated `wc-backend` crate

@@ -5,7 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use wc_backend::apply_wallpaper;
 use wc_core::{
@@ -124,6 +124,7 @@ fn main() -> Result<()> {
         Commands::Run { config, once } => {
             let config_path = resolve_config_path(config)?;
             loop {
+                let tick_started = Instant::now();
                 let cfg = load_config(&config_path)?;
                 validate_config(&cfg)?;
                 let cycle = determine_cycle(&cfg, master_rotation_interval(&cfg), "rotation")?;
@@ -132,7 +133,11 @@ fn main() -> Result<()> {
                 if once {
                     break;
                 }
-                thread::sleep(Duration::from_secs(loop_tick_seconds(&cfg)));
+                let desired_tick = Duration::from_secs(loop_tick_seconds(&cfg));
+                let spent = tick_started.elapsed();
+                if spent < desired_tick {
+                    thread::sleep(desired_tick - spent);
+                }
             }
         }
         Commands::Presets => {
@@ -269,11 +274,11 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
             }
         }
         "url" | "remote_url" => {
-            if cfg
-                .image_source_url
-                .as_deref()
-                .is_none_or(|v| v.trim().is_empty())
-            {
+            if cfg.image_source_url.as_deref().is_none_or(|v| {
+                !parse_endpoint_list(v)
+                    .into_iter()
+                    .any(|u| looks_like_endpoint(&u))
+            }) {
                 anyhow::bail!("image_source_url is required for image_source=url");
             }
         }
@@ -299,11 +304,11 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
             }
         }
         "url" | "remote_url" => {
-            if cfg
-                .quote_source_url
-                .as_deref()
-                .is_none_or(|v| v.trim().is_empty())
-            {
+            if cfg.quote_source_url.as_deref().is_none_or(|v| {
+                !parse_endpoint_list(v)
+                    .into_iter()
+                    .any(|u| looks_like_endpoint(&u))
+            }) {
                 anyhow::bail!("quote_source_url is required for quote_source=url");
             }
         }
@@ -533,7 +538,7 @@ fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {
                 .map_err(|e| anyhow::anyhow!("failed to fetch preset image source: {e}"))
         }
         "url" | "remote_url" => {
-            let endpoint = resolve_image_endpoint_from_url(cfg)?;
+            let endpoint = resolve_image_endpoint_from_url(cfg, cycle)?;
             fetch_remote_image(endpoint, ImageProvider::Generic)
                 .map_err(|e| anyhow::anyhow!("failed to fetch custom image source: {e}"))
         }
@@ -573,7 +578,7 @@ fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {
                 .map_err(|e| anyhow::anyhow!("failed to fetch preset quote source: {e}"))
         }
         "url" | "remote_url" => {
-            let endpoint = resolve_quote_endpoint_from_url(cfg)?;
+            let endpoint = resolve_quote_endpoint_from_url(cfg, cycle)?;
             fetch_remote_quote(endpoint, QuoteProvider::Generic)
                 .map_err(|e| anyhow::anyhow!("failed to fetch custom quote source: {e}"))
         }
@@ -622,13 +627,7 @@ fn resolve_image_endpoint_from_preset(cfg: &AppConfig) -> Result<(String, ImageP
     let endpoint = image_preset_endpoint(id)
         .ok_or_else(|| anyhow::anyhow!("unknown image_source_preset: {id}"))?;
 
-    let provider = match id {
-        "nasa_apod" => ImageProvider::NasaApod,
-        "wikimedia_featured" => ImageProvider::WikimediaApi,
-        _ => ImageProvider::Generic,
-    };
-
-    Ok((with_nasa_demo_key(endpoint), provider))
+    Ok((with_nasa_demo_key(endpoint), ImageProvider::Generic))
 }
 
 fn resolve_quote_endpoint_from_preset(cfg: &AppConfig) -> Result<(String, QuoteProvider)> {
@@ -647,18 +646,22 @@ fn resolve_quote_endpoint_from_preset(cfg: &AppConfig) -> Result<(String, QuoteP
     Ok((endpoint.to_string(), provider))
 }
 
-fn resolve_image_endpoint_from_url(cfg: &AppConfig) -> Result<String> {
-    cfg.image_source_url
-        .clone()
-        .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("image_source_url is required for image_source=url"))
+fn resolve_image_endpoint_from_url(cfg: &AppConfig, cycle: u64) -> Result<String> {
+    let raw = cfg
+        .image_source_url
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("image_source_url is required for image_source=url"))?;
+    pick_endpoint_from_list(raw, cycle)
+        .ok_or_else(|| anyhow::anyhow!("image_source_url must contain at least one valid URL"))
 }
 
-fn resolve_quote_endpoint_from_url(cfg: &AppConfig) -> Result<String> {
-    cfg.quote_source_url
-        .clone()
-        .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("quote_source_url is required for quote_source=url"))
+fn resolve_quote_endpoint_from_url(cfg: &AppConfig, cycle: u64) -> Result<String> {
+    let raw = cfg
+        .quote_source_url
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("quote_source_url is required for quote_source=url"))?;
+    pick_endpoint_from_list(raw, cycle)
+        .ok_or_else(|| anyhow::anyhow!("quote_source_url must contain at least one valid URL"))
 }
 
 fn with_nasa_demo_key(endpoint: &str) -> String {
@@ -670,6 +673,38 @@ fn with_nasa_demo_key(endpoint: &str) -> String {
     } else {
         format!("{endpoint}?api_key=DEMO_KEY")
     }
+}
+
+fn pick_endpoint_from_list(raw: &str, cycle: u64) -> Option<String> {
+    let urls = parse_endpoint_list(raw)
+        .into_iter()
+        .filter(|u| looks_like_endpoint(u))
+        .collect::<Vec<_>>();
+    if urls.is_empty() {
+        return None;
+    }
+    let idx = (cycle as usize) % urls.len();
+    urls.get(idx).cloned()
+}
+
+fn parse_endpoint_list(raw: &str) -> Vec<String> {
+    let mut out = Vec::<String>::new();
+    for piece in raw.split(['\n', ';', '|']) {
+        let trimmed = piece.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        out.push(trimmed.to_string());
+    }
+    if out.is_empty() && !raw.trim().is_empty() {
+        out.push(raw.trim().to_string());
+    }
+    out
+}
+
+fn looks_like_endpoint(value: &str) -> bool {
+    let v = value.trim().to_ascii_lowercase();
+    v.starts_with("https://") || v.starts_with("http://") || v.starts_with("file://")
 }
 
 fn print_presets() {
