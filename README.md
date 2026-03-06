@@ -16,7 +16,7 @@ It will generate dynamic wallpapers from:
 
 Target later stages include login-screen and boot-screen integration (optional, distro/display-manager specific).
 
-### 2. Current implementation status (as of 2026-03-04)
+### 2. Current implementation status (as of 2026-03-06)
 Implemented:
 - Rust workspace with crates:
   - `wc-cli`
@@ -27,6 +27,13 @@ Implemented:
   - `init`
   - `render-preview` (image/quote rotation + metadata sidecar)
   - `run` (`--once` for single cycle, loop mode otherwise)
+- shared rotation timer (`refresh_seconds`) for both image and quote updates
+- no-repeat history for local sources (history-based rotation memory)
+- dynamic canvas sizing from current desktop resolution (auto-detected at runtime, fallback `1920x1080`)
+- ImageMagick render path with explicit background layer + quote/clock overlay
+- quote box size presets (`quarter`, `third`, `half`, `full`, `custom`) applied relative to current image dimensions
+- quote font rendered at configured size (no image-size-based downscale)
+- curated quote sample file: `assets/examples/quotes.md` (10 English quotes)
 - starter config generation (`init`)
 - baseline tests and lint/test workflow
 
@@ -135,6 +142,12 @@ just ui-blueprint
 just migrate
 ```
 
+Alpha packaging helpers:
+```bash
+./scripts/build-alpha-rpm.sh 0.1.0
+./scripts/build-alpha-deb.sh 0.1.0
+```
+
 ### 7. CLI reference
 `doctor`
 - prints local diagnostic information (project/profile/local time)
@@ -147,16 +160,21 @@ just migrate
 `render-preview [--config <PATH>]`
 - reads config, rotates image and quote selection based on time cycle index
 - writes `output_image`
-  - if ImageMagick (`magick`/`convert`) is available: text and clock are drawn onto the image
+  - if ImageMagick (`magick`/`convert`) is available:
+    - source image is first prepared as background layer
+    - quote/author/clock overlays are composited in a separate text layer step
   - otherwise: source image is copied as fallback
 - writes sidecar metadata file next to output image (`<output_file>.meta.txt`) with quote and clock
 - optionally applies wallpaper if enabled in config
 - supports source selection via `local`, `preset`, `url` for both images and quotes
+- local source mode supports no-repeat history over the last 3 picks for images and quotes (when `*_avoid_repeat = true`)
+- in random mode, no-repeat uses source-count-aware history windows to reduce quick repeats
 
 `run [--config <PATH>] [--once]`
 - runs the generation cycle
 - with `--once`, executes exactly one cycle and exits
 - without `--once`, loops using `refresh_seconds` from config
+- image timer is the master interval (`image_refresh_seconds`) and quote changes follow it
 
 `presets`
 - prints built-in public source presets (for future GUI/source settings)
@@ -215,6 +233,9 @@ time_format = "%H:%M"
 apply_wallpaper = false
 wallpaper_backend = "auto"
 ```
+
+Local quote template:
+- `assets/examples/quotes.md`
 
 Field meanings:
 - `image_dir`: source folder for wallpaper images

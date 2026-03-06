@@ -3,18 +3,22 @@ use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use wc_backend::apply_wallpaper;
 use wc_core::{
     AppConfig, build_doctor_report, builtin_image_presets, builtin_quote_presets, cycle_index,
-    default_config_path, default_config_toml, expand_tilde, image_preset_endpoint, load_config,
-    pick_background_image_with_mode, pick_quote_with_mode, presets_catalog_json,
-    quote_preset_endpoint, settings_schema_json, settings_ui_blueprint_json, to_config_toml,
+    default_config_path, default_config_toml, expand_tilde, image_preset_endpoint,
+    list_background_images, load_config, load_quotes, pick_background_image_with_mode,
+    pick_quote_with_mode, presets_catalog_json, quote_preset_endpoint, settings_schema_json,
+    settings_ui_blueprint_json, to_config_toml,
 };
 use wc_render::{PreviewText, render_preview_to_file};
 use wc_source::{ImageProvider, QuoteProvider, fetch_remote_image, fetch_remote_quote};
+
+const MAX_STORED_HISTORY: usize = 64;
 
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
@@ -88,9 +92,8 @@ fn main() -> Result<()> {
             let config_path = resolve_config_path(config)?;
             let cfg = load_config(&config_path)?;
             validate_config(&cfg)?;
-            let image_cycle = determine_cycle(&cfg, cfg.image_refresh_seconds, "image")?;
-            let quote_cycle = determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote")?;
-            run_cycle(&cfg, image_cycle, quote_cycle)?;
+            let cycle = determine_cycle(&cfg, master_rotation_interval(&cfg), "rotation")?;
+            run_cycle(&cfg, cycle, cycle)?;
         }
         Commands::Init { config, force } => {
             let config_path = resolve_config_path(config)?;
@@ -119,9 +122,8 @@ fn main() -> Result<()> {
             loop {
                 let cfg = load_config(&config_path)?;
                 validate_config(&cfg)?;
-                let image_cycle = determine_cycle(&cfg, cfg.image_refresh_seconds, "image")?;
-                let quote_cycle = determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote")?;
-                run_cycle(&cfg, image_cycle, quote_cycle)?;
+                let cycle = determine_cycle(&cfg, master_rotation_interval(&cfg), "rotation")?;
+                run_cycle(&cfg, cycle, cycle)?;
 
                 if once {
                     break;
@@ -160,6 +162,8 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     let source_image = resolve_source_image(cfg, image_cycle)?;
     let quote = resolve_quote(cfg, quote_cycle)?;
     let clock = chrono::Local::now().format(&cfg.time_format).to_string();
+    let (canvas_width, canvas_height) = detect_canvas_size();
+    let (image_pool_size, quote_pool_size) = detect_local_pool_sizes(cfg);
 
     ensure_parent_dir(&output_path)?;
     let render = render_preview_to_file(
@@ -189,6 +193,8 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             text_box_size: &cfg.text_box_size,
             text_box_width_pct: cfg.text_box_width_pct,
             text_box_height_pct: cfg.text_box_height_pct,
+            canvas_width,
+            canvas_height,
         },
     )
     .map_err(anyhow::Error::msg)?;
@@ -196,8 +202,15 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     println!("image_cycle: {}", image_cycle);
     println!("quote_cycle: {}", quote_cycle);
     println!("source_image: {}", source_image.display());
+    if let Some(count) = image_pool_size {
+        println!("image_pool_size: {}", count);
+    }
+    if let Some(count) = quote_pool_size {
+        println!("quote_pool_size: {}", count);
+    }
     println!("quote: {}", quote);
     println!("clock: {}", clock);
+    println!("canvas: {}x{}", canvas_width, canvas_height);
     println!("preview_mode: {}", render.preview_mode);
     println!("preview_output: {}", output_path.display());
     println!("preview_metadata: {}", render.meta_path.display());
@@ -212,6 +225,24 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     println!("wallpaper_apply: {}", apply_status);
 
     Ok(())
+}
+
+fn detect_local_pool_sizes(cfg: &AppConfig) -> (Option<usize>, Option<usize>) {
+    let image_count = if cfg.image_source.trim().eq_ignore_ascii_case("local") {
+        expand_tilde(&cfg.image_dir)
+            .ok()
+            .and_then(|dir| list_background_images(&dir).ok().map(|v| v.len()))
+    } else {
+        None
+    };
+    let quote_count = if cfg.quote_source.trim().eq_ignore_ascii_case("local") {
+        expand_tilde(&cfg.quotes_path)
+            .ok()
+            .and_then(|path| load_quotes(&path).ok().map(|v| v.len()))
+    } else {
+        None
+    };
+    (image_count, quote_count)
 }
 
 fn validate_config(cfg: &AppConfig) -> Result<()> {
@@ -275,11 +306,8 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
         other => anyhow::bail!("unsupported quote_source={other}; use local, preset, or url"),
     }
 
-    if cfg.refresh_seconds == 0 {
-        anyhow::bail!("refresh_seconds must be greater than 0");
-    }
-    if cfg.image_refresh_seconds == 0 || cfg.quote_refresh_seconds == 0 {
-        anyhow::bail!("image_refresh_seconds and quote_refresh_seconds must be greater than 0");
+    if cfg.image_refresh_seconds == 0 {
+        anyhow::bail!("image_refresh_seconds must be greater than 0");
     }
 
     let backend = cfg.wallpaper_backend.trim().to_ascii_lowercase();
@@ -418,20 +446,81 @@ fn now_epoch_seconds() -> u64 {
         .unwrap_or(0)
 }
 
+fn detect_canvas_size() -> (u32, u32) {
+    if let Some(size) = detect_resolution_via_xrandr() {
+        return size;
+    }
+    if let Some(size) = detect_resolution_via_xdpyinfo() {
+        return size;
+    }
+    (1920, 1080)
+}
+
+fn detect_resolution_via_xrandr() -> Option<(u32, u32)> {
+    let out = Command::new("xrandr").arg("--current").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8_lossy(&out.stdout);
+    for line in raw.lines() {
+        if !line.contains('*') {
+            continue;
+        }
+        for token in line.split_whitespace() {
+            if let Some((w, h)) = parse_resolution_token(token) {
+                return Some((w, h));
+            }
+        }
+    }
+    None
+}
+
+fn detect_resolution_via_xdpyinfo() -> Option<(u32, u32)> {
+    let out = Command::new("xdpyinfo").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8_lossy(&out.stdout);
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("dimensions:") {
+            continue;
+        }
+        for token in trimmed.split_whitespace() {
+            if let Some((w, h)) = parse_resolution_token(token) {
+                return Some((w, h));
+            }
+        }
+    }
+    None
+}
+
+fn parse_resolution_token(token: &str) -> Option<(u32, u32)> {
+    let clean = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != 'x');
+    let (w_raw, h_raw) = clean.split_once('x')?;
+    let w = w_raw.parse::<u32>().ok()?;
+    let h = h_raw.parse::<u32>().ok()?;
+    if w >= 320 && h >= 200 {
+        Some((w, h))
+    } else {
+        None
+    }
+}
+
 fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {
     match cfg.image_source.trim().to_ascii_lowercase().as_str() {
         "local" => {
             let image_dir = expand_tilde(&cfg.image_dir)?;
             let state_path = image_pick_state_path(cfg)?;
-            let previous_index = read_image_pick_index(&state_path);
+            let recent_indices = read_recent_indices(&state_path);
             let (picked, picked_idx) = pick_background_image_with_mode(
                 &image_dir,
                 cycle,
                 &cfg.image_order_mode,
                 cfg.image_avoid_repeat,
-                previous_index,
+                &recent_indices,
             )?;
-            write_image_pick_index(&state_path, picked_idx)?;
+            write_recent_indices(&state_path, &recent_indices, picked_idx)?;
             Ok(picked)
         }
         "preset" | "remote_preset" => {
@@ -458,30 +547,20 @@ fn image_pick_state_path(cfg: &AppConfig) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn read_image_pick_index(path: &Path) -> Option<usize> {
-    let raw = fs::read_to_string(path).ok()?;
-    raw.trim().parse::<usize>().ok()
-}
-
-fn write_image_pick_index(path: &Path, idx: usize) -> Result<()> {
-    fs::write(path, format!("{idx}\n"))?;
-    Ok(())
-}
-
 fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {
     match cfg.quote_source.trim().to_ascii_lowercase().as_str() {
         "local" => {
             let quotes_path = expand_tilde(&cfg.quotes_path)?;
             let state_path = quote_pick_state_path(cfg)?;
-            let previous_index = read_quote_pick_index(&state_path);
+            let recent_indices = read_recent_indices(&state_path);
             let (picked, picked_idx) = pick_quote_with_mode(
                 &quotes_path,
                 cycle,
                 &cfg.quote_order_mode,
                 cfg.quote_avoid_repeat,
-                previous_index,
+                &recent_indices,
             )?;
-            write_quote_pick_index(&state_path, picked_idx)?;
+            write_recent_indices(&state_path, &recent_indices, picked_idx)?;
             Ok(picked)
         }
         "preset" | "remote_preset" => {
@@ -508,13 +587,27 @@ fn quote_pick_state_path(cfg: &AppConfig) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn read_quote_pick_index(path: &Path) -> Option<usize> {
-    let raw = fs::read_to_string(path).ok()?;
-    raw.trim().parse::<usize>().ok()
+fn read_recent_indices(path: &Path) -> Vec<usize> {
+    let raw = fs::read_to_string(path).unwrap_or_default();
+    raw.split(',')
+        .filter_map(|part| part.trim().parse::<usize>().ok())
+        .take(MAX_STORED_HISTORY)
+        .collect::<Vec<_>>()
 }
 
-fn write_quote_pick_index(path: &Path, idx: usize) -> Result<()> {
-    fs::write(path, format!("{idx}\n"))?;
+fn write_recent_indices(path: &Path, previous: &[usize], next_idx: usize) -> Result<()> {
+    let mut merged = vec![next_idx];
+    for idx in previous.iter().copied() {
+        if idx != next_idx && merged.len() < MAX_STORED_HISTORY {
+            merged.push(idx);
+        }
+    }
+    let serialized = merged
+        .iter()
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    fs::write(path, format!("{serialized}\n"))?;
     Ok(())
 }
 
@@ -626,10 +719,63 @@ fn backup_path_for(config_path: &Path) -> PathBuf {
 }
 
 fn loop_tick_seconds(cfg: &AppConfig) -> u64 {
-    // Clock must stay current; enforce a max tick of 60s while still respecting tighter user settings.
-    cfg.refresh_seconds
-        .max(1)
-        .min(cfg.image_refresh_seconds.max(1))
-        .min(cfg.quote_refresh_seconds.max(1))
-        .min(60)
+    // Image timer is the master interval; quote rotation follows this timer.
+    master_rotation_interval(cfg).min(60)
+}
+
+fn master_rotation_interval(cfg: &AppConfig) -> u64 {
+    cfg.image_refresh_seconds.max(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{determine_cycle, loop_tick_seconds, read_recent_indices, write_recent_indices};
+    use std::fs;
+    use wc_core::{default_config_toml, load_config};
+
+    #[test]
+    fn loop_tick_is_capped_to_keep_clock_current() {
+        let cfg_path = std::env::temp_dir().join("wc-cli-loop-tick-test.toml");
+        fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
+        let mut cfg = load_config(&cfg_path).expect("default config should parse");
+        cfg.image_refresh_seconds = 300;
+        assert_eq!(loop_tick_seconds(&cfg), 60);
+
+        cfg.image_refresh_seconds = 15;
+        assert_eq!(loop_tick_seconds(&cfg), 15);
+    }
+
+    #[test]
+    fn single_cycle_timer_is_used_for_both_streams() {
+        let cfg_path = std::env::temp_dir().join("wc-cli-cycle-test.toml");
+        fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
+        let mut cfg = load_config(&cfg_path).expect("default config should parse");
+        cfg.rotation_use_persistent_state = false;
+        cfg.image_refresh_seconds = 45;
+
+        let image_cycle =
+            determine_cycle(&cfg, cfg.image_refresh_seconds, "rotation").expect("cycle ok");
+        let quote_cycle =
+            determine_cycle(&cfg, cfg.image_refresh_seconds, "rotation").expect("cycle ok");
+
+        assert_eq!(image_cycle, quote_cycle);
+    }
+
+    #[test]
+    fn recent_history_keeps_last_three_distinct_entries() {
+        let state_path = std::env::temp_dir().join("wc-cli-recent-history-test.state");
+        let _ = fs::remove_file(&state_path);
+
+        write_recent_indices(&state_path, &[], 5).expect("state write should work");
+        write_recent_indices(&state_path, &read_recent_indices(&state_path), 2)
+            .expect("state write should work");
+        write_recent_indices(&state_path, &read_recent_indices(&state_path), 7)
+            .expect("state write should work");
+        write_recent_indices(&state_path, &read_recent_indices(&state_path), 2)
+            .expect("state write should work");
+
+        let got = read_recent_indices(&state_path);
+        assert_eq!(got, vec![2, 7, 5]);
+        let _ = fs::remove_file(state_path);
+    }
 }

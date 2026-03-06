@@ -2,8 +2,8 @@ use eframe::egui;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use wc_core::{
-    AppConfig, default_config_path, expand_tilde, list_background_images, load_config, load_quotes,
-    to_config_toml,
+    AppConfig, builtin_image_presets, builtin_quote_presets, default_config_path, expand_tilde,
+    list_background_images, load_config, load_quotes, to_config_toml,
 };
 
 fn main() -> eframe::Result<()> {
@@ -28,6 +28,14 @@ enum GuiTab {
     System,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum UiLang {
+    En,
+    De,
+    Sr,
+    Zh,
+}
+
 struct WcGuiApp {
     config_path: String,
     cfg: AppConfig,
@@ -37,6 +45,7 @@ struct WcGuiApp {
     quote_preview: Vec<String>,
     runner: Option<Child>,
     active_tab: GuiTab,
+    ui_lang: UiLang,
 }
 
 impl WcGuiApp {
@@ -57,6 +66,111 @@ impl WcGuiApp {
             quote_preview: Vec::new(),
             runner: None,
             active_tab: GuiTab::Images,
+            ui_lang: detect_ui_lang(),
+        }
+    }
+
+    fn t<'a>(&self, en: &'a str, de: &'a str, sr: &'a str, zh: &'a str) -> &'a str {
+        match self.ui_lang {
+            UiLang::En => en,
+            UiLang::De => de,
+            UiLang::Sr => sr,
+            UiLang::Zh => zh,
+        }
+    }
+
+    fn hover_text(&self, key: &str) -> &str {
+        match key {
+            "config_path" => self.t(
+                "What: config.toml path used by all actions. How: load/save here before running actions. Recommended: keep the default user config path.",
+                "Was: Pfad zur config.toml für alle Aktionen. Wie: hier laden/speichern, bevor Aktionen laufen. Empfehlung: Standardpfad im Benutzerprofil beibehalten.",
+                "Sta: putanja config.toml koju koriste sve akcije. Kako: ovde učitaj/snimi pre pokretanja akcija. Preporuka: zadrži podrazumevanu korisničku putanju.",
+                "作用: 所有操作使用的 config.toml 路径。方法: 先在这里加载/保存再执行操作。建议: 保持默认用户配置路径。"
+            ),
+            "image_source_mode" => self.t(
+                "What: choose where images come from. How: local folder, built-in online preset, or custom URL. Recommended: start with local for stability.",
+                "Was: Quelle der Bilder festlegen. Wie: lokaler Ordner, Online-Preset oder eigene URL. Empfehlung: für Stabilität zuerst lokal nutzen.",
+                "Sta: bira odakle dolaze slike. Kako: lokalni folder, online preset ili prilagođeni URL. Preporuka: za stabilnost kreni sa lokalnim izvorom.",
+                "作用: 选择图片来源。方法: 本地文件夹、内置在线预设或自定义 URL。建议: 先用本地来源更稳定。"
+            ),
+            "image_preset" => self.t(
+                "What: online image catalog/source. How: pick a preset and run preview/once. Recommended: Picsum or NASA for quick tests.",
+                "Was: Online-Bildquelle/Katalog. Wie: Preset wählen und Vorschau/Einmallauf starten. Empfehlung: Picsum oder NASA für schnelle Tests.",
+                "Sta: online izvor/katalog slika. Kako: izaberi preset i pokreni pregled/jednom. Preporuka: Picsum ili NASA za brze testove.",
+                "作用: 在线图片来源/库。方法: 选择预设后运行预览或单次执行。建议: 测试时优先 Picsum 或 NASA。"
+            ),
+            "image_url" => self.t(
+                "What: direct remote image endpoint. How: paste a stable HTTPS URL that returns an image. Recommended: use presets unless you control the URL.",
+                "Was: direkte Remote-Bild-URL. Wie: stabile HTTPS-URL eintragen, die ein Bild liefert. Empfehlung: Presets nutzen, falls URL nicht unter eigener Kontrolle ist.",
+                "Sta: direktan udaljeni URL slike. Kako: unesi stabilan HTTPS URL koji vraća sliku. Preporuka: koristi preset ako ne kontrolišeš URL.",
+                "作用: 远程图片直链。方法: 填写返回图片的稳定 HTTPS URL。建议: 若 URL 不可控，优先用预设。"
+            ),
+            "image_dir" => self.t(
+                "What: local wallpaper folder. How: choose a folder with jpg/png/webp/bmp files. Recommended: dedicated folder with curated images.",
+                "Was: lokaler Wallpaper-Ordner. Wie: Ordner mit jpg/png/webp/bmp auswählen. Empfehlung: separaten, kuratierten Ordner verwenden.",
+                "Sta: lokalni folder sa pozadinama. Kako: izaberi folder sa jpg/png/webp/bmp fajlovima. Preporuka: poseban folder sa proverenim slikama.",
+                "作用: 本地壁纸文件夹。方法: 选择含 jpg/png/webp/bmp 的目录。建议: 使用专门整理好的文件夹。"
+            ),
+            "quotes_source_mode" => self.t(
+                "What: choose where quote text comes from. How: local file, built-in API preset, or custom URL. Recommended: local file for predictable quality.",
+                "Was: Quelle der Zitate festlegen. Wie: lokale Datei, API-Preset oder eigene URL. Empfehlung: lokale Datei für konstante Qualität.",
+                "Sta: bira izvor citata. Kako: lokalni fajl, API preset ili URL. Preporuka: lokalni fajl za stabilan kvalitet.",
+                "作用: 选择引文文本来源。方法: 本地文件、内置 API 预设或自定义 URL。建议: 本地文件更可控。"
+            ),
+            "quote_preset" => self.t(
+                "What: online quote provider. How: pick a provider and run preview/once. Recommended: ZenQuotes or DummyJSON for testing.",
+                "Was: Online-Zitatquelle. Wie: Provider wählen und Vorschau/Einmallauf starten. Empfehlung: ZenQuotes oder DummyJSON zum Testen.",
+                "Sta: online provider citata. Kako: izaberi provider i pokreni pregled/jednom. Preporuka: ZenQuotes ili DummyJSON za test.",
+                "作用: 在线引文提供方。方法: 选择后运行预览或单次执行。建议: 测试优先 ZenQuotes 或 DummyJSON。"
+            ),
+            "quote_url" => self.t(
+                "What: custom quote API URL. How: use an endpoint returning JSON/text quote content. Recommended: confirm rate limits and uptime first.",
+                "Was: eigene Zitat-API-URL. Wie: Endpoint mit JSON/Text für Zitatinhalt eintragen. Empfehlung: vorher Rate Limits und Verfügbarkeit prüfen.",
+                "Sta: prilagođeni URL za citate. Kako: koristi endpoint koji vraća JSON/tekst citata. Preporuka: proveri limit i dostupnost pre upotrebe.",
+                "作用: 自定义引文 API URL。方法: 使用返回 JSON/文本引文内容的接口。建议: 先确认限流和可用性。"
+            ),
+            "quotes_path" => self.t(
+                "What: local quote file path. How: choose .txt or .md file, then reload quotes preview. Recommended: keep short clean entries.",
+                "Was: Pfad zur lokalen Zitatdatei. Wie: .txt/.md wählen und Vorschau neu laden. Empfehlung: kurze, saubere Einträge pflegen.",
+                "Sta: putanja lokalnog fajla sa citatima. Kako: izaberi .txt/.md pa osveži prikaz citata. Preporuka: drži unose kratkim i čistim.",
+                "作用: 本地引文文件路径。方法: 选择 .txt/.md 后刷新预览。建议: 保持条目简短清晰。"
+            ),
+            "image_refresh" => self.t(
+                "What: image rotation interval in seconds. How: set the value used for image cycle index. Recommended: 300-900 seconds.",
+                "Was: Intervall für Bildwechsel in Sekunden. Wie: steuert den Bild-Zyklusindex. Empfehlung: 300-900 Sekunden.",
+                "Sta: interval promene slike u sekundama. Kako: određuje ciklus slika. Preporuka: 300-900 sekundi.",
+                "作用: 图片轮换间隔（秒）。方法: 控制图片周期索引。建议: 300-900 秒。"
+            ),
+            "quote_refresh" => self.t(
+                "What: quote rotation interval in seconds. How: set independent cycle interval for text. Recommended: 60-300 seconds.",
+                "Was: Intervall für Zitatwechsel in Sekunden. Wie: unabhängiger Text-Zyklus. Empfehlung: 60-300 Sekunden.",
+                "Sta: interval promene citata u sekundama. Kako: nezavisan ciklus za tekst. Preporuka: 60-300 sekundi.",
+                "作用: 引文轮换间隔（秒）。方法: 设置文本独立周期。建议: 60-300 秒。"
+            ),
+            "runner_tick" => self.t(
+                "What: loop wake-up interval. How: app wakes every min(refresh_seconds, 60). Recommended: keep >=60 to reduce overhead; clock still updates once per minute.",
+                "Was: Intervall des Hauptloops. Wie: Aufwachen alle min(refresh_seconds, 60). Empfehlung: >=60 für weniger Last; Uhr wird trotzdem minütlich aktualisiert.",
+                "Sta: interval glavne petlje. Kako: budi se na min(refresh_seconds, 60). Preporuka: >=60 zbog manjeg opterećenja; sat se i dalje osvežava na minut.",
+                "作用: 主循环唤醒间隔。方法: 每 min(refresh_seconds, 60) 触发一次。建议: 设为 >=60 降低开销；时钟仍每分钟更新。"
+            ),
+            "apply_wallpaper" => self.t(
+                "What: apply rendered output as current wallpaper. How: enable and choose backend/fit mode. Recommended: test with Run Once before Start Loop.",
+                "Was: gerendertes Bild als Wallpaper anwenden. Wie: aktivieren und Backend/Fit wählen. Empfehlung: zuerst mit Run Once testen.",
+                "Sta: postavlja renderovanu sliku kao pozadinu. Kako: uključi i izaberi backend/fit. Preporuka: prvo testiraj sa Run Once.",
+                "作用: 将渲染结果设置为当前壁纸。方法: 启用后选择后端和适配模式。建议: 先用 Run Once 测试。"
+            ),
+            "color_format" => self.t(
+                "What: text color format. How: use #RRGGBB or #RRGGBBAA, or numeric RGB like 255,255,255. Recommended: keep strong contrast with background.",
+                "Was: Text-Farbformat. Wie: #RRGGBB oder #RRGGBBAA, alternativ RGB wie 255,255,255. Empfehlung: starken Kontrast zum Hintergrund wählen.",
+                "Sta: format boje teksta. Kako: koristi #RRGGBB ili #RRGGBBAA, ili RGB kao 255,255,255. Preporuka: drži jak kontrast sa pozadinom.",
+                "作用: 文本颜色格式。方法: 使用 #RRGGBB / #RRGGBBAA，或 RGB 如 255,255,255。建议: 与背景保持高对比度。"
+            ),
+            _ => self.t(
+                "Field help: hover explains what this setting does, how to use it, and a practical default recommendation.",
+                "Feldhilfe: Hover erklärt Zweck, Nutzung und praxisnahe Standardempfehlung.",
+                "Pomoć za polje: hover objašnjava svrhu, korišćenje i praktičnu preporuku.",
+                "字段帮助: 悬停会说明用途、使用方式和推荐默认值。"
+            ),
         }
     }
 
@@ -73,6 +187,9 @@ impl WcGuiApp {
     }
 
     fn save_to_path_inner(&mut self) -> Result<(), String> {
+        // Keep one effective rotation timer: image interval drives quote and loop cadence.
+        self.cfg.refresh_seconds = self.cfg.image_refresh_seconds.max(1);
+        self.cfg.quote_refresh_seconds = self.cfg.image_refresh_seconds.max(1);
         let path = PathBuf::from(&self.config_path);
         if let Some(parent) = path.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
@@ -331,13 +448,16 @@ impl WcGuiApp {
     fn render_images_tab(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.heading("Image Source");
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.cfg.image_source, "local".to_string(), "Local");
+            ui.selectable_value(&mut self.cfg.image_source, "local".to_string(), "Local")
+                .on_hover_text(self.hover_text("image_source_mode"));
             ui.selectable_value(
                 &mut self.cfg.image_source,
                 "preset".to_string(),
                 "Open Preset",
-            );
-            ui.selectable_value(&mut self.cfg.image_source, "url".to_string(), "Custom URL");
+            )
+            .on_hover_text(self.hover_text("image_source_mode"));
+            ui.selectable_value(&mut self.cfg.image_source, "url".to_string(), "Custom URL")
+                .on_hover_text(self.hover_text("image_source_mode"));
         });
 
         match self.cfg.image_source.as_str() {
@@ -352,10 +472,16 @@ impl WcGuiApp {
                     egui::ComboBox::from_id_salt("image_source_preset")
                         .selected_text(&selected)
                         .show_ui(ui, |ui| {
-                            for id in ["nasa_apod", "wikimedia_featured"] {
-                                ui.selectable_value(&mut selected, id.to_string(), id);
+                            for p in builtin_image_presets() {
+                                ui.selectable_value(
+                                    &mut selected,
+                                    p.id.to_string(),
+                                    format!("{} ({})", p.display_label, p.id),
+                                );
                             }
-                        });
+                        })
+                        .response
+                        .on_hover_text(self.hover_text("image_preset"));
                     self.cfg.image_source_preset = Some(selected);
                 });
             }
@@ -363,7 +489,8 @@ impl WcGuiApp {
                 ui.horizontal(|ui| {
                     ui.label("Image URL");
                     let mut url = self.cfg.image_source_url.clone().unwrap_or_default();
-                    ui.text_edit_singleline(&mut url);
+                    ui.text_edit_singleline(&mut url)
+                        .on_hover_text(self.hover_text("image_url"));
                     self.cfg.image_source_url = Some(url);
                 });
             }
@@ -371,7 +498,7 @@ impl WcGuiApp {
                 ui.horizontal(|ui| {
                     ui.label("Image dir");
                     ui.text_edit_singleline(&mut self.cfg.image_dir)
-                        .on_hover_text("Local folder for background images (jpg/png/webp/bmp).");
+                        .on_hover_text(self.hover_text("image_dir"));
                     if ui.button("Browse...").clicked() {
                         self.pick_image_dir(ctx);
                     }
@@ -400,20 +527,25 @@ impl WcGuiApp {
         });
         ui.horizontal(|ui| {
             ui.label("Image sec");
-            ui.add(egui::DragValue::new(&mut self.cfg.image_refresh_seconds).speed(1));
+            ui.add(egui::DragValue::new(&mut self.cfg.image_refresh_seconds).speed(1))
+                .on_hover_text(self.hover_text("image_refresh"));
         });
     }
 
     fn render_quotes_tab(&mut self, ui: &mut egui::Ui) {
+        let color_help = self.hover_text("color_format").to_string();
         ui.heading("Quote Source");
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.cfg.quote_source, "local".to_string(), "Local");
+            ui.selectable_value(&mut self.cfg.quote_source, "local".to_string(), "Local")
+                .on_hover_text(self.hover_text("quotes_source_mode"));
             ui.selectable_value(
                 &mut self.cfg.quote_source,
                 "preset".to_string(),
                 "Open Preset",
-            );
-            ui.selectable_value(&mut self.cfg.quote_source, "url".to_string(), "Custom URL");
+            )
+            .on_hover_text(self.hover_text("quotes_source_mode"));
+            ui.selectable_value(&mut self.cfg.quote_source, "url".to_string(), "Custom URL")
+                .on_hover_text(self.hover_text("quotes_source_mode"));
         });
 
         match self.cfg.quote_source.as_str() {
@@ -428,10 +560,16 @@ impl WcGuiApp {
                     egui::ComboBox::from_id_salt("quote_source_preset")
                         .selected_text(&selected)
                         .show_ui(ui, |ui| {
-                            for id in ["zenquotes_daily", "quotable_random"] {
-                                ui.selectable_value(&mut selected, id.to_string(), id);
+                            for p in builtin_quote_presets() {
+                                ui.selectable_value(
+                                    &mut selected,
+                                    p.id.to_string(),
+                                    format!("{} ({})", p.display_label, p.id),
+                                );
                             }
-                        });
+                        })
+                        .response
+                        .on_hover_text(self.hover_text("quote_preset"));
                     self.cfg.quote_source_preset = Some(selected);
                 });
             }
@@ -439,7 +577,8 @@ impl WcGuiApp {
                 ui.horizontal(|ui| {
                     ui.label("Quote URL");
                     let mut url = self.cfg.quote_source_url.clone().unwrap_or_default();
-                    ui.text_edit_singleline(&mut url);
+                    ui.text_edit_singleline(&mut url)
+                        .on_hover_text(self.hover_text("quote_url"));
                     self.cfg.quote_source_url = Some(url);
                 });
             }
@@ -447,9 +586,7 @@ impl WcGuiApp {
                 ui.horizontal(|ui| {
                     ui.label("Quotes path");
                     ui.text_edit_singleline(&mut self.cfg.quotes_path)
-                        .on_hover_text(
-                            "Quotes file. Supports ***...*** blocks and optional author syntax.",
-                        );
+                        .on_hover_text(self.hover_text("quotes_path"));
                     if ui.button("Browse...").clicked() {
                         self.pick_quotes_file();
                     }
@@ -476,14 +613,8 @@ impl WcGuiApp {
                 });
             ui.checkbox(&mut self.cfg.quote_avoid_repeat, "Avoid repeat");
         });
-        ui.horizontal(|ui| {
-            ui.label("Quote sec");
-            ui.add(egui::DragValue::new(&mut self.cfg.quote_refresh_seconds).speed(1));
-        });
-    }
-
-    fn render_style_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Text Style");
+        ui.separator();
+        ui.heading("Quote Layout");
         ui.horizontal(|ui| {
             ui.label("Quote size");
             ui.add(
@@ -505,7 +636,7 @@ impl WcGuiApp {
         });
         ui.horizontal(|ui| {
             ui.label("Font family");
-            egui::ComboBox::from_id_salt("font_family")
+            egui::ComboBox::from_id_salt("font_family_quotes")
                 .selected_text(&self.cfg.font_family)
                 .show_ui(ui, |ui| {
                     for family in [
@@ -520,16 +651,8 @@ impl WcGuiApp {
                 });
         });
         ui.horizontal(|ui| {
-            ui.label("Clock size");
-            ui.add(egui::DragValue::new(&mut self.cfg.clock_font_size).speed(1));
-            ui.label("X");
-            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_x).speed(1));
-            ui.label("Y");
-            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_y).speed(1));
-        });
-        ui.horizontal(|ui| {
             ui.label("Text box");
-            egui::ComboBox::from_id_salt("text_box_size")
+            egui::ComboBox::from_id_salt("text_box_size_quotes")
                 .selected_text(&self.cfg.text_box_size)
                 .show_ui(ui, |ui| {
                     for mode in ["quarter", "third", "half", "full", "custom"] {
@@ -550,20 +673,68 @@ impl WcGuiApp {
             );
         });
         ui.horizontal(|ui| {
-            edit_color_field(ui, "Quote color", &mut self.cfg.quote_color, false);
-            edit_color_field(ui, "Clock color", &mut self.cfg.clock_color, false);
+            edit_color_field(
+                ui,
+                "Quote color",
+                &mut self.cfg.quote_color,
+                false,
+                &color_help,
+            );
+        });
+
+        ui.separator();
+        ui.heading("Clock Layout");
+        ui.horizontal(|ui| {
+            ui.label("Clock size");
+            ui.add(egui::DragValue::new(&mut self.cfg.clock_font_size).speed(1));
+            ui.label("X");
+            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_x).speed(1));
+            ui.label("Y");
+            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_y).speed(1));
         });
         ui.horizontal(|ui| {
-            edit_color_field(ui, "Stroke color", &mut self.cfg.text_stroke_color, false);
+            edit_color_field(
+                ui,
+                "Clock color",
+                &mut self.cfg.clock_color,
+                false,
+                &color_help,
+            );
+        });
+    }
+
+    fn render_style_tab(&mut self, ui: &mut egui::Ui) {
+        let color_help = self.hover_text("color_format").to_string();
+        ui.heading("Text Style");
+        ui.horizontal(|ui| {
+            edit_color_field(
+                ui,
+                "Stroke color",
+                &mut self.cfg.text_stroke_color,
+                false,
+                &color_help,
+            );
             ui.label("Stroke width");
             ui.add(egui::DragValue::new(&mut self.cfg.text_stroke_width).speed(1));
         });
         ui.horizontal(|ui| {
-            edit_color_field(ui, "Undercolor", &mut self.cfg.text_undercolor, true);
+            edit_color_field(
+                ui,
+                "Undercolor",
+                &mut self.cfg.text_undercolor,
+                true,
+                &color_help,
+            );
         });
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.cfg.text_shadow_enabled, "Shadow");
-            edit_color_field(ui, "Shadow color", &mut self.cfg.text_shadow_color, true);
+            edit_color_field(
+                ui,
+                "Shadow color",
+                &mut self.cfg.text_shadow_color,
+                true,
+                &color_help,
+            );
             ui.label("dx");
             ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_x).speed(1));
             ui.label("dy");
@@ -574,13 +745,16 @@ impl WcGuiApp {
     fn render_system_tab(&mut self, ui: &mut egui::Ui) {
         ui.heading("Runtime");
         ui.horizontal(|ui| {
-            ui.label("Runner tick");
-            ui.add(egui::DragValue::new(&mut self.cfg.refresh_seconds).speed(1));
+            self.cfg.refresh_seconds = self.cfg.image_refresh_seconds.max(1);
+            self.cfg.quote_refresh_seconds = self.cfg.image_refresh_seconds.max(1);
+            ui.label("Master timer (from Images tab)");
+            ui.monospace(format!("{}s", self.cfg.image_refresh_seconds));
         });
         ui.separator();
         ui.heading("Wallpaper");
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.cfg.apply_wallpaper, "Apply wallpaper");
+            ui.checkbox(&mut self.cfg.apply_wallpaper, "Apply wallpaper")
+                .on_hover_text(self.hover_text("apply_wallpaper"));
             ui.label("Backend");
             egui::ComboBox::from_id_salt("backend")
                 .selected_text(&self.cfg.wallpaper_backend)
@@ -660,6 +834,35 @@ fn run_kdialog_picker(start: &Path, directory: bool) -> Option<PathBuf> {
     Some(PathBuf::from(value))
 }
 
+fn detect_ui_lang() -> UiLang {
+    let locale = std::env::var("LC_ALL")
+        .ok()
+        .or_else(|| std::env::var("LC_MESSAGES").ok())
+        .or_else(|| std::env::var("LANG").ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if locale.starts_with("de") {
+        return UiLang::De;
+    }
+    if locale.starts_with("sr") {
+        return UiLang::Sr;
+    }
+    if locale.starts_with("zh") {
+        return UiLang::Zh;
+    }
+    UiLang::En
+}
+
+fn ui_lang_label(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::En => "EN",
+        UiLang::De => "DE",
+        UiLang::Sr => "SR",
+        UiLang::Zh => "ZH",
+    }
+}
+
 impl eframe::App for WcGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_runner_state();
@@ -678,13 +881,15 @@ impl eframe::App for WcGuiApp {
             ui.horizontal(|ui| {
                 ui.label("Config");
                 ui.text_edit_singleline(&mut self.config_path)
-                    .on_hover_text("Path to config.toml used by all actions.");
+                    .on_hover_text(self.hover_text("config_path"));
                 if ui.button("Load").clicked() {
                     self.load_from_path(ctx);
                 }
                 if ui.button("Save").clicked() {
                     self.save_to_path();
                 }
+                ui.separator();
+                ui.label(format!("Language: {}", ui_lang_label(self.ui_lang)));
             });
 
             ui.horizontal(|ui| {
@@ -851,7 +1056,13 @@ fn default_cfg() -> AppConfig {
     }
 }
 
-fn edit_color_field(ui: &mut egui::Ui, label: &str, value: &mut String, allow_alpha: bool) {
+fn edit_color_field(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut String,
+    allow_alpha: bool,
+    help_text: &str,
+) {
     ui.label(label);
     let mut color = parse_color_value(value).unwrap_or(egui::Color32::WHITE);
     let picker = ui.color_edit_button_srgba(&mut color);
@@ -868,8 +1079,7 @@ fn edit_color_field(ui: &mut egui::Ui, label: &str, value: &mut String, allow_al
             *value = format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b());
         }
     }
-    ui.text_edit_singleline(value)
-        .on_hover_text("Hex (#RRGGBB / #RRGGBBAA) oder RGB (r,g,b)");
+    ui.text_edit_singleline(value).on_hover_text(help_text);
 }
 
 fn parse_color_value(input: &str) -> Option<egui::Color32> {

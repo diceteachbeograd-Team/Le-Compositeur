@@ -27,6 +27,8 @@ pub struct PreviewText<'a> {
     pub text_box_size: &'a str,
     pub text_box_width_pct: u32,
     pub text_box_height_pct: u32,
+    pub canvas_width: u32,
+    pub canvas_height: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -57,7 +59,7 @@ pub fn render_preview_to_file(
 
     let meta_path = metadata_path_for(output_image);
     let metadata = format!(
-        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nsource_image = {:?}\n",
+        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
         render_mode,
         text.quote,
         text.clock,
@@ -82,6 +84,8 @@ pub fn render_preview_to_file(
         text.text_box_size,
         text.text_box_width_pct,
         text.text_box_height_pct,
+        text.canvas_width,
+        text.canvas_height,
         source_image.display().to_string()
     );
 
@@ -117,38 +121,35 @@ fn render_with_imagemagick(
     if use_magick_subcommand {
         args.push("convert".to_string());
     }
-    args.push(source_image.display().to_string());
 
     let (quote_body, author) = split_quote_and_author(text.quote);
     let rtl = is_rtl_text(&quote_body);
     let quote_gravity = if rtl { "East" } else { "West" };
     let author_gravity = if rtl { "West" } else { "East" };
-    let (img_w, img_h) =
-        detect_image_dimensions(&source_image.display().to_string()).unwrap_or((1920, 1080));
+    let canvas_w = text.canvas_width.max(1);
+    let canvas_h = text.canvas_height.max(1);
+
+    // Build an explicit background layer first so image scaling/placement is independent
+    // from the quote box/text layer rendered afterwards.
+    args.push("(".to_string());
+    args.push(source_image.display().to_string());
+    args.push("-resize".to_string());
+    args.push(format!("{canvas_w}x{canvas_h}^"));
+    args.push("-gravity".to_string());
+    args.push("Center".to_string());
+    args.push("-extent".to_string());
+    args.push(format!("{canvas_w}x{canvas_h}"));
+    args.push(")".to_string());
+
     let (box_w_pct, box_h_pct) = resolve_text_box_pct(text);
-    let box_w = ((img_w * box_w_pct as i32) / 100).max(240);
-    let box_h = ((img_h * box_h_pct as i32) / 100).max(160);
-    let effective_quote_size = resolve_quote_font_size(
-        quote_body.as_str(),
-        text.quote_font_size,
-        text,
-        box_w,
-        box_h,
-        author.is_some(),
-    );
+    let box_w = (((canvas_w as i32) * box_w_pct as i32) / 100).max(240);
+    let box_h = (((canvas_h as i32) * box_h_pct as i32) / 100).max(160);
+    let effective_quote_size = resolve_quote_font_size(text.quote_font_size, text);
     let author_size = ((effective_quote_size as f32) * 0.85).round() as u32;
     let author_h = (author_size as i32 * 2).max(40);
     let quote_h = (box_h - author_h).max(80);
-    let effective_stroke_width = if text.quote_auto_fit && effective_quote_size <= 20 {
-        text.text_stroke_width.min(1)
-    } else {
-        text.text_stroke_width
-    };
-    let effective_undercolor = if text.quote_auto_fit && effective_quote_size <= 20 {
-        "none"
-    } else {
-        text.text_undercolor
-    };
+    let effective_stroke_width = text.text_stroke_width;
+    let effective_undercolor = text.text_undercolor;
     let shadow_x = text.quote_pos_x.saturating_add(text.text_shadow_offset_x);
     let shadow_y = text.quote_pos_y.saturating_add(text.text_shadow_offset_y);
 
@@ -374,21 +375,6 @@ fn is_rtl_char(c: char) -> bool {
     )
 }
 
-fn detect_image_dimensions(path: &str) -> Option<(i32, i32)> {
-    let out = Command::new("identify")
-        .args(["-format", "%w %h", path])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let raw = String::from_utf8_lossy(&out.stdout);
-    let mut parts = raw.split_whitespace();
-    let w = parts.next()?.parse::<i32>().ok()?;
-    let h = parts.next()?.parse::<i32>().ok()?;
-    Some((w, h))
-}
-
 fn resolve_text_box_pct(text: &PreviewText<'_>) -> (u32, u32) {
     match text.text_box_size.trim().to_ascii_lowercase().as_str() {
         "third" => (58, 58),
@@ -402,48 +388,10 @@ fn resolve_text_box_pct(text: &PreviewText<'_>) -> (u32, u32) {
     }
 }
 
-fn resolve_quote_font_size(
-    quote_body: &str,
-    preferred: u32,
-    text: &PreviewText<'_>,
-    box_w: i32,
-    box_h: i32,
-    has_author: bool,
-) -> u32 {
-    if !text.quote_auto_fit {
-        return preferred.max(text.quote_min_font_size.max(8));
-    }
-    let min_size = text.quote_min_font_size.max(8);
-    let mut size = preferred.max(min_size);
-
-    // Approximate wrap/line-height until content likely fits in text box.
-    let lines_src = quote_body.lines().collect::<Vec<_>>();
-    while size > min_size {
-        let char_w = (size as f32 * 0.55).max(6.0);
-        let cols = ((box_w as f32) / char_w).max(8.0);
-        let wrapped_lines = lines_src
-            .iter()
-            .map(|line| {
-                let count = line.chars().count() as f32;
-                (count / cols).ceil().max(1.0)
-            })
-            .sum::<f32>()
-            .max(1.0);
-        let needed_h = wrapped_lines * (size as f32 * 1.35);
-        let author_h = if has_author {
-            (size as f32 * 1.9).max(40.0)
-        } else {
-            0.0
-        };
-        let padding = 10.0;
-        let max_h = (box_h as f32 - author_h - padding).max(60.0);
-        if needed_h <= max_h {
-            break;
-        }
-        size -= 1;
-    }
-
-    size.max(min_size)
+fn resolve_quote_font_size(preferred: u32, text: &PreviewText<'_>) -> u32 {
+    // Keep quote font stable as configured; image scaling and text box sizing
+    // must not downscale the chosen font size.
+    preferred.max(text.quote_min_font_size.max(8))
 }
 
 fn render_with_native_bmp(
@@ -821,6 +769,8 @@ mod tests {
                 text_box_size: "quarter",
                 text_box_width_pct: 50,
                 text_box_height_pct: 50,
+                canvas_width: 1920,
+                canvas_height: 1080,
             },
         )
         .expect("render should succeed");
@@ -870,6 +820,8 @@ mod tests {
                 text_box_size: "quarter",
                 text_box_width_pct: 50,
                 text_box_height_pct: 50,
+                canvas_width: 1920,
+                canvas_height: 1080,
             },
         )
         .expect("native bmp render should return status");

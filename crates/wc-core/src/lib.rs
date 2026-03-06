@@ -579,7 +579,7 @@ pub fn pick_background_image_with_mode(
     index: u64,
     mode: &str,
     avoid_repeat: bool,
-    previous_index: Option<usize>,
+    recent_indices: &[usize],
 ) -> Result<(PathBuf, usize)> {
     let candidates = list_background_images(image_dir)?;
     if candidates.is_empty() {
@@ -589,7 +589,7 @@ pub fn pick_background_image_with_mode(
         ));
     }
 
-    let idx = pick_index_with_mode(candidates.len(), index, mode, avoid_repeat, previous_index);
+    let idx = pick_index_with_mode(candidates.len(), index, mode, avoid_repeat, recent_indices);
 
     Ok((candidates[idx].clone(), idx))
 }
@@ -747,7 +747,7 @@ pub fn pick_quote_with_mode(
     index: u64,
     mode: &str,
     avoid_repeat: bool,
-    previous_index: Option<usize>,
+    recent_indices: &[usize],
 ) -> Result<(String, usize)> {
     let quotes = load_quotes(quotes_path)?;
     if quotes.is_empty() {
@@ -756,7 +756,7 @@ pub fn pick_quote_with_mode(
             quotes_path.display()
         ));
     }
-    let idx = pick_index_with_mode(quotes.len(), index, mode, avoid_repeat, previous_index);
+    let idx = pick_index_with_mode(quotes.len(), index, mode, avoid_repeat, recent_indices);
     Ok((quotes[idx].clone(), idx))
 }
 
@@ -782,15 +782,35 @@ fn pick_index_with_mode(
     index: u64,
     mode: &str,
     avoid_repeat: bool,
-    previous_index: Option<usize>,
+    recent_indices: &[usize],
 ) -> usize {
     let mut idx = match mode.trim().to_ascii_lowercase().as_str() {
         "random" => pseudo_random_index(index, len),
         _ => (index as usize) % len,
     };
 
-    if avoid_repeat && len > 1 && previous_index == Some(idx) {
-        idx = (idx + 1) % len;
+    if avoid_repeat && len > 1 {
+        let history_window = if mode.trim().eq_ignore_ascii_case("random") {
+            // Use collection size to reduce quick repeats in random mode.
+            (len / 3).clamp(3, 8).min(len.saturating_sub(1))
+        } else {
+            1
+        };
+        let blocked = recent_indices
+            .iter()
+            .copied()
+            .take(history_window)
+            .filter(|i| *i < len)
+            .collect::<Vec<_>>();
+        if blocked.len() < len && blocked.contains(&idx) {
+            for step in 1..=len {
+                let candidate = (idx + step) % len;
+                if !blocked.contains(&candidate) {
+                    idx = candidate;
+                    break;
+                }
+            }
+        }
     }
     idx
 }
@@ -833,6 +853,26 @@ pub fn builtin_image_presets() -> Vec<SourcePreset> {
             rate_limit: "provider-defined",
             notes: "Curated public-domain/CC media hub; scraping strategy must respect terms.",
         },
+        SourcePreset {
+            id: "picsum_random_hd",
+            display_label: "Picsum Random HD",
+            name: "Picsum Random",
+            endpoint: "https://picsum.photos/3840/2160.jpg",
+            category: "photos",
+            auth: "none",
+            rate_limit: "provider-defined",
+            notes: "Direct random photo endpoint that returns an image file via redirect.",
+        },
+        SourcePreset {
+            id: "unsplash_nature_hd",
+            display_label: "Unsplash Nature HD",
+            name: "Unsplash Nature",
+            endpoint: "https://source.unsplash.com/3840x2160/?nature,landscape",
+            category: "photos",
+            auth: "none",
+            rate_limit: "provider-defined",
+            notes: "Unsplash Source endpoint for rotating nature/landscape backgrounds.",
+        },
     ]
 }
 
@@ -857,6 +897,26 @@ pub fn builtin_quote_presets() -> Vec<SourcePreset> {
             auth: "none",
             rate_limit: "provider-defined",
             notes: "Public quote endpoint; availability can change over time.",
+        },
+        SourcePreset {
+            id: "dummyjson_quote",
+            display_label: "DummyJSON Random Quote",
+            name: "DummyJSON Quote",
+            endpoint: "https://dummyjson.com/quotes/random",
+            category: "quotes",
+            auth: "none",
+            rate_limit: "provider-defined",
+            notes: "Simple random quote payload for integration testing and demos.",
+        },
+        SourcePreset {
+            id: "advice_slip",
+            display_label: "Advice Slip",
+            name: "Advice Slip",
+            endpoint: "https://api.adviceslip.com/advice",
+            category: "advice",
+            auth: "none",
+            rate_limit: "provider-defined",
+            notes: "Short advice text endpoint; useful as non-book quote source.",
         },
     ]
 }
@@ -1116,6 +1176,12 @@ mod tests {
         assert!(json.contains("\"quote_presets\""));
         assert!(json.contains("\"display_label\""));
         assert!(json.contains("\"rate_limit\""));
+    }
+
+    #[test]
+    fn pick_index_avoids_last_three_when_enabled() {
+        let idx = super::pick_index_with_mode(12, 0, "random", true, &[0, 1, 2, 3]);
+        assert!(![0, 1, 2, 3].contains(&idx));
     }
 
     #[test]

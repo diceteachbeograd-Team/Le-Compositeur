@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.diceteachbeograd.wallpaper-composer</id>
+  <name>Wallpaper Composer</name>
+  <summary>Dynamic wallpapers with rotating quotes and clock overlays</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="io.github.diceteachbeograd">
+    <name>diceteachbeograd-Team</name>
+  </developer>
+  <url type="homepage">https://github.com/diceteachbeograd-Team/wallpaper-composer</url>
+  <description>
+    <p>Wallpaper Composer creates dynamic desktop wallpapers from local or remote image sources, rotates quotes, and overlays a clock with configurable style and position.</p>
+  </description>
+  <launchable type="desktop-id">wallpaper-composer.desktop</launchable>
+  <provides>
+    <binary>wc-cli</binary>
+    <binary>wc-gui</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0-alpha.1" date="2026-03-06"/>
+  </releases>
+</component>
