@@ -193,8 +193,8 @@ First-run setup (all platforms):
 # create starter config
 wc-cli init
 
-# optional: use curated sample quotes
-# set quotes_path to assets/examples/quotes.md in your config
+# init also creates local quotes at:
+# ~/Documents/wallpaper-composer/quotes.md
 ```
 
 ### 6.2 Size and runtime profile (alpha, reference values)
@@ -321,8 +321,29 @@ apply_wallpaper = false
 wallpaper_backend = "auto"
 ```
 
-Local quote template:
-- `assets/examples/quotes.md`
+Local quote templates:
+- `assets/quotes/local/local-quotes.md` (default multilingual pack-in file)
+- `assets/examples/quotes.md` (short English example)
+
+Installed package path (RPM/DEB):
+- `/usr/share/wallpaper-composer/quotes/local-quotes.md`
+
+Local quote file format (block mode, recommended):
+```txt
+***
+German line
+English line
+Serbian line
+:
+Author Name
+***
+```
+
+Rules:
+- each quote block starts and ends with `***`
+- keep one quote text line per language (or any text lines you want)
+- optional `:` line marks the next non-empty line as the author
+- save as `.txt` or `.md` and set `quotes_path` to this file
 
 Field meanings:
 - `image_dir`: source folder for wallpaper images
@@ -573,6 +594,22 @@ Bedeutung:
 - `quote_refresh_seconds`: wird an den Master angeglichen
 - `time_format`: Uhrzeitformat (chrono-Stil)
 
+Lokale Quote-Datei (empfohlenes Block-Format):
+```txt
+***
+Deutsche Zeile
+English line
+Srpska linija
+:
+Autorname
+***
+```
+
+Hinweise:
+- Standarddatei im Repo: `assets/quotes/local/local-quotes.md`
+- `wc-cli init` erstellt automatisch: `~/Documents/wallpaper-composer/quotes.md`
+- Installierter Paketpfad (RPM/DEB): `/usr/share/wallpaper-composer/quotes/local-quotes.md`
+
 ### 9. Beitragen/Weiterentwickeln
 1. Zuerst `docs/PROJECT_PLAYBOOK.md` lesen.
 2. An `docs/ARCHITECTURE.md` und `docs/TEST_MATRIX.md` orientieren.
@@ -781,6 +818,22 @@ Znacenje polja:
 - `quote_refresh_seconds`: uskladjuje se sa master tajmerom
 - `time_format`: format vremena (`chrono`)
 
+Lokalni format citata (preporucen block mode):
+```txt
+***
+Nemacki red
+English line
+Srpski red
+:
+Ime autora
+***
+```
+
+Napomene:
+- podrazumevani fajl u repou: `assets/quotes/local/local-quotes.md`
+- `wc-cli init` automatski pravi: `~/Documents/wallpaper-composer/quotes.md`
+- instalirana putanja paketa (RPM/DEB): `/usr/share/wallpaper-composer/quotes/local-quotes.md`
+
 ### 9. Dalji razvoj
 1. Prvo procitati `docs/PROJECT_PLAYBOOK.md`.
 2. Pratiti `docs/ARCHITECTURE.md` i `docs/TEST_MATRIX.md`.
@@ -988,6 +1041,22 @@ time_format = "%H:%M"
 - `image_refresh_seconds`：主刷新间隔
 - `quote_refresh_seconds`：会与主计时器保持一致
 - `time_format`：时间格式（`chrono` 格式）
+
+本地语录文件格式（推荐区块模式）：
+```txt
+***
+German line
+English line
+Serbian line
+:
+Author Name
+***
+```
+
+说明：
+- 仓库内默认文件：`assets/quotes/local/local-quotes.md`
+- `wc-cli init` 会自动创建：`~/Documents/wallpaper-composer/quotes.md`
+- RPM/DEB 安装后的路径：`/usr/share/wallpaper-composer/quotes/local-quotes.md`
 
 ### 9. 协作开发流程
 1. 先阅读 `docs/PROJECT_PLAYBOOK.md`。

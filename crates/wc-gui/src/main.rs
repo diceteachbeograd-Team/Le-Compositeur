@@ -7,12 +7,47 @@ use wc_core::{
 };
 
 fn main() -> eframe::Result<()> {
-    let native_options = eframe::NativeOptions::default();
+    let mut native_options = eframe::NativeOptions::default();
+    if let Some(icon) = load_app_icon() {
+        native_options.viewport = egui::ViewportBuilder::default().with_icon(icon);
+    }
     eframe::run_native(
         "Wallpaper Composer Settings",
         native_options,
         Box::new(|_cc| Ok(Box::new(WcGuiApp::new()))),
     )
+}
+
+fn load_app_icon() -> Option<egui::IconData> {
+    let mut candidates = Vec::<PathBuf>::new();
+    if let Ok(p) = std::env::var("WC_GUI_ICON") {
+        candidates.push(PathBuf::from(p));
+    }
+    candidates.push(PathBuf::from("assets/icons/wallpaper-composer.png"));
+    candidates.push(PathBuf::from(
+        "/usr/share/icons/hicolor/512x512/apps/wallpaper-composer.png",
+    ));
+    candidates.push(PathBuf::from(
+        "/usr/share/icons/hicolor/256x256/apps/wallpaper-composer.png",
+    ));
+
+    for path in candidates {
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let Ok(img) = image::load_from_memory(&bytes) else {
+            continue;
+        };
+        let rgba = img.into_rgba8();
+        let width = rgba.width();
+        let height = rgba.height();
+        return Some(egui::IconData {
+            rgba: rgba.into_raw(),
+            width,
+            height,
+        });
+    }
+    None
 }
 
 struct ThumbnailItem {

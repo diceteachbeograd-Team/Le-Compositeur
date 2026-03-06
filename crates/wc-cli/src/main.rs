@@ -19,6 +19,7 @@ use wc_render::{PreviewText, render_preview_to_file};
 use wc_source::{ImageProvider, QuoteProvider, fetch_remote_image, fetch_remote_quote};
 
 const MAX_STORED_HISTORY: usize = 64;
+const BUNDLED_LOCAL_QUOTES: &str = include_str!("../../../assets/quotes/local/local-quotes.md");
 
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
@@ -110,6 +111,9 @@ fn main() -> Result<()> {
 
             fs::write(&config_path, default_config_toml())?;
             println!("created config: {}", config_path.display());
+            if let Some(quotes_path) = ensure_default_local_quotes(&config_path)? {
+                println!("created local quotes: {}", quotes_path.display());
+            }
         }
         Commands::Validate { config } => {
             let config_path = resolve_config_path(config)?;
@@ -620,6 +624,7 @@ fn resolve_image_endpoint_from_preset(cfg: &AppConfig) -> Result<(String, ImageP
 
     let provider = match id {
         "nasa_apod" => ImageProvider::NasaApod,
+        "wikimedia_featured" => ImageProvider::WikimediaApi,
         _ => ImageProvider::Generic,
     };
 
@@ -700,6 +705,19 @@ fn resolve_config_path(config: Option<PathBuf>) -> Result<PathBuf> {
     }
 
     default_config_path().map_err(|_| anyhow::anyhow!("HOME is not set; pass --config explicitly"))
+}
+
+fn ensure_default_local_quotes(config_path: &Path) -> Result<Option<PathBuf>> {
+    let cfg = load_config(config_path)?;
+    let quotes_path = expand_tilde(&cfg.quotes_path)?;
+    if quotes_path.exists() {
+        return Ok(None);
+    }
+    if let Some(parent) = quotes_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&quotes_path, BUNDLED_LOCAL_QUOTES)?;
+    Ok(Some(quotes_path))
 }
 
 fn ensure_parent_dir(path: &Path) -> Result<()> {

@@ -21,11 +21,26 @@ hint: install Fedora build dependencies:
 EOF
 }
 
+need_file() {
+  if [[ ! -f "$1" ]]; then
+    echo "error: required file missing: $1" >&2
+    return 1
+  fi
+}
+
 cd "$ROOT_DIR"
 
 need_cmd cargo || { hint_missing_fedora_deps; exit 1; }
 need_cmd rpmbuild || { hint_missing_fedora_deps; exit 1; }
 need_cmd rsync || { hint_missing_fedora_deps; exit 1; }
+need_file "assets/quotes/local/local-quotes.md" || exit 1
+need_file "assets/icons/wallpaper-composer.png" || {
+  cat >&2 <<'EOF'
+hint: place your preferred app icon at:
+  assets/icons/wallpaper-composer.png
+EOF
+  exit 1
+}
 
 cargo build --release -p wc-cli -p wc-gui
 

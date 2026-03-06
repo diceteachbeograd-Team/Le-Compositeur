@@ -58,6 +58,14 @@ Verfasser
 
 Repository sample file:
 - `assets/examples/quotes.md` (10 English quotes, block format)
+- `assets/quotes/local/local-quotes.md` (packaged multilingual default quotes)
+
+`wc-cli init` bootstrap behavior:
+- creates config at `~/.config/wallpaper-composer/config.toml`
+- auto-creates local quotes file at `~/Documents/wallpaper-composer/quotes.md` if missing
+
+Installed package path (RPM/DEB):
+- `/usr/share/wallpaper-composer/quotes/local-quotes.md`
 
 ## Planned parsing modes
 These modes are reserved for GUI settings and future parser upgrades:

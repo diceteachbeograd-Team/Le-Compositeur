@@ -847,11 +847,11 @@ pub fn builtin_image_presets() -> Vec<SourcePreset> {
             id: "wikimedia_featured",
             display_label: "Wikimedia Featured Images",
             name: "Wikimedia Featured",
-            endpoint: "https://commons.wikimedia.org/wiki/Commons:Featured_pictures",
+            endpoint: "https://commons.wikimedia.org/w/api.php?action=query&generator=random&grnnamespace=6&grnlimit=1&prop=imageinfo&iiprop=url&iiurlwidth=3840&format=json",
             category: "public-archive",
             auth: "none",
             rate_limit: "provider-defined",
-            notes: "Curated public-domain/CC media hub; scraping strategy must respect terms.",
+            notes: "Wikimedia API random file endpoint (namespace 6) with requested HD thumbnail URL.",
         },
         SourcePreset {
             id: "picsum_random_hd",
