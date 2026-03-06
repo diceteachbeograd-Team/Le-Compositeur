@@ -18,6 +18,6 @@
     <binary>wc-gui</binary>
   </provides>
   <releases>
-    <release version="0.1.0-alpha.1" date="2026-03-06"/>
+    <release version="1.20260306.1" date="2026-03-06"/>
   </releases>
 </component>

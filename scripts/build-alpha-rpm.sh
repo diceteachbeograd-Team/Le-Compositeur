@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${1:-0.1.0}"
+VERSION="${1:-1.20260306.1}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PKG_NAME="wallpaper-composer"
 TARBALL="${PKG_NAME}-${VERSION}.tar.gz"

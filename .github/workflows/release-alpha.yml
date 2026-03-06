@@ -1,10 +1,10 @@
-name: Release Alpha Artifacts
+name: Release Artifacts
 
 on:
   workflow_dispatch:
   push:
     tags:
-      - "alpha-v*"
+      - "v*"
 
 jobs:
   build-artifacts:
