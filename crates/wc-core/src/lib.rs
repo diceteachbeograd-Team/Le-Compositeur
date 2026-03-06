@@ -579,7 +579,7 @@ pub fn pick_background_image_with_mode(
     index: u64,
     mode: &str,
     avoid_repeat: bool,
-    previous_index: Option<usize>,
+    recent_indices: &[usize],
 ) -> Result<(PathBuf, usize)> {
     let candidates = list_background_images(image_dir)?;
     if candidates.is_empty() {
@@ -589,7 +589,7 @@ pub fn pick_background_image_with_mode(
         ));
     }
 
-    let idx = pick_index_with_mode(candidates.len(), index, mode, avoid_repeat, previous_index);
+    let idx = pick_index_with_mode(candidates.len(), index, mode, avoid_repeat, recent_indices);
 
     Ok((candidates[idx].clone(), idx))
 }
@@ -747,7 +747,7 @@ pub fn pick_quote_with_mode(
     index: u64,
     mode: &str,
     avoid_repeat: bool,
-    previous_index: Option<usize>,
+    recent_indices: &[usize],
 ) -> Result<(String, usize)> {
     let quotes = load_quotes(quotes_path)?;
     if quotes.is_empty() {
@@ -756,7 +756,7 @@ pub fn pick_quote_with_mode(
             quotes_path.display()
         ));
     }
-    let idx = pick_index_with_mode(quotes.len(), index, mode, avoid_repeat, previous_index);
+    let idx = pick_index_with_mode(quotes.len(), index, mode, avoid_repeat, recent_indices);
     Ok((quotes[idx].clone(), idx))
 }
 
@@ -782,15 +782,28 @@ fn pick_index_with_mode(
     index: u64,
     mode: &str,
     avoid_repeat: bool,
-    previous_index: Option<usize>,
+    recent_indices: &[usize],
 ) -> usize {
     let mut idx = match mode.trim().to_ascii_lowercase().as_str() {
         "random" => pseudo_random_index(index, len),
         _ => (index as usize) % len,
     };
 
-    if avoid_repeat && len > 1 && previous_index == Some(idx) {
-        idx = (idx + 1) % len;
+    if avoid_repeat && len > 1 {
+        let blocked = recent_indices
+            .iter()
+            .copied()
+            .filter(|i| *i < len)
+            .collect::<Vec<_>>();
+        if blocked.len() < len && blocked.contains(&idx) {
+            for step in 1..=len {
+                let candidate = (idx + step) % len;
+                if !blocked.contains(&candidate) {
+                    idx = candidate;
+                    break;
+                }
+            }
+        }
     }
     idx
 }
@@ -1156,6 +1169,12 @@ mod tests {
         assert!(json.contains("\"quote_presets\""));
         assert!(json.contains("\"display_label\""));
         assert!(json.contains("\"rate_limit\""));
+    }
+
+    #[test]
+    fn pick_index_avoids_last_three_when_enabled() {
+        let idx = super::pick_index_with_mode(6, 0, "sequential", true, &[0, 1, 2]);
+        assert_eq!(idx, 3);
     }
 
     #[test]

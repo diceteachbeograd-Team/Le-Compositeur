@@ -16,6 +16,8 @@ use wc_core::{
 use wc_render::{PreviewText, render_preview_to_file};
 use wc_source::{ImageProvider, QuoteProvider, fetch_remote_image, fetch_remote_quote};
 
+const NO_REPEAT_HISTORY_SIZE: usize = 3;
+
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
 #[command(about = "Wallpaper Composer CLI", version)]
@@ -88,9 +90,8 @@ fn main() -> Result<()> {
             let config_path = resolve_config_path(config)?;
             let cfg = load_config(&config_path)?;
             validate_config(&cfg)?;
-            let image_cycle = determine_cycle(&cfg, cfg.image_refresh_seconds, "image_rotation")?;
-            let quote_cycle = determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote_rotation")?;
-            run_cycle(&cfg, image_cycle, quote_cycle)?;
+            let cycle = determine_cycle(&cfg, cfg.refresh_seconds, "rotation")?;
+            run_cycle(&cfg, cycle, cycle)?;
         }
         Commands::Init { config, force } => {
             let config_path = resolve_config_path(config)?;
@@ -119,11 +120,8 @@ fn main() -> Result<()> {
             loop {
                 let cfg = load_config(&config_path)?;
                 validate_config(&cfg)?;
-                let image_cycle =
-                    determine_cycle(&cfg, cfg.image_refresh_seconds, "image_rotation")?;
-                let quote_cycle =
-                    determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote_rotation")?;
-                run_cycle(&cfg, image_cycle, quote_cycle)?;
+                let cycle = determine_cycle(&cfg, cfg.refresh_seconds, "rotation")?;
+                run_cycle(&cfg, cycle, cycle)?;
 
                 if once {
                     break;
@@ -425,15 +423,15 @@ fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {
         "local" => {
             let image_dir = expand_tilde(&cfg.image_dir)?;
             let state_path = image_pick_state_path(cfg)?;
-            let previous_index = read_image_pick_index(&state_path);
+            let recent_indices = read_recent_indices(&state_path);
             let (picked, picked_idx) = pick_background_image_with_mode(
                 &image_dir,
                 cycle,
                 &cfg.image_order_mode,
                 cfg.image_avoid_repeat,
-                previous_index,
+                &recent_indices,
             )?;
-            write_image_pick_index(&state_path, picked_idx)?;
+            write_recent_indices(&state_path, &recent_indices, picked_idx)?;
             Ok(picked)
         }
         "preset" | "remote_preset" => {
@@ -460,30 +458,20 @@ fn image_pick_state_path(cfg: &AppConfig) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn read_image_pick_index(path: &Path) -> Option<usize> {
-    let raw = fs::read_to_string(path).ok()?;
-    raw.trim().parse::<usize>().ok()
-}
-
-fn write_image_pick_index(path: &Path, idx: usize) -> Result<()> {
-    fs::write(path, format!("{idx}\n"))?;
-    Ok(())
-}
-
 fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {
     match cfg.quote_source.trim().to_ascii_lowercase().as_str() {
         "local" => {
             let quotes_path = expand_tilde(&cfg.quotes_path)?;
             let state_path = quote_pick_state_path(cfg)?;
-            let previous_index = read_quote_pick_index(&state_path);
+            let recent_indices = read_recent_indices(&state_path);
             let (picked, picked_idx) = pick_quote_with_mode(
                 &quotes_path,
                 cycle,
                 &cfg.quote_order_mode,
                 cfg.quote_avoid_repeat,
-                previous_index,
+                &recent_indices,
             )?;
-            write_quote_pick_index(&state_path, picked_idx)?;
+            write_recent_indices(&state_path, &recent_indices, picked_idx)?;
             Ok(picked)
         }
         "preset" | "remote_preset" => {
@@ -510,13 +498,27 @@ fn quote_pick_state_path(cfg: &AppConfig) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn read_quote_pick_index(path: &Path) -> Option<usize> {
-    let raw = fs::read_to_string(path).ok()?;
-    raw.trim().parse::<usize>().ok()
+fn read_recent_indices(path: &Path) -> Vec<usize> {
+    let raw = fs::read_to_string(path).unwrap_or_default();
+    raw.split(',')
+        .filter_map(|part| part.trim().parse::<usize>().ok())
+        .take(NO_REPEAT_HISTORY_SIZE)
+        .collect::<Vec<_>>()
 }
 
-fn write_quote_pick_index(path: &Path, idx: usize) -> Result<()> {
-    fs::write(path, format!("{idx}\n"))?;
+fn write_recent_indices(path: &Path, previous: &[usize], next_idx: usize) -> Result<()> {
+    let mut merged = vec![next_idx];
+    for idx in previous.iter().copied() {
+        if idx != next_idx && merged.len() < NO_REPEAT_HISTORY_SIZE {
+            merged.push(idx);
+        }
+    }
+    let serialized = merged
+        .iter()
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    fs::write(path, format!("{serialized}\n"))?;
     Ok(())
 }
 
@@ -634,7 +636,7 @@ fn loop_tick_seconds(cfg: &AppConfig) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{determine_cycle, loop_tick_seconds};
+    use super::{determine_cycle, loop_tick_seconds, read_recent_indices, write_recent_indices};
     use std::fs;
     use wc_core::{default_config_toml, load_config};
 
@@ -651,22 +653,34 @@ mod tests {
     }
 
     #[test]
-    fn image_and_quote_cycles_use_independent_intervals() {
+    fn single_cycle_timer_is_used_for_both_streams() {
         let cfg_path = std::env::temp_dir().join("wc-cli-cycle-test.toml");
         fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
         let mut cfg = load_config(&cfg_path).expect("default config should parse");
         cfg.rotation_use_persistent_state = false;
-        cfg.image_refresh_seconds = 120;
-        cfg.quote_refresh_seconds = 30;
+        cfg.refresh_seconds = 45;
 
-        let image_cycle =
-            determine_cycle(&cfg, cfg.image_refresh_seconds, "image_rotation").expect("cycle ok");
-        let quote_cycle =
-            determine_cycle(&cfg, cfg.quote_refresh_seconds, "quote_rotation").expect("cycle ok");
+        let image_cycle = determine_cycle(&cfg, cfg.refresh_seconds, "rotation").expect("cycle ok");
+        let quote_cycle = determine_cycle(&cfg, cfg.refresh_seconds, "rotation").expect("cycle ok");
 
-        assert!(
-            quote_cycle >= image_cycle,
-            "quote cycle should advance at least as fast as image cycle"
-        );
+        assert_eq!(image_cycle, quote_cycle);
+    }
+
+    #[test]
+    fn recent_history_keeps_last_three_distinct_entries() {
+        let state_path = std::env::temp_dir().join("wc-cli-recent-history-test.state");
+        let _ = fs::remove_file(&state_path);
+
+        write_recent_indices(&state_path, &[], 5).expect("state write should work");
+        write_recent_indices(&state_path, &read_recent_indices(&state_path), 2)
+            .expect("state write should work");
+        write_recent_indices(&state_path, &read_recent_indices(&state_path), 7)
+            .expect("state write should work");
+        write_recent_indices(&state_path, &read_recent_indices(&state_path), 2)
+            .expect("state write should work");
+
+        let got = read_recent_indices(&state_path);
+        assert_eq!(got, vec![2, 7, 5]);
+        let _ = fs::remove_file(state_path);
     }
 }

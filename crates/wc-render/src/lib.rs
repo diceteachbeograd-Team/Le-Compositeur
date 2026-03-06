@@ -117,7 +117,6 @@ fn render_with_imagemagick(
     if use_magick_subcommand {
         args.push("convert".to_string());
     }
-    args.push(source_image.display().to_string());
 
     let (quote_body, author) = split_quote_and_author(text.quote);
     let rtl = is_rtl_text(&quote_body);
@@ -125,30 +124,30 @@ fn render_with_imagemagick(
     let author_gravity = if rtl { "West" } else { "East" };
     let (img_w, img_h) =
         detect_image_dimensions(&source_image.display().to_string()).unwrap_or((1920, 1080));
+    let layout_w = 1920;
+    let layout_h = 1080;
+
+    // Build an explicit background layer first so image scaling/placement is independent
+    // from the quote box/text layer rendered afterwards.
+    args.push("(".to_string());
+    args.push(source_image.display().to_string());
+    args.push("-resize".to_string());
+    args.push(format!("{img_w}x{img_h}^"));
+    args.push("-gravity".to_string());
+    args.push("Center".to_string());
+    args.push("-extent".to_string());
+    args.push(format!("{img_w}x{img_h}"));
+    args.push(")".to_string());
+
     let (box_w_pct, box_h_pct) = resolve_text_box_pct(text);
-    let box_w = ((img_w * box_w_pct as i32) / 100).max(240);
-    let box_h = ((img_h * box_h_pct as i32) / 100).max(160);
-    let effective_quote_size = resolve_quote_font_size(
-        quote_body.as_str(),
-        text.quote_font_size,
-        text,
-        box_w,
-        box_h,
-        author.is_some(),
-    );
+    let box_w = ((layout_w * box_w_pct as i32) / 100).max(240);
+    let box_h = ((layout_h * box_h_pct as i32) / 100).max(160);
+    let effective_quote_size = resolve_quote_font_size(text.quote_font_size, text);
     let author_size = ((effective_quote_size as f32) * 0.85).round() as u32;
     let author_h = (author_size as i32 * 2).max(40);
     let quote_h = (box_h - author_h).max(80);
-    let effective_stroke_width = if text.quote_auto_fit && effective_quote_size <= 20 {
-        text.text_stroke_width.min(1)
-    } else {
-        text.text_stroke_width
-    };
-    let effective_undercolor = if text.quote_auto_fit && effective_quote_size <= 20 {
-        "none"
-    } else {
-        text.text_undercolor
-    };
+    let effective_stroke_width = text.text_stroke_width;
+    let effective_undercolor = text.text_undercolor;
     let shadow_x = text.quote_pos_x.saturating_add(text.text_shadow_offset_x);
     let shadow_y = text.quote_pos_y.saturating_add(text.text_shadow_offset_y);
 
@@ -402,48 +401,10 @@ fn resolve_text_box_pct(text: &PreviewText<'_>) -> (u32, u32) {
     }
 }
 
-fn resolve_quote_font_size(
-    quote_body: &str,
-    preferred: u32,
-    text: &PreviewText<'_>,
-    box_w: i32,
-    box_h: i32,
-    has_author: bool,
-) -> u32 {
-    if !text.quote_auto_fit {
-        return preferred.max(text.quote_min_font_size.max(8));
-    }
-    let min_size = text.quote_min_font_size.max(8);
-    let mut size = preferred.max(min_size);
-
-    // Approximate wrap/line-height until content likely fits in text box.
-    let lines_src = quote_body.lines().collect::<Vec<_>>();
-    while size > min_size {
-        let char_w = (size as f32 * 0.55).max(6.0);
-        let cols = ((box_w as f32) / char_w).max(8.0);
-        let wrapped_lines = lines_src
-            .iter()
-            .map(|line| {
-                let count = line.chars().count() as f32;
-                (count / cols).ceil().max(1.0)
-            })
-            .sum::<f32>()
-            .max(1.0);
-        let needed_h = wrapped_lines * (size as f32 * 1.35);
-        let author_h = if has_author {
-            (size as f32 * 1.9).max(40.0)
-        } else {
-            0.0
-        };
-        let padding = 10.0;
-        let max_h = (box_h as f32 - author_h - padding).max(60.0);
-        if needed_h <= max_h {
-            break;
-        }
-        size -= 1;
-    }
-
-    size.max(min_size)
+fn resolve_quote_font_size(preferred: u32, text: &PreviewText<'_>) -> u32 {
+    // Keep quote font stable as configured; image scaling and text box sizing
+    // must not downscale the chosen font size.
+    preferred.max(text.quote_min_font_size.max(8))
 }
 
 fn render_with_native_bmp(
