@@ -211,6 +211,9 @@ macOS Intel / Apple Silicon (tar.gz artifact):
 
 ### 6.1.1 GitHub Actions release notes (important)
 - Current workflow artifact types: `tar.gz` (Linux/macOS) and `zip` (Windows).
+- Release also ships direct binaries per platform:
+  - `wc-cli-<platform>` / `wc-gui-<platform>` (Linux/macOS)
+  - `wc-cli-<platform>.exe` / `wc-gui-<platform>.exe` (Windows)
 - Current workflow does not yet publish native installers (`.rpm`, `.deb`, `.dmg`, `.msi/.exe installer`) automatically.
 - Native Linux packages (`.rpm`, `.deb`) are created by local scripts:
   - RPM output: `~/rpmbuild/RPMS/x86_64/`
@@ -599,6 +602,9 @@ macOS Intel / Apple Silicon (tar.gz-Artefakt):
 
 ### 6.1.1 GitHub Actions Hinweise (wichtig)
 - Aktuelle Workflow-Artefakte: `tar.gz` (Linux/macOS) und `zip` (Windows).
+- Im Release liegen zusatzlich direkte Binaries pro Plattform:
+  - `wc-cli-<platform>` / `wc-gui-<platform>` (Linux/macOS)
+  - `wc-cli-<platform>.exe` / `wc-gui-<platform>.exe` (Windows)
 - Aktuell werden keine nativen Installer (`.rpm`, `.deb`, `.dmg`, `.msi/.exe installer`) automatisch in GitHub Actions gebaut.
 - Native Linux-Pakete (`.rpm`, `.deb`) kommen aus lokalen Build-Skripten:
   - RPM-Ausgabe: `~/rpmbuild/RPMS/x86_64/`
@@ -859,6 +865,9 @@ macOS Intel / Apple Silicon (tar.gz):
 
 ### 6.1.1 GitHub Actions napomene (vazno)
 - Trenutni workflow artefakti: `tar.gz` (Linux/macOS) i `zip` (Windows).
+- U release-u su i direktni binarni fajlovi po platformi:
+  - `wc-cli-<platform>` / `wc-gui-<platform>` (Linux/macOS)
+  - `wc-cli-<platform>.exe` / `wc-gui-<platform>.exe` (Windows)
 - Trenutno se ne objavljuju automatski nativni instaleri (`.rpm`, `.deb`, `.dmg`, `.msi/.exe installer`).
 - Nativni Linux paketi (`.rpm`, `.deb`) nastaju lokalnim skriptama:
   - RPM izlaz: `~/rpmbuild/RPMS/x86_64/`
@@ -1119,6 +1128,9 @@ macOS Intel / Apple Silicon（tar.gz）：
 
 ### 6.1.1 GitHub Actions 说明（重要）
 - 当前工作流产物类型：`tar.gz`（Linux/macOS）和 `zip`（Windows）。
+- Release 也会附带各平台的直接二进制文件：
+  - `wc-cli-<platform>` / `wc-gui-<platform>`（Linux/macOS）
+  - `wc-cli-<platform>.exe` / `wc-gui-<platform>.exe`（Windows）
 - 当前工作流不会自动生成原生安装包（`.rpm`、`.deb`、`.dmg`、`.msi/.exe installer`）。
 - Linux 原生包（`.rpm`、`.deb`）需要本地脚本构建：
   - RPM 输出目录：`~/rpmbuild/RPMS/x86_64/`
