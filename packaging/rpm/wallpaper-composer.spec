@@ -24,7 +24,8 @@ cargo build --release -p wc-gui
 
 %install
 install -Dpm0755 target/release/wc-cli %{buildroot}%{_bindir}/wc-cli
-install -Dpm0755 target/release/wc-gui %{buildroot}%{_bindir}/wc-gui
+install -Dpm0755 target/release/wc-gui %{buildroot}%{_libexecdir}/%{name}/wc-gui-bin
+install -Dpm0755 packaging/linux/wc-gui-wrapper.sh %{buildroot}%{_bindir}/wc-gui
 install -Dpm0644 README.md %{buildroot}%{_docdir}/%{name}/README.md
 install -Dpm0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 install -Dpm0644 assets/icons/wallpaper-composer.png %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/wallpaper-composer.png
@@ -37,6 +38,7 @@ install -Dpm0644 packaging/linux/wallpaper-composer.metainfo.xml %{buildroot}%{_
 %doc %{_docdir}/%{name}/README.md
 %{_bindir}/wc-cli
 %{_bindir}/wc-gui
+%{_libexecdir}/%{name}/wc-gui-bin
 %{_datadir}/icons/hicolor/512x512/apps/wallpaper-composer.png
 %{_datadir}/wallpaper-composer/quotes/local-quotes.md
 %{_datadir}/applications/wallpaper-composer.desktop
