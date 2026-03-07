@@ -156,7 +156,7 @@ Versioning scheme:
 - if multiple builds happen on the same date, increment `N` (`.2`, `.3`, ...)
 
 You can choose either path:
-- `Option A`: install prebuilt packages from GitHub Releases (`v...`) or from `packaging/releases/<version>/`
+- `Option A`: download prebuilt release artifacts from GitHub Releases (tag `v...` or numeric tag like `2026.03.08-1`)
 - `Option B`: build packages locally from source
 
 Fedora / RHEL (RPM):
@@ -208,6 +208,19 @@ macOS Intel / Apple Silicon (tar.gz artifact):
 # unpack and run
 ./wallpaper-composer-macos-*/bin/wc-gui
 ```
+
+### 6.1.1 GitHub Actions release notes (important)
+- Current workflow artifact types: `tar.gz` (Linux/macOS) and `zip` (Windows).
+- Current workflow does not yet publish native installers (`.rpm`, `.deb`, `.dmg`, `.msi/.exe installer`) automatically.
+- Native Linux packages (`.rpm`, `.deb`) are created by local scripts:
+  - RPM output: `~/rpmbuild/RPMS/x86_64/`
+  - DEB output: `./dist/`
+- GitHub locations:
+  - Temporary run artifacts: `Actions -> Release Artifacts run -> Artifacts`
+  - Permanent downloads: `Releases -> <tag> -> Assets`
+- Known CI issue seen on 2026-03-08:
+  - `Build macos-x86_64` can fail with: `The configuration 'macos-13-us-default' is not supported`
+  - In that case, keep `macos-arm64` enabled and switch Intel runner label to a supported image for your GitHub plan/org.
 
 First-run setup (all platforms):
 ```bash
@@ -541,7 +554,7 @@ Versionsschema:
 - bei mehreren Builds am gleichen Tag `N` hochzahlen (`.2`, `.3`, ...)
 
 Zwei Wege:
-- `Option A`: fertige Pakete aus GitHub Releases (`v...`) oder `packaging/releases/<version>/`
+- `Option A`: fertige Release-Artefakte aus GitHub Releases laden (Tag `v...` oder numerisch wie `2026.03.08-1`)
 - `Option B`: lokal aus Source bauen
 
 Fedora / RHEL (RPM):
@@ -583,6 +596,19 @@ macOS Intel / Apple Silicon (tar.gz-Artefakt):
 ```bash
 ./wallpaper-composer-macos-*/bin/wc-gui
 ```
+
+### 6.1.1 GitHub Actions Hinweise (wichtig)
+- Aktuelle Workflow-Artefakte: `tar.gz` (Linux/macOS) und `zip` (Windows).
+- Aktuell werden keine nativen Installer (`.rpm`, `.deb`, `.dmg`, `.msi/.exe installer`) automatisch in GitHub Actions gebaut.
+- Native Linux-Pakete (`.rpm`, `.deb`) kommen aus lokalen Build-Skripten:
+  - RPM-Ausgabe: `~/rpmbuild/RPMS/x86_64/`
+  - DEB-Ausgabe: `./dist/`
+- GitHub-Ablageorte:
+  - temporar: `Actions -> Release Artifacts run -> Artifacts`
+  - dauerhaft: `Releases -> <tag> -> Assets`
+- Bekannter CI-Fall (2026-03-08):
+  - `Build macos-x86_64` kann fehlschlagen mit: `The configuration 'macos-13-us-default' is not supported`
+  - Dann `macos-arm64` aktiv lassen und den Intel-Runner auf ein unterstutztes Image fur euren GitHub-Plan umstellen.
 
 ### 7. CLI-Referenz
 `doctor`
@@ -788,7 +814,7 @@ Verzionisanje:
 - za vise buildova istog dana povecaj `N` (`.2`, `.3`, ...)
 
 Imas dve opcije:
-- `Option A`: prebuilt paketi iz GitHub Releases (`v...`) ili iz `packaging/releases/<version>/`
+- `Option A`: prebuilt release artefakti sa GitHub Releases (tag `v...` ili numericki kao `2026.03.08-1`)
 - `Option B`: lokalni build iz source koda
 
 Fedora / RHEL (RPM):
@@ -830,6 +856,19 @@ macOS Intel / Apple Silicon (tar.gz):
 ```bash
 ./wallpaper-composer-macos-*/bin/wc-gui
 ```
+
+### 6.1.1 GitHub Actions napomene (vazno)
+- Trenutni workflow artefakti: `tar.gz` (Linux/macOS) i `zip` (Windows).
+- Trenutno se ne objavljuju automatski nativni instaleri (`.rpm`, `.deb`, `.dmg`, `.msi/.exe installer`).
+- Nativni Linux paketi (`.rpm`, `.deb`) nastaju lokalnim skriptama:
+  - RPM izlaz: `~/rpmbuild/RPMS/x86_64/`
+  - DEB izlaz: `./dist/`
+- GitHub lokacije:
+  - privremeno: `Actions -> Release Artifacts run -> Artifacts`
+  - trajno: `Releases -> <tag> -> Assets`
+- Poznat CI problem (2026-03-08):
+  - `Build macos-x86_64` moze pasti sa: `The configuration 'macos-13-us-default' is not supported`
+  - U tom slucaju ostavi `macos-arm64`, a Intel runner prebaci na podrzanu sliku za vas GitHub plan.
 
 ### 7. CLI referenca
 `doctor`
@@ -1035,7 +1074,7 @@ Alpha 打包脚本：
 - 同一天多次构建时递增 `N`（`.2`、`.3`）
 
 可选两种方式：
-- `Option A`：使用 GitHub Releases（`v...`）或 `packaging/releases/<version>/` 里的预构建包
+- `Option A`：从 GitHub Releases 下载预构建产物（标签 `v...` 或数字标签如 `2026.03.08-1`）
 - `Option B`：本地从源码构建
 
 Fedora / RHEL（RPM）：
@@ -1077,6 +1116,19 @@ macOS Intel / Apple Silicon（tar.gz）：
 ```bash
 ./wallpaper-composer-macos-*/bin/wc-gui
 ```
+
+### 6.1.1 GitHub Actions 说明（重要）
+- 当前工作流产物类型：`tar.gz`（Linux/macOS）和 `zip`（Windows）。
+- 当前工作流不会自动生成原生安装包（`.rpm`、`.deb`、`.dmg`、`.msi/.exe installer`）。
+- Linux 原生包（`.rpm`、`.deb`）需要本地脚本构建：
+  - RPM 输出目录：`~/rpmbuild/RPMS/x86_64/`
+  - DEB 输出目录：`./dist/`
+- GitHub 下载位置：
+  - 临时产物：`Actions -> Release Artifacts run -> Artifacts`
+  - 长期下载：`Releases -> <tag> -> Assets`
+- 已知 CI 问题（2026-03-08）：
+  - `Build macos-x86_64` 可能报错：`The configuration 'macos-13-us-default' is not supported`
+  - 这种情况下保留 `macos-arm64`，并将 Intel runner 改为你们 GitHub 计划支持的 macOS 镜像。
 
 ### 7. CLI 说明
 `doctor`
