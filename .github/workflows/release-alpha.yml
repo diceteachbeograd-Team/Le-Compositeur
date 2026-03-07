@@ -6,6 +6,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build-artifacts:
     name: Build ${{ matrix.name }}
@@ -66,4 +69,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          name: Wallpaper Composer ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: dist/wallpaper-composer-${{ matrix.name }}.${{ matrix.archive_ext }}
