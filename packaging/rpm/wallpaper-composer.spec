@@ -1,5 +1,5 @@
 Name:           wallpaper-composer
-Version:        1.20260307.2
+Version:        1.20260308.1
 Release:        1%{?dist}
 Summary:        Dynamic Linux wallpaper composer (Rust)
 
@@ -45,5 +45,5 @@ install -Dpm0644 packaging/linux/wallpaper-composer.metainfo.xml %{buildroot}%{_
 %{_datadir}/metainfo/wallpaper-composer.metainfo.xml
 
 %changelog
-* Fri Mar 06 2026 Wallpaper Composer Contributors <opensource@example.com> - 1.20260307.2-1
+* Sun Mar 08 2026 Wallpaper Composer Contributors <opensource@example.com> - 1.20260308.1-1
 - Alpha packaging update with GUI binary, desktop entry, icon, and metainfo.

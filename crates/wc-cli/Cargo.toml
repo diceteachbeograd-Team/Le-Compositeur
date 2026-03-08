@@ -1,6 +1,6 @@
 [package]
 name = "wc-cli"
-version = "1.20260307.2"
+version = "1.20260308.1"
 edition.workspace = true
 license.workspace = true
 
@@ -12,3 +12,5 @@ wc-render = { path = "../wc-render" }
 wc-backend = { path = "../wc-backend" }
 wc-source = { path = "../wc-source" }
 chrono = { version = "0.4", default-features = true, features = ["clock"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde_json = "1.0"

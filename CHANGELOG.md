@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.20260308.1 - 2026-03-08
+- Added new GUI tabs `Weather` and `News` (before `System`) with dedicated settings.
+- Added weather widget configuration and live weather snapshot refresh (default 10 minutes).
+- Added news widget source catalog (news/finance/tech/documentary), FPS and audio flags.
+- Added explicit layer toggles for `Weather` and `News` in the `Ordering` 16:9 layout editor.
+- Added Autostart checkbox workflow in `System` and hardened login startup flow (delay + warmup cycle).
+- Expanded user help texts and updated onboarding documentation for easier first-time usage.
+
 ## 1.20260307.2 - 2026-03-06
 - First release-line version with scheme `1.YYYYMMDD.N`.
 - Added dynamic release staging folder layout under `packaging/releases/1.20260307.2/`.

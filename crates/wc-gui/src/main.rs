@@ -482,7 +482,7 @@ impl WcGuiApp {
         }
 
         let content = format!(
-            "[Desktop Entry]\nType=Application\nName=Wallpaper Composer Runner\nComment=Start Wallpaper Composer background runner on login\nExec=/usr/bin/bash -lc \"sleep 12; wc-cli run --once --config {0}; wc-cli run --config {0}\"\nTerminal=false\nX-GNOME-Autostart-enabled=true\nX-GNOME-Autostart-Delay=12\n",
+            "[Desktop Entry]\nType=Application\nName=Wallpaper Composer Runner\nComment=Start Wallpaper Composer background runner on login\nTryExec=/usr/bin/wc-cli\nExec=/usr/bin/bash -lc \"sleep 12; /usr/bin/wc-cli run --once --config {0}; /usr/bin/wc-cli run --config {0}\"\nTerminal=false\nX-GNOME-Autostart-enabled=true\nX-GNOME-Autostart-Delay=12\n",
             config
         );
         match std::fs::write(&path, content) {
@@ -1565,6 +1565,28 @@ impl WcGuiApp {
             .on_hover_text(self.hover_text("news_fps"));
             ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
                 .on_hover_text(self.hover_text("news_audio_enabled"));
+        });
+        ui.separator();
+        ui.collapsing("Support the Team", |ui| {
+            ui.label("If Wallpaper Composer helps you, you can support diceteachbeograd-Team.");
+            ui.label("XRP/Monero-style address:");
+            ui.monospace("raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5");
+            ui.label("Litecoin address:");
+            ui.monospace("LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt");
+            ui.horizontal(|ui| {
+                ui.label("QR (XRP):");
+                ui.hyperlink_to(
+                    "open",
+                    "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5",
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label("QR (LTC):");
+                ui.hyperlink_to(
+                    "open",
+                    "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt",
+                );
+            });
         });
     }
 }

@@ -21,8 +21,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 1.20260307.2
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-1.20260307.2-1*.rpm
+./scripts/build-alpha-rpm.sh 1.20260308.1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-1.20260308.1-1*.rpm
 wc-gui
 ```
 
@@ -30,8 +30,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 1.20260307.2
-sudo apt install ./dist/wallpaper-composer_1.20260307.2_amd64.deb
+./scripts/build-alpha-deb.sh 1.20260308.1
+sudo apt install ./dist/wallpaper-composer_1.20260308.1_amd64.deb
 wc-gui
 ```
 
@@ -60,3 +60,13 @@ Detailed documentation moved to:
 - `docs/ARCHITECTURE.md`
 - `docs/PACKAGING.md`
 - `docs/USER_CONTENT_FORMAT.md`
+
+## Support
+If you like the project and want to support diceteachbeograd-Team:
+
+- XRP address: `raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5`
+- Litecoin address: `LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt`
+
+QR links:
+- XRP: [open QR](https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5)
+- LTC: [open QR](https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt)

@@ -6,6 +6,8 @@ use std::process::Command;
 pub struct PreviewText<'a> {
     pub quote: &'a str,
     pub clock: &'a str,
+    pub weather: &'a str,
+    pub news: &'a str,
     pub quote_font_size: u32,
     pub quote_pos_x: i32,
     pub quote_pos_y: i32,
@@ -17,6 +19,10 @@ pub struct PreviewText<'a> {
     pub clock_pos_x: i32,
     pub clock_pos_y: i32,
     pub clock_color: &'a str,
+    pub weather_pos_x: i32,
+    pub weather_pos_y: i32,
+    pub news_pos_x: i32,
+    pub news_pos_y: i32,
     pub text_stroke_color: &'a str,
     pub text_stroke_width: u32,
     pub text_undercolor: &'a str,
@@ -59,10 +65,12 @@ pub fn render_preview_to_file(
 
     let meta_path = metadata_path_for(output_image);
     let metadata = format!(
-        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
+        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nweather = {:?}\nnews = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\nweather_pos_x = {}\nweather_pos_y = {}\nnews_pos_x = {}\nnews_pos_y = {}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
         render_mode,
         text.quote,
         text.clock,
+        text.weather,
+        text.news,
         text.quote_font_size,
         text.quote_pos_x,
         text.quote_pos_y,
@@ -74,6 +82,10 @@ pub fn render_preview_to_file(
         text.clock_pos_x,
         text.clock_pos_y,
         text.clock_color,
+        text.weather_pos_x,
+        text.weather_pos_y,
+        text.news_pos_x,
+        text.news_pos_y,
         text.text_stroke_color,
         text.text_stroke_width,
         text.text_undercolor,
@@ -311,6 +323,74 @@ fn render_with_imagemagick(
     args.push("-stroke".to_string());
     args.push("none".to_string());
 
+    if !text.weather.trim().is_empty() {
+        let weather_size = (text.clock_font_size.saturating_mul(7) / 10).max(18);
+        args.push("(".to_string());
+        args.push("-background".to_string());
+        args.push("none".to_string());
+        args.push("-size".to_string());
+        args.push(format!(
+            "{}x{}",
+            (canvas_w / 3).max(320),
+            (canvas_h / 6).max(130)
+        ));
+        args.push("-fill".to_string());
+        args.push("#00F5FF".to_string());
+        args.push("-stroke".to_string());
+        args.push("#001A22".to_string());
+        args.push("-strokewidth".to_string());
+        args.push("1".to_string());
+        args.push("-undercolor".to_string());
+        args.push("#0B0014B3".to_string());
+        args.push("-gravity".to_string());
+        args.push("West".to_string());
+        args.push("-font".to_string());
+        args.push(text.font_family.to_string());
+        args.push("-pointsize".to_string());
+        args.push(weather_size.to_string());
+        args.push(format!("caption:{}", text.weather));
+        args.push(")".to_string());
+        args.push("-gravity".to_string());
+        args.push("NorthWest".to_string());
+        args.push("-geometry".to_string());
+        args.push(format!("+{}+{}", text.weather_pos_x, text.weather_pos_y));
+        args.push("-composite".to_string());
+    }
+
+    if !text.news.trim().is_empty() {
+        let news_size = (text.clock_font_size.saturating_mul(65) / 100).max(16);
+        args.push("(".to_string());
+        args.push("-background".to_string());
+        args.push("none".to_string());
+        args.push("-size".to_string());
+        args.push(format!(
+            "{}x{}",
+            (canvas_w / 2).max(420),
+            (canvas_h / 7).max(120)
+        ));
+        args.push("-fill".to_string());
+        args.push("#FF5CF3".to_string());
+        args.push("-stroke".to_string());
+        args.push("#2A0027".to_string());
+        args.push("-strokewidth".to_string());
+        args.push("1".to_string());
+        args.push("-undercolor".to_string());
+        args.push("#080018B3".to_string());
+        args.push("-gravity".to_string());
+        args.push("West".to_string());
+        args.push("-font".to_string());
+        args.push(text.font_family.to_string());
+        args.push("-pointsize".to_string());
+        args.push(news_size.to_string());
+        args.push(format!("caption:{}", text.news));
+        args.push(")".to_string());
+        args.push("-gravity".to_string());
+        args.push("NorthWest".to_string());
+        args.push("-geometry".to_string());
+        args.push(format!("+{}+{}", text.news_pos_x, text.news_pos_y));
+        args.push("-composite".to_string());
+    }
+
     args.push(output_image.display().to_string());
 
     let status = Command::new(cmd)
@@ -434,6 +514,30 @@ fn render_with_native_bmp(
             r: 255,
             g: 215,
             b: 0,
+        },
+    );
+    draw_text(
+        &mut bmp,
+        text.weather_pos_x,
+        text.weather_pos_y,
+        text.weather,
+        (clock_scale / 2).max(1),
+        Rgb {
+            r: 0,
+            g: 245,
+            b: 255,
+        },
+    );
+    draw_text(
+        &mut bmp,
+        text.news_pos_x,
+        text.news_pos_y,
+        text.news,
+        (clock_scale / 2).max(1),
+        Rgb {
+            r: 255,
+            g: 92,
+            b: 243,
         },
     );
 
@@ -748,6 +852,8 @@ mod tests {
             PreviewText {
                 quote: "Focus.",
                 clock: "13:37",
+                weather: "Belgrade 13C clear",
+                news: "LIVE: Euronews",
                 quote_font_size: 24,
                 quote_pos_x: 10,
                 quote_pos_y: 20,
@@ -759,6 +865,10 @@ mod tests {
                 clock_pos_x: 300,
                 clock_pos_y: 180,
                 clock_color: "#FFD700",
+                weather_pos_x: 40,
+                weather_pos_y: 40,
+                news_pos_x: 40,
+                news_pos_y: 90,
                 text_stroke_color: "#000000",
                 text_stroke_width: 2,
                 text_undercolor: "#00000066",
@@ -799,6 +909,8 @@ mod tests {
             &PreviewText {
                 quote: "HELLO",
                 clock: "12:34",
+                weather: "Rain 4C",
+                news: "LIVE",
                 quote_font_size: 24,
                 quote_pos_x: 2,
                 quote_pos_y: 2,
@@ -810,6 +922,10 @@ mod tests {
                 clock_pos_x: 2,
                 clock_pos_y: 20,
                 clock_color: "#FFD700",
+                weather_pos_x: 2,
+                weather_pos_y: 40,
+                news_pos_x: 2,
+                news_pos_y: 58,
                 text_stroke_color: "#000000",
                 text_stroke_width: 1,
                 text_undercolor: "#00000066",

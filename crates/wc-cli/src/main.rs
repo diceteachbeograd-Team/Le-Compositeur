@@ -1,5 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use reqwest::blocking::Client;
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -179,6 +181,16 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     } else {
         String::new()
     };
+    let weather = if cfg.show_weather_layer {
+        resolve_weather_widget(cfg).unwrap_or_else(|e| format!("Weather unavailable ({e})"))
+    } else {
+        String::new()
+    };
+    let news = if cfg.show_news_layer {
+        resolve_news_widget(cfg).unwrap_or_else(|e| format!("News unavailable ({e})"))
+    } else {
+        String::new()
+    };
     let (canvas_width, canvas_height) = detect_canvas_size();
     let (image_pool_size, quote_pool_size) = detect_local_pool_sizes(cfg);
 
@@ -189,6 +201,8 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
         PreviewText {
             quote: &quote,
             clock: &clock,
+            weather: &weather,
+            news: &news,
             quote_font_size: cfg.quote_font_size,
             quote_pos_x: cfg.quote_pos_x,
             quote_pos_y: cfg.quote_pos_y,
@@ -200,6 +214,10 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             clock_pos_x: cfg.clock_pos_x,
             clock_pos_y: cfg.clock_pos_y,
             clock_color: &cfg.clock_color,
+            weather_pos_x: cfg.weather_pos_x,
+            weather_pos_y: cfg.weather_pos_y,
+            news_pos_x: cfg.news_pos_x,
+            news_pos_y: cfg.news_pos_y,
             text_stroke_color: &cfg.text_stroke_color,
             text_stroke_width: cfg.text_stroke_width,
             text_undercolor: &cfg.text_undercolor,
@@ -227,6 +245,8 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     }
     println!("quote: {}", quote);
     println!("clock: {}", clock);
+    println!("weather: {}", weather);
+    println!("news: {}", news);
     println!("canvas: {}x{}", canvas_width, canvas_height);
     println!("preview_mode: {}", render.preview_mode);
     println!("preview_output: {}", output_path.display());
@@ -326,6 +346,17 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
 
     if cfg.image_refresh_seconds == 0 {
         anyhow::bail!("image_refresh_seconds must be greater than 0");
+    }
+    if cfg.weather_refresh_seconds < 60 {
+        anyhow::bail!("weather_refresh_seconds must be >= 60");
+    }
+    if !(0.05..=30.0).contains(&cfg.news_fps) {
+        anyhow::bail!("news_fps must be between 0.05 and 30.0");
+    }
+    if cfg.news_source.trim().eq_ignore_ascii_case("custom")
+        && cfg.news_custom_url.trim().is_empty()
+    {
+        anyhow::bail!("news_custom_url is required when news_source=custom");
     }
 
     let backend = cfg.wallpaper_backend.trim().to_ascii_lowercase();
@@ -594,6 +625,218 @@ fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {
         other => Err(anyhow::anyhow!(
             "unsupported quote_source={other}; supported: local, preset, url"
         )),
+    }
+}
+
+fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
+    let client = Client::builder().timeout(Duration::from_secs(8)).build()?;
+
+    let (lat, lon, loc_label) = if cfg.weather_use_system_location {
+        let geo = client
+            .get("https://ipapi.co/json/")
+            .send()?
+            .error_for_status()?
+            .json::<Value>()?;
+        let lat = geo
+            .get("latitude")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| anyhow::anyhow!("missing latitude"))?;
+        let lon = geo
+            .get("longitude")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| anyhow::anyhow!("missing longitude"))?;
+        let city = geo.get("city").and_then(Value::as_str).unwrap_or("Unknown");
+        let country = geo
+            .get("country_name")
+            .and_then(Value::as_str)
+            .unwrap_or("Unknown");
+        (lat, lon, format!("{city}, {country}"))
+    } else {
+        let query = cfg.weather_location_override.trim();
+        if query.is_empty() {
+            anyhow::bail!("set weather location override");
+        }
+        let search_url = format!(
+            "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=en&format=json",
+            query.replace(' ', "+")
+        );
+        let geo = client
+            .get(search_url)
+            .send()?
+            .error_for_status()?
+            .json::<Value>()?;
+        let first = geo
+            .get("results")
+            .and_then(Value::as_array)
+            .and_then(|v| v.first())
+            .ok_or_else(|| anyhow::anyhow!("location not found"))?;
+        let lat = first
+            .get("latitude")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| anyhow::anyhow!("missing latitude"))?;
+        let lon = first
+            .get("longitude")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| anyhow::anyhow!("missing longitude"))?;
+        (lat, lon, query.to_string())
+    };
+
+    let weather_url = format!(
+        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m&timezone=auto"
+    );
+    let payload = client
+        .get(weather_url)
+        .send()?
+        .error_for_status()?
+        .json::<Value>()?;
+    let current = payload
+        .get("current")
+        .ok_or_else(|| anyhow::anyhow!("missing current weather"))?;
+    let t = current
+        .get("temperature_2m")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| anyhow::anyhow!("missing temperature"))?;
+    let tf = current
+        .get("apparent_temperature")
+        .and_then(Value::as_f64)
+        .unwrap_or(t);
+    let wind = current
+        .get("wind_speed_10m")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let humidity = current
+        .get("relative_humidity_2m")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let code = current
+        .get("weather_code")
+        .and_then(Value::as_i64)
+        .unwrap_or(-1);
+
+    Ok(format!(
+        "WEATHER {loc_label}\n{} | {:.1}C (feel {:.1}C)\nHum {:.0}% Wind {:.1} km/h",
+        weather_code_label(code),
+        t,
+        tf,
+        humidity,
+        wind
+    ))
+}
+
+fn resolve_news_widget(cfg: &AppConfig) -> Result<String> {
+    let (label, stream_url, feed_url) = news_source_profile(cfg);
+    let headline = if let Some(feed) = feed_url {
+        fetch_rss_headline(feed).unwrap_or_else(|| "No headline".to_string())
+    } else {
+        "Live stream source selected".to_string()
+    };
+    Ok(format!("LIVE {label}\n{headline}\n{stream_url}"))
+}
+
+fn news_source_profile(cfg: &AppConfig) -> (&str, String, Option<&'static str>) {
+    match cfg.news_source.as_str() {
+        "euronews" => (
+            "Euronews",
+            "https://www.youtube.com/watch?v=pykpO5kQJ98".to_string(),
+            Some("https://www.euronews.com/rss"),
+        ),
+        "aljazeera" => (
+            "Al Jazeera English",
+            "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(),
+            Some("https://www.aljazeera.com/xml/rss/all.xml"),
+        ),
+        "france24" => (
+            "France 24",
+            "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(),
+            Some("https://www.france24.com/en/rss"),
+        ),
+        "dw" => (
+            "DW News",
+            "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(),
+            Some("https://rss.dw.com/rdf/rss-en-all"),
+        ),
+        "yahoo_finance" => (
+            "Yahoo Finance",
+            "https://www.youtube.com/watch?v=9Auq9mYxFEE".to_string(),
+            Some("https://finance.yahoo.com/news/rssindex"),
+        ),
+        "bloomberg_tv" => (
+            "Bloomberg TV",
+            "https://www.youtube.com/watch?v=dp8PhLsUcFE".to_string(),
+            Some("https://feeds.bloomberg.com/markets/news.rss"),
+        ),
+        "techcrunch" => (
+            "TechCrunch",
+            "https://techcrunch.com/".to_string(),
+            Some("https://techcrunch.com/feed/"),
+        ),
+        "theverge" => (
+            "The Verge",
+            "https://www.theverge.com/tech".to_string(),
+            Some("https://www.theverge.com/rss/index.xml"),
+        ),
+        "nasa_tv" => (
+            "NASA TV",
+            "https://www.youtube.com/watch?v=21X5lGlDOfg".to_string(),
+            Some("https://www.nasa.gov/rss/dyn/breaking_news.rss"),
+        ),
+        "documentary_heaven" => (
+            "DocumentaryHeaven",
+            "https://documentaryheaven.com/".to_string(),
+            Some("https://documentaryheaven.com/feed/"),
+        ),
+        _ => ("Custom", cfg.news_custom_url.trim().to_string(), None),
+    }
+}
+
+fn fetch_rss_headline(url: &str) -> Option<String> {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(6))
+        .build()
+        .ok()?;
+    let body = client
+        .get(url)
+        .send()
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .text()
+        .ok()?;
+    extract_first_xml_tag(&body, "title")
+}
+
+fn extract_first_xml_tag(raw: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let mut search_start = 0usize;
+    while let Some(start_rel) = raw[search_start..].find(&open) {
+        let start = search_start + start_rel + open.len();
+        let end_rel = raw[start..].find(&close)?;
+        let end = start + end_rel;
+        let value = raw[start..end]
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">");
+        let cleaned = value.trim();
+        if !cleaned.is_empty() && !cleaned.to_ascii_lowercase().contains("rss") {
+            return Some(cleaned.to_string());
+        }
+        search_start = end + close.len();
+    }
+    None
+}
+
+fn weather_code_label(code: i64) -> &'static str {
+    match code {
+        0 => "Clear",
+        1..=3 => "Partly cloudy",
+        45 | 48 => "Fog",
+        51..=57 => "Drizzle",
+        61..=67 => "Rain",
+        71..=77 => "Snow",
+        80..=86 => "Showers",
+        95..=99 => "Thunderstorm",
+        _ => "Unknown",
     }
 }
 
