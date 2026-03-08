@@ -1862,7 +1862,8 @@ fn fetch_weather_snapshot(cfg: &AppConfig) -> Result<(String, Vec<String>), Stri
                         "manual geocode fallback".to_string(),
                     )
                 } else {
-                    return Err(primary_err);
+                    return fetch_weather_snapshot_wttr(&client)
+                        .map_err(|wttr_err| format!("{primary_err}; {wttr_err}"));
                 }
             }
         }
@@ -1929,6 +1930,78 @@ fn fetch_weather_snapshot(cfg: &AppConfig) -> Result<(String, Vec<String>), Stri
         format!("Wind: {wind_speed:.1} km/h @ {wind_dir:.0}°"),
         format!("Precipitation: {precipitation:.1} mm"),
         format!("Source: Open-Meteo + {geo_provider}"),
+    ];
+    Ok((headline, details))
+}
+
+fn fetch_weather_snapshot_wttr(
+    client: &reqwest::blocking::Client,
+) -> Result<(String, Vec<String>), String> {
+    let payload = client
+        .get("https://wttr.in/?format=j1")
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| format!("wttr request failed: {e}"))?
+        .json::<serde_json::Value>()
+        .map_err(|e| format!("wttr payload invalid: {e}"))?;
+
+    let current = payload
+        .get("current_condition")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .ok_or("wttr payload has no current_condition")?;
+
+    let area = payload
+        .get("nearest_area")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first());
+    let city = area
+        .and_then(|a| a.get("areaName"))
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("value"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Auto location");
+    let country = area
+        .and_then(|a| a.get("country"))
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("value"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown");
+    let desc = current
+        .get("weatherDesc")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("value"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown");
+    let temp = current
+        .get("temp_C")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    let apparent = current
+        .get("FeelsLikeC")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(temp);
+    let humidity = current
+        .get("humidity")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    let wind_speed = current
+        .get("windspeedKmph")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0);
+
+    let headline = format!("{city}, {country}: {temp:.1}°C ({desc}) | feels {apparent:.1}°C");
+    let details = vec![
+        format!("Humidity: {humidity:.0}%"),
+        format!("Wind: {wind_speed:.1} km/h"),
+        "Source: wttr.in fallback".to_string(),
     ];
     Ok((headline, details))
 }

@@ -648,7 +648,8 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
             Err(primary_err) => {
                 let query = cfg.weather_location_override.trim();
                 if query.is_empty() {
-                    anyhow::bail!("{primary_err}");
+                    return resolve_weather_widget_wttr(&client)
+                        .map_err(|wttr_err| anyhow::anyhow!("{primary_err}; {wttr_err}"));
                 }
                 let (lat, lon) = geocode_location(&client, query)?;
                 (lat, lon, query.to_string())
@@ -705,6 +706,71 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
     ))
 }
 
+fn resolve_weather_widget_wttr(client: &Client) -> Result<String> {
+    let payload = client
+        .get("https://wttr.in/?format=j1")
+        .send()?
+        .error_for_status()?
+        .json::<Value>()?;
+
+    let current = payload
+        .get("current_condition")
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .ok_or_else(|| anyhow::anyhow!("wttr missing current_condition"))?;
+
+    let area = payload
+        .get("nearest_area")
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.first());
+    let city = area
+        .and_then(|a| a.get("areaName"))
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("value"))
+        .and_then(Value::as_str)
+        .unwrap_or("Auto location");
+    let country = area
+        .and_then(|a| a.get("country"))
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("value"))
+        .and_then(Value::as_str)
+        .unwrap_or("Unknown");
+    let desc = current
+        .get("weatherDesc")
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("value"))
+        .and_then(Value::as_str)
+        .unwrap_or("Unknown");
+    let temp = current
+        .get("temp_C")
+        .and_then(Value::as_str)
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    let feels = current
+        .get("FeelsLikeC")
+        .and_then(Value::as_str)
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(temp);
+    let humidity = current
+        .get("humidity")
+        .and_then(Value::as_str)
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    let wind = current
+        .get("windspeedKmph")
+        .and_then(Value::as_str)
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0);
+
+    Ok(format!(
+        "WEATHER {city}, {country}\n{desc} | {:.1}C (feel {:.1}C)\nHum {:.0}% Wind {:.1} km/h",
+        temp, feels, humidity, wind
+    ))
+}
+
 #[derive(Debug, Clone)]
 struct NewsWidgetPayload {
     text: String,
@@ -720,7 +786,7 @@ fn resolve_news_widget(cfg: &AppConfig) -> Result<NewsWidgetPayload> {
     };
     let preview_image = resolve_news_preview_image(cfg, &stream_url);
     Ok(NewsWidgetPayload {
-        text: format!("LIVE {label}\n{headline}\n{stream_url}"),
+        text: format!("LIVE {label}\n{headline}"),
         preview_image,
     })
 }
@@ -811,6 +877,12 @@ fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str) -> Option<PathB
 fn news_preview_candidates(cfg: &AppConfig, stream_url: &str) -> Vec<String> {
     let mut out = Vec::<String>::new();
     if let Some(video_id) = extract_youtube_video_id(stream_url) {
+        out.push(format!(
+            "https://img.youtube.com/vi/{video_id}/maxresdefault_live.jpg"
+        ));
+        out.push(format!(
+            "https://img.youtube.com/vi/{video_id}/hqdefault_live.jpg"
+        ));
         out.push(format!(
             "https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
         ));

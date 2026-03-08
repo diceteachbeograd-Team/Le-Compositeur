@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.08-3 - 2026-03-08
+- Added weather fallback to `wttr.in` when IP geolocation providers are rate-limited/unavailable.
+- Removed raw stream URL line from news overlay text to improve on-screen readability.
+- Improved YouTube live preview candidate order using `*_live.jpg` thumbnails first.
+
 ## 2026.03.08-2 - 2026-03-08
 - Added weather geolocation fallback chain (`ipapi.co` -> `ipwho.is` -> `ipinfo.io`) to avoid hard failures on provider rate limits.
 - Added optional fallback from auto-location to manual geocode when `weather_location_override` is set.
