@@ -63,7 +63,7 @@ struct ThumbnailItem {
 enum GuiTab {
     Images,
     Quotes,
-    Style,
+    Elements,
     System,
 }
 
@@ -73,6 +73,12 @@ enum UiLang {
     De,
     Sr,
     Zh,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LayoutElement {
+    Quote,
+    Clock,
 }
 
 struct WcGuiApp {
@@ -85,6 +91,9 @@ struct WcGuiApp {
     runner: Option<Child>,
     active_tab: GuiTab,
     ui_lang: UiLang,
+    selected_element: LayoutElement,
+    widget_url: String,
+    widget_source: String,
 }
 
 impl WcGuiApp {
@@ -106,6 +115,9 @@ impl WcGuiApp {
             runner: None,
             active_tab: GuiTab::Images,
             ui_lang: detect_ui_lang(),
+            selected_element: LayoutElement::Quote,
+            widget_url: String::new(),
+            widget_source: "custom_url".to_string(),
         }
     }
 
@@ -197,6 +209,18 @@ impl WcGuiApp {
                 "Was: gerendertes Bild als Wallpaper anwenden. Wie: aktivieren und Backend/Fit wählen. Empfehlung: zuerst mit Run Once testen.",
                 "Sta: postavlja renderovanu sliku kao pozadinu. Kako: uključi i izaberi backend/fit. Preporuka: prvo testiraj sa Run Once.",
                 "作用: 将渲染结果设置为当前壁纸。方法: 启用后选择后端和适配模式。建议: 先用 Run Once 测试。"
+            ),
+            "login_screen_integration" => self.t(
+                "What: enable login-screen background integration. How: keeps this feature toggle in config for the login integration workflow. Recommended: keep off until login integration is validated on your distro.",
+                "Was: Login-Screen-Hintergrund-Integration aktivieren. Wie: speichert den Schalter in der Config für den Login-Workflow. Empfehlung: ausgeschaltet lassen, bis die Login-Integration auf deiner Distribution validiert ist.",
+                "Sta: ukljucuje integraciju pozadine za login ekran. Kako: cuva ovaj prekidac u config fajlu za login workflow. Preporuka: ostavi iskljuceno dok se ne potvrdi na tvojoj distribuciji.",
+                "作用: 启用登录界面背景集成。方法: 在配置中保存该开关，供登录集成流程使用。建议: 在你的发行版完成验证前保持关闭。"
+            ),
+            "boot_screen_integration" => self.t(
+                "What: enable boot-screen (splash) integration. How: keeps this feature toggle in config for boot theme workflow. Recommended: enable only if you know how to recover theme changes.",
+                "Was: Boot-Screen/Splash-Integration aktivieren. Wie: speichert den Schalter in der Config für den Boot-Theme-Workflow. Empfehlung: nur aktivieren, wenn du Theme-Änderungen sicher zurückrollen kannst.",
+                "Sta: ukljucuje integraciju boot/splash ekrana. Kako: cuva ovaj prekidac u config fajlu za boot theme workflow. Preporuka: ukljuci samo ako znas kako da vratis promene teme.",
+                "作用: 启用启动画面（splash）集成。方法: 在配置中保存该开关，供启动主题流程使用。建议: 仅在你清楚如何恢复主题修改时启用。"
             ),
             "color_format" => self.t(
                 "What: text color format. How: use #RRGGBB or #RRGGBBAA, or numeric RGB like 255,255,255. Recommended: keep strong contrast with background.",
@@ -705,7 +729,6 @@ impl WcGuiApp {
     }
 
     fn render_quotes_tab(&mut self, ui: &mut egui::Ui) {
-        let color_help = self.hover_text("color_format").to_string();
         ui.heading("Quote Source");
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.cfg.quote_source, "local".to_string(), "Local")
@@ -789,99 +812,250 @@ impl WcGuiApp {
                 });
             ui.checkbox(&mut self.cfg.quote_avoid_repeat, "Avoid repeat");
         });
-        ui.separator();
-        ui.heading("Quote Layout");
-        ui.horizontal(|ui| {
-            ui.label("Quote size");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.quote_font_size)
-                    .speed(1)
-                    .range(8..=160),
-            );
-            ui.checkbox(&mut self.cfg.quote_auto_fit, "Auto fit");
-            ui.label("Min");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.quote_min_font_size)
-                    .speed(1)
-                    .range(8..=160),
-            );
-            ui.label("X");
-            ui.add(egui::DragValue::new(&mut self.cfg.quote_pos_x).speed(1));
-            ui.label("Y");
-            ui.add(egui::DragValue::new(&mut self.cfg.quote_pos_y).speed(1));
-        });
-        ui.horizontal(|ui| {
-            ui.label("Font family");
-            egui::ComboBox::from_id_salt("font_family_quotes")
-                .selected_text(&self.cfg.font_family)
-                .show_ui(ui, |ui| {
-                    for family in [
-                        "DejaVu-Sans",
-                        "Noto-Sans",
-                        "Liberation-Sans",
-                        "Serif",
-                        "Monospace",
-                    ] {
-                        ui.selectable_value(&mut self.cfg.font_family, family.to_string(), family);
-                    }
-                });
-        });
-        ui.horizontal(|ui| {
-            ui.label("Text box");
-            egui::ComboBox::from_id_salt("text_box_size_quotes")
-                .selected_text(&self.cfg.text_box_size)
-                .show_ui(ui, |ui| {
-                    for mode in ["quarter", "third", "half", "full", "custom"] {
-                        ui.selectable_value(&mut self.cfg.text_box_size, mode.to_string(), mode);
-                    }
-                });
-            ui.label("W%");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.text_box_width_pct)
-                    .speed(1)
-                    .range(10..=100),
-            );
-            ui.label("H%");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.text_box_height_pct)
-                    .speed(1)
-                    .range(10..=100),
-            );
-        });
-        ui.horizontal(|ui| {
-            edit_color_field(
-                ui,
-                "Quote color",
-                &mut self.cfg.quote_color,
-                false,
-                &color_help,
-            );
-        });
-
-        ui.separator();
-        ui.heading("Clock Layout");
-        ui.horizontal(|ui| {
-            ui.label("Clock size");
-            ui.add(egui::DragValue::new(&mut self.cfg.clock_font_size).speed(1));
-            ui.label("X");
-            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_x).speed(1));
-            ui.label("Y");
-            ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_y).speed(1));
-        });
-        ui.horizontal(|ui| {
-            edit_color_field(
-                ui,
-                "Clock color",
-                &mut self.cfg.clock_color,
-                false,
-                &color_help,
-            );
-        });
     }
 
-    fn render_style_tab(&mut self, ui: &mut egui::Ui) {
+    fn render_elements_tab(&mut self, ui: &mut egui::Ui) {
         let color_help = self.hover_text("color_format").to_string();
-        ui.heading("Text Style");
+        ui.heading("Element Layout");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.cfg.show_background_layer, "Background")
+                .on_hover_text("Enable/disable rendered background layer.");
+            ui.checkbox(&mut self.cfg.show_quote_layer, "Quote");
+            ui.checkbox(&mut self.cfg.show_clock_layer, "Clock");
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Element");
+            egui::ComboBox::from_id_salt("layout_selected_element")
+                .selected_text(match self.selected_element {
+                    LayoutElement::Quote => "Quote Box",
+                    LayoutElement::Clock => "Clock",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut self.selected_element,
+                        LayoutElement::Quote,
+                        "Quote Box",
+                    );
+                    ui.selectable_value(&mut self.selected_element, LayoutElement::Clock, "Clock");
+                });
+        });
+
+        let canvas_size = egui::vec2(640.0, 360.0);
+        let (rect, response) = ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 8.0, egui::Color32::from_rgb(22, 24, 30));
+        painter.rect_stroke(
+            rect,
+            8.0,
+            egui::Stroke::new(1.0, egui::Color32::from_gray(120)),
+            egui::StrokeKind::Middle,
+        );
+
+        let quote_size = quote_box_px(
+            self.cfg.text_box_size.as_str(),
+            self.cfg.text_box_width_pct,
+            self.cfg.text_box_height_pct,
+            rect.size(),
+        );
+        let mut quote_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                rect.left() + self.cfg.quote_pos_x as f32 / 3.0,
+                rect.top() + self.cfg.quote_pos_y as f32 / 3.0,
+            ),
+            quote_size,
+        );
+        let mut clock_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                rect.left() + self.cfg.clock_pos_x as f32 / 3.0,
+                rect.top() + self.cfg.clock_pos_y as f32 / 3.0,
+            ),
+            egui::vec2(
+                (self.cfg.clock_font_size.max(12) * 4) as f32 / 3.0,
+                (self.cfg.clock_font_size.max(12) * 2) as f32 / 3.0,
+            ),
+        );
+
+        if response.clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            if quote_rect.contains(pos) {
+                self.selected_element = LayoutElement::Quote;
+            } else if clock_rect.contains(pos) {
+                self.selected_element = LayoutElement::Clock;
+            }
+        }
+        if response.dragged()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let x = (pos.x - rect.left()).clamp(0.0, rect.width());
+            let y = (pos.y - rect.top()).clamp(0.0, rect.height());
+            match self.selected_element {
+                LayoutElement::Quote => {
+                    self.cfg.quote_pos_x = (x * 3.0) as i32;
+                    self.cfg.quote_pos_y = (y * 3.0) as i32;
+                }
+                LayoutElement::Clock => {
+                    self.cfg.clock_pos_x = (x * 3.0) as i32;
+                    self.cfg.clock_pos_y = (y * 3.0) as i32;
+                }
+            }
+            quote_rect = egui::Rect::from_min_size(
+                egui::pos2(
+                    rect.left() + self.cfg.quote_pos_x as f32 / 3.0,
+                    rect.top() + self.cfg.quote_pos_y as f32 / 3.0,
+                ),
+                quote_size,
+            );
+            clock_rect = egui::Rect::from_min_size(
+                egui::pos2(
+                    rect.left() + self.cfg.clock_pos_x as f32 / 3.0,
+                    rect.top() + self.cfg.clock_pos_y as f32 / 3.0,
+                ),
+                egui::vec2(
+                    (self.cfg.clock_font_size.max(12) * 4) as f32 / 3.0,
+                    (self.cfg.clock_font_size.max(12) * 2) as f32 / 3.0,
+                ),
+            );
+        }
+
+        let quote_color = if self.selected_element == LayoutElement::Quote {
+            egui::Color32::from_rgb(56, 120, 216)
+        } else {
+            egui::Color32::from_rgb(56, 80, 120)
+        };
+        let clock_color = if self.selected_element == LayoutElement::Clock {
+            egui::Color32::from_rgb(245, 183, 61)
+        } else {
+            egui::Color32::from_rgb(133, 103, 40)
+        };
+        if self.cfg.show_quote_layer {
+            painter.rect_filled(quote_rect, 4.0, quote_color.linear_multiply(0.5));
+            painter.text(
+                quote_rect.left_top() + egui::vec2(6.0, 6.0),
+                egui::Align2::LEFT_TOP,
+                "Quote",
+                egui::FontId::proportional(12.0),
+                egui::Color32::WHITE,
+            );
+        }
+        if self.cfg.show_clock_layer {
+            painter.rect_filled(clock_rect, 4.0, clock_color.linear_multiply(0.6));
+            painter.text(
+                clock_rect.left_top() + egui::vec2(6.0, 6.0),
+                egui::Align2::LEFT_TOP,
+                "Clock",
+                egui::FontId::proportional(12.0),
+                egui::Color32::WHITE,
+            );
+        }
+
+        ui.separator();
+        match self.selected_element {
+            LayoutElement::Quote => {
+                ui.heading("Quote Settings");
+                ui.horizontal(|ui| {
+                    ui.label("Size");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.quote_font_size)
+                            .speed(1)
+                            .range(8..=160),
+                    );
+                    ui.checkbox(&mut self.cfg.quote_auto_fit, "Auto fit");
+                    ui.label("Min");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.quote_min_font_size)
+                            .speed(1)
+                            .range(8..=160),
+                    );
+                    ui.label("X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.quote_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.quote_pos_y).speed(1));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Font family");
+                    egui::ComboBox::from_id_salt("font_family_elements")
+                        .selected_text(&self.cfg.font_family)
+                        .show_ui(ui, |ui| {
+                            for family in [
+                                "DejaVu-Sans",
+                                "Noto-Sans",
+                                "Liberation-Sans",
+                                "Serif",
+                                "Monospace",
+                            ] {
+                                ui.selectable_value(
+                                    &mut self.cfg.font_family,
+                                    family.to_string(),
+                                    family,
+                                );
+                            }
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Text box");
+                    egui::ComboBox::from_id_salt("text_box_size_elements")
+                        .selected_text(&self.cfg.text_box_size)
+                        .show_ui(ui, |ui| {
+                            for mode in ["quarter", "third", "half", "full", "custom"] {
+                                ui.selectable_value(
+                                    &mut self.cfg.text_box_size,
+                                    mode.to_string(),
+                                    mode,
+                                );
+                            }
+                        });
+                    ui.label("W%");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.text_box_width_pct)
+                            .speed(1)
+                            .range(10..=100),
+                    );
+                    ui.label("H%");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.text_box_height_pct)
+                            .speed(1)
+                            .range(10..=100),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    edit_color_field(
+                        ui,
+                        "Quote color",
+                        &mut self.cfg.quote_color,
+                        false,
+                        &color_help,
+                    );
+                });
+            }
+            LayoutElement::Clock => {
+                ui.heading("Clock Settings");
+                ui.horizontal(|ui| {
+                    ui.label("Clock size");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.clock_font_size)
+                            .speed(1)
+                            .range(8..=220),
+                    );
+                    ui.label("X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_y).speed(1));
+                });
+                ui.horizontal(|ui| {
+                    edit_color_field(
+                        ui,
+                        "Clock color",
+                        &mut self.cfg.clock_color,
+                        false,
+                        &color_help,
+                    );
+                });
+            }
+        }
+
+        ui.separator();
         ui.horizontal(|ui| {
             edit_color_field(
                 ui,
@@ -916,6 +1090,26 @@ impl WcGuiApp {
             ui.label("dy");
             ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_y).speed(1));
         });
+
+        ui.separator();
+        ui.heading("Future Widget Areas (preview)");
+        ui.horizontal(|ui| {
+            ui.label("Widget source");
+            egui::ComboBox::from_id_salt("future_widget_source")
+                .selected_text(&self.widget_source)
+                .show_ui(ui, |ui| {
+                    for s in ["custom_url", "euronews", "aljazeera", "cnn", "weather"] {
+                        ui.selectable_value(&mut self.widget_source, s.to_string(), s);
+                    }
+                });
+        });
+        ui.horizontal(|ui| {
+            ui.label("Widget URL / stream");
+            ui.text_edit_singleline(&mut self.widget_url);
+        });
+        ui.label(
+            "Note: video/web widget overlays are planned next (including per-widget refresh/fps).",
+        );
     }
 
     fn render_system_tab(&mut self, ui: &mut egui::Ui) {
@@ -941,6 +1135,18 @@ impl WcGuiApp {
                 self.remove_autostart();
             }
         });
+        ui.separator();
+        ui.heading("System Integrations");
+        ui.checkbox(
+            &mut self.cfg.login_screen_integration,
+            "Enable login-screen integration",
+        )
+        .on_hover_text(self.hover_text("login_screen_integration"));
+        ui.checkbox(
+            &mut self.cfg.boot_screen_integration,
+            "Enable boot-screen integration",
+        )
+        .on_hover_text(self.hover_text("boot_screen_integration"));
     }
 }
 
@@ -1087,7 +1293,7 @@ impl eframe::App for WcGuiApp {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.active_tab, GuiTab::Images, "Images");
                 ui.selectable_value(&mut self.active_tab, GuiTab::Quotes, "Quotes");
-                ui.selectable_value(&mut self.active_tab, GuiTab::Style, "Style");
+                ui.selectable_value(&mut self.active_tab, GuiTab::Elements, "Elements");
                 ui.selectable_value(&mut self.active_tab, GuiTab::System, "System");
             });
         });
@@ -1128,7 +1334,7 @@ impl eframe::App for WcGuiApp {
             egui::ScrollArea::vertical().show(ui, |ui| match self.active_tab {
                 GuiTab::Images => self.render_images_tab(ui, ctx),
                 GuiTab::Quotes => self.render_quotes_tab(ui),
-                GuiTab::Style => self.render_style_tab(ui),
+                GuiTab::Elements => self.render_elements_tab(ui),
                 GuiTab::System => self.render_system_tab(ui),
             });
         });
@@ -1217,7 +1423,32 @@ fn default_cfg() -> AppConfig {
         apply_wallpaper: false,
         wallpaper_backend: "auto".to_string(),
         wallpaper_fit_mode: "zoom".to_string(),
+        show_background_layer: true,
+        show_quote_layer: true,
+        show_clock_layer: true,
+        login_screen_integration: false,
+        boot_screen_integration: false,
     }
+}
+
+fn quote_box_px(
+    mode: &str,
+    custom_w_pct: u32,
+    custom_h_pct: u32,
+    canvas: egui::Vec2,
+) -> egui::Vec2 {
+    let (w_pct, h_pct) = match mode {
+        "quarter" => (50_u32, 50_u32),
+        "third" => (66_u32, 50_u32),
+        "half" => (75_u32, 60_u32),
+        "full" => (100_u32, 100_u32),
+        "custom" => (custom_w_pct.clamp(10, 100), custom_h_pct.clamp(10, 100)),
+        _ => (50_u32, 50_u32),
+    };
+    egui::vec2(
+        (canvas.x * w_pct as f32 / 100.0).max(80.0),
+        (canvas.y * h_pct as f32 / 100.0).max(60.0),
+    )
 }
 
 fn edit_color_field(

@@ -69,6 +69,11 @@ pub struct AppConfig {
     pub apply_wallpaper: bool,
     pub wallpaper_backend: String,
     pub wallpaper_fit_mode: String,
+    pub show_background_layer: bool,
+    pub show_quote_layer: bool,
+    pub show_clock_layer: bool,
+    pub login_screen_integration: bool,
+    pub boot_screen_integration: bool,
 }
 
 pub fn default_config_toml() -> String {
@@ -118,13 +123,18 @@ time_format = "%H:%M"
 apply_wallpaper = false
 wallpaper_backend = "auto"
 wallpaper_fit_mode = "zoom"
+show_background_layer = true
+show_quote_layer = true
+show_clock_layer = true
+login_screen_integration = false
+boot_screen_integration = false
 "##
     .to_string()
 }
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\n",
+        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\nshow_background_layer = {}\nshow_quote_layer = {}\nshow_clock_layer = {}\nlogin_screen_integration = {}\nboot_screen_integration = {}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -169,7 +179,12 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.time_format,
         cfg.apply_wallpaper,
         cfg.wallpaper_backend,
-        cfg.wallpaper_fit_mode
+        cfg.wallpaper_fit_mode,
+        cfg.show_background_layer,
+        cfg.show_quote_layer,
+        cfg.show_clock_layer,
+        cfg.login_screen_integration,
+        cfg.boot_screen_integration
     )
 }
 
@@ -234,7 +249,12 @@ pub fn settings_schema_json() -> &'static str {
 
     {"key":"apply_wallpaper","group":"wallpaper","label":"Apply Wallpaper","type":"bool","required":false,"default":false},
     {"key":"wallpaper_backend","group":"wallpaper","label":"Wallpaper Backend","type":"enum","required":false,"default":"auto","options":["auto","noop","gnome","sway","feh"],"visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}},
-    {"key":"wallpaper_fit_mode","group":"wallpaper","label":"Wallpaper Fit Mode","type":"enum","required":false,"default":"zoom","options":["zoom","scaled","stretched","spanned","centered","wallpaper"],"visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}}
+    {"key":"wallpaper_fit_mode","group":"wallpaper","label":"Wallpaper Fit Mode","type":"enum","required":false,"default":"zoom","options":["zoom","scaled","stretched","spanned","centered","wallpaper"],"visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}},
+    {"key":"show_background_layer","group":"wallpaper","label":"Show Background Layer","type":"bool","required":false,"default":true},
+    {"key":"show_quote_layer","group":"wallpaper","label":"Show Quote Layer","type":"bool","required":false,"default":true},
+    {"key":"show_clock_layer","group":"wallpaper","label":"Show Clock Layer","type":"bool","required":false,"default":true},
+    {"key":"login_screen_integration","group":"wallpaper","label":"Login Screen Integration","type":"bool","required":false,"default":false},
+    {"key":"boot_screen_integration","group":"wallpaper","label":"Boot Screen Integration","type":"bool","required":false,"default":false}
   ]
 }"##
 }
@@ -305,7 +325,7 @@ pub fn settings_ui_blueprint_json() -> &'static str {
       {
         "id": "wallpaper",
         "title": "Wallpaper",
-        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode"]
+        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode", "show_background_layer", "show_quote_layer", "show_clock_layer", "login_screen_integration", "boot_screen_integration"]
       }
     ]
   },
@@ -321,7 +341,12 @@ pub fn settings_ui_blueprint_json() -> &'static str {
     {"field":"text_box_height_pct","visible_when":{"field":"text_box_size","equals":"custom"},"enabled_when":{"field":"text_box_size","equals":"custom"}},
     {"field":"rotation_state_file","visible_when":{"field":"rotation_use_persistent_state","equals":true},"enabled_when":{"field":"rotation_use_persistent_state","equals":true}},
     {"field":"wallpaper_backend","visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}},
-    {"field":"wallpaper_fit_mode","visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}}
+    {"field":"wallpaper_fit_mode","visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}},
+    {"field":"show_background_layer"},
+    {"field":"show_quote_layer"},
+    {"field":"show_clock_layer"},
+    {"field":"login_screen_integration"},
+    {"field":"boot_screen_integration"}
   ]
 }"#
 }
@@ -385,6 +410,11 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut apply_wallpaper = None::<bool>;
     let mut wallpaper_backend = None::<String>;
     let mut wallpaper_fit_mode = None::<String>;
+    let mut show_background_layer = None::<bool>;
+    let mut show_quote_layer = None::<bool>;
+    let mut show_clock_layer = None::<bool>;
+    let mut login_screen_integration = None::<bool>;
+    let mut boot_screen_integration = None::<bool>;
 
     for line in raw.lines() {
         let line = line.trim();
@@ -443,6 +473,11 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "apply_wallpaper" => apply_wallpaper = parse_bool(value),
             "wallpaper_backend" => wallpaper_backend = parse_string(value),
             "wallpaper_fit_mode" => wallpaper_fit_mode = parse_string(value),
+            "show_background_layer" => show_background_layer = parse_bool(value),
+            "show_quote_layer" => show_quote_layer = parse_bool(value),
+            "show_clock_layer" => show_clock_layer = parse_bool(value),
+            "login_screen_integration" => login_screen_integration = parse_bool(value),
+            "boot_screen_integration" => boot_screen_integration = parse_bool(value),
             _ => {}
         }
     }
@@ -500,6 +535,11 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         apply_wallpaper: apply_wallpaper.unwrap_or(false),
         wallpaper_backend: wallpaper_backend.unwrap_or_else(|| "auto".to_string()),
         wallpaper_fit_mode: wallpaper_fit_mode.unwrap_or_else(|| "zoom".to_string()),
+        show_background_layer: show_background_layer.unwrap_or(true),
+        show_quote_layer: show_quote_layer.unwrap_or(true),
+        show_clock_layer: show_clock_layer.unwrap_or(true),
+        login_screen_integration: login_screen_integration.unwrap_or(false),
+        boot_screen_integration: boot_screen_integration.unwrap_or(false),
     })
 }
 
