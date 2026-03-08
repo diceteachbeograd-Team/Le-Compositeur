@@ -61,9 +61,10 @@ struct ThumbnailItem {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GuiTab {
+    Ordering,
     Images,
     Quotes,
-    Elements,
+    Style,
     System,
 }
 
@@ -79,6 +80,8 @@ enum UiLang {
 enum LayoutElement {
     Quote,
     Clock,
+    WidgetA,
+    WidgetB,
 }
 
 struct WcGuiApp {
@@ -94,6 +97,13 @@ struct WcGuiApp {
     selected_element: LayoutElement,
     widget_url: String,
     widget_source: String,
+    widget_a_enabled: bool,
+    widget_b_enabled: bool,
+    widget_a_pos_x: i32,
+    widget_a_pos_y: i32,
+    widget_b_pos_x: i32,
+    widget_b_pos_y: i32,
+    ordering_bg_texture: Option<egui::TextureHandle>,
 }
 
 impl WcGuiApp {
@@ -113,11 +123,18 @@ impl WcGuiApp {
             thumbnails_for_dir: String::new(),
             quote_preview: Vec::new(),
             runner: None,
-            active_tab: GuiTab::Images,
+            active_tab: GuiTab::Ordering,
             ui_lang: detect_ui_lang(),
             selected_element: LayoutElement::Quote,
             widget_url: String::new(),
             widget_source: "custom_url".to_string(),
+            widget_a_enabled: true,
+            widget_b_enabled: true,
+            widget_a_pos_x: 120,
+            widget_a_pos_y: 120,
+            widget_b_pos_x: 980,
+            widget_b_pos_y: 180,
+            ordering_bg_texture: None,
         }
     }
 
@@ -563,6 +580,7 @@ impl WcGuiApp {
             self.status = "Cannot expand image_dir path".to_string();
             self.thumbnails.clear();
             self.thumbnails_for_dir.clear();
+            self.ordering_bg_texture = None;
             return;
         };
 
@@ -572,11 +590,13 @@ impl WcGuiApp {
                 self.status = format!("Thumbnail scan failed: {e}");
                 self.thumbnails.clear();
                 self.thumbnails_for_dir.clear();
+                self.ordering_bg_texture = None;
                 return;
             }
         };
 
         self.thumbnails.clear();
+        self.ordering_bg_texture = None;
         for (idx, path) in images.iter().take(3).enumerate() {
             match load_thumbnail(ctx, path, idx) {
                 Ok(texture) => {
@@ -591,6 +611,9 @@ impl WcGuiApp {
                     self.status = format!("Thumbnail decode failed for {}: {err}", path.display());
                 }
             }
+        }
+        if let Some(first_path) = images.first() {
+            self.ordering_bg_texture = load_ordering_background_texture(ctx, first_path).ok();
         }
 
         self.thumbnails_for_dir = self.cfg.image_dir.clone();
@@ -814,14 +837,16 @@ impl WcGuiApp {
         });
     }
 
-    fn render_elements_tab(&mut self, ui: &mut egui::Ui) {
+    fn render_ordering_tab(&mut self, ui: &mut egui::Ui) {
         let color_help = self.hover_text("color_format").to_string();
-        ui.heading("Element Layout");
+        ui.heading("Ordering");
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.cfg.show_background_layer, "Background")
                 .on_hover_text("Enable/disable rendered background layer.");
             ui.checkbox(&mut self.cfg.show_quote_layer, "Quote");
             ui.checkbox(&mut self.cfg.show_clock_layer, "Clock");
+            ui.checkbox(&mut self.widget_a_enabled, "Widget A");
+            ui.checkbox(&mut self.widget_b_enabled, "Widget B");
         });
 
         ui.horizontal(|ui| {
@@ -830,6 +855,8 @@ impl WcGuiApp {
                 .selected_text(match self.selected_element {
                     LayoutElement::Quote => "Quote Box",
                     LayoutElement::Clock => "Clock",
+                    LayoutElement::WidgetA => "Widget A",
+                    LayoutElement::WidgetB => "Widget B",
                 })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
@@ -838,20 +865,44 @@ impl WcGuiApp {
                         "Quote Box",
                     );
                     ui.selectable_value(&mut self.selected_element, LayoutElement::Clock, "Clock");
+                    ui.selectable_value(
+                        &mut self.selected_element,
+                        LayoutElement::WidgetA,
+                        "Widget A",
+                    );
+                    ui.selectable_value(
+                        &mut self.selected_element,
+                        LayoutElement::WidgetB,
+                        "Widget B",
+                    );
                 });
         });
 
-        let canvas_size = egui::vec2(640.0, 360.0);
+        let canvas_w = ui.available_width().clamp(560.0, 900.0);
+        let canvas_size = egui::vec2(canvas_w, canvas_w * 9.0 / 16.0);
         let (rect, response) = ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 8.0, egui::Color32::from_rgb(22, 24, 30));
+        painter.rect_filled(rect, 8.0, egui::Color32::from_rgb(14, 15, 18));
+        if self.cfg.show_background_layer
+            && let Some(tex) = &self.ordering_bg_texture
+        {
+            painter.image(
+                tex.id(),
+                rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+            painter.rect_filled(rect, 8.0, egui::Color32::from_black_alpha(80));
+        }
         painter.rect_stroke(
             rect,
             8.0,
-            egui::Stroke::new(1.0, egui::Color32::from_gray(120)),
+            egui::Stroke::new(1.0, egui::Color32::from_gray(150)),
             egui::StrokeKind::Middle,
         );
 
+        let sx = rect.width() / 1920.0;
+        let sy = rect.height() / 1080.0;
         let quote_size = quote_box_px(
             self.cfg.text_box_size.as_str(),
             self.cfg.text_box_width_pct,
@@ -860,20 +911,33 @@ impl WcGuiApp {
         );
         let mut quote_rect = egui::Rect::from_min_size(
             egui::pos2(
-                rect.left() + self.cfg.quote_pos_x as f32 / 3.0,
-                rect.top() + self.cfg.quote_pos_y as f32 / 3.0,
+                rect.left() + self.cfg.quote_pos_x as f32 * sx,
+                rect.top() + self.cfg.quote_pos_y as f32 * sy,
             ),
             quote_size,
         );
+        let clock_size = egui::vec2(180.0 * sx.max(0.2), 64.0 * sy.max(0.2));
         let mut clock_rect = egui::Rect::from_min_size(
             egui::pos2(
-                rect.left() + self.cfg.clock_pos_x as f32 / 3.0,
-                rect.top() + self.cfg.clock_pos_y as f32 / 3.0,
+                rect.left() + self.cfg.clock_pos_x as f32 * sx,
+                rect.top() + self.cfg.clock_pos_y as f32 * sy,
             ),
-            egui::vec2(
-                (self.cfg.clock_font_size.max(12) * 4) as f32 / 3.0,
-                (self.cfg.clock_font_size.max(12) * 2) as f32 / 3.0,
+            clock_size,
+        );
+        let widget_size = egui::vec2(260.0 * sx.max(0.2), 120.0 * sy.max(0.2));
+        let mut widget_a_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                rect.left() + self.widget_a_pos_x as f32 * sx,
+                rect.top() + self.widget_a_pos_y as f32 * sy,
             ),
+            widget_size,
+        );
+        let mut widget_b_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                rect.left() + self.widget_b_pos_x as f32 * sx,
+                rect.top() + self.widget_b_pos_y as f32 * sy,
+            ),
+            widget_size,
         );
 
         if response.clicked()
@@ -883,6 +947,10 @@ impl WcGuiApp {
                 self.selected_element = LayoutElement::Quote;
             } else if clock_rect.contains(pos) {
                 self.selected_element = LayoutElement::Clock;
+            } else if widget_a_rect.contains(pos) {
+                self.selected_element = LayoutElement::WidgetA;
+            } else if widget_b_rect.contains(pos) {
+                self.selected_element = LayoutElement::WidgetB;
             }
         }
         if response.dragged()
@@ -890,47 +958,69 @@ impl WcGuiApp {
         {
             let x = (pos.x - rect.left()).clamp(0.0, rect.width());
             let y = (pos.y - rect.top()).clamp(0.0, rect.height());
+            let world_x = (x / sx).round() as i32;
+            let world_y = (y / sy).round() as i32;
             match self.selected_element {
                 LayoutElement::Quote => {
-                    self.cfg.quote_pos_x = (x * 3.0) as i32;
-                    self.cfg.quote_pos_y = (y * 3.0) as i32;
+                    self.cfg.quote_pos_x = world_x;
+                    self.cfg.quote_pos_y = world_y;
                 }
                 LayoutElement::Clock => {
-                    self.cfg.clock_pos_x = (x * 3.0) as i32;
-                    self.cfg.clock_pos_y = (y * 3.0) as i32;
+                    self.cfg.clock_pos_x = world_x;
+                    self.cfg.clock_pos_y = world_y;
+                }
+                LayoutElement::WidgetA => {
+                    self.widget_a_pos_x = world_x;
+                    self.widget_a_pos_y = world_y;
+                }
+                LayoutElement::WidgetB => {
+                    self.widget_b_pos_x = world_x;
+                    self.widget_b_pos_y = world_y;
                 }
             }
             quote_rect = egui::Rect::from_min_size(
                 egui::pos2(
-                    rect.left() + self.cfg.quote_pos_x as f32 / 3.0,
-                    rect.top() + self.cfg.quote_pos_y as f32 / 3.0,
+                    rect.left() + self.cfg.quote_pos_x as f32 * sx,
+                    rect.top() + self.cfg.quote_pos_y as f32 * sy,
                 ),
                 quote_size,
             );
             clock_rect = egui::Rect::from_min_size(
                 egui::pos2(
-                    rect.left() + self.cfg.clock_pos_x as f32 / 3.0,
-                    rect.top() + self.cfg.clock_pos_y as f32 / 3.0,
+                    rect.left() + self.cfg.clock_pos_x as f32 * sx,
+                    rect.top() + self.cfg.clock_pos_y as f32 * sy,
                 ),
-                egui::vec2(
-                    (self.cfg.clock_font_size.max(12) * 4) as f32 / 3.0,
-                    (self.cfg.clock_font_size.max(12) * 2) as f32 / 3.0,
+                clock_size,
+            );
+            widget_a_rect = egui::Rect::from_min_size(
+                egui::pos2(
+                    rect.left() + self.widget_a_pos_x as f32 * sx,
+                    rect.top() + self.widget_a_pos_y as f32 * sy,
                 ),
+                widget_size,
+            );
+            widget_b_rect = egui::Rect::from_min_size(
+                egui::pos2(
+                    rect.left() + self.widget_b_pos_x as f32 * sx,
+                    rect.top() + self.widget_b_pos_y as f32 * sy,
+                ),
+                widget_size,
             );
         }
 
-        let quote_color = if self.selected_element == LayoutElement::Quote {
-            egui::Color32::from_rgb(56, 120, 216)
-        } else {
-            egui::Color32::from_rgb(56, 80, 120)
-        };
-        let clock_color = if self.selected_element == LayoutElement::Clock {
-            egui::Color32::from_rgb(245, 183, 61)
-        } else {
-            egui::Color32::from_rgb(133, 103, 40)
-        };
         if self.cfg.show_quote_layer {
-            painter.rect_filled(quote_rect, 4.0, quote_color.linear_multiply(0.5));
+            let neon = if self.selected_element == LayoutElement::Quote {
+                egui::Color32::from_rgb(255, 0, 190)
+            } else {
+                egui::Color32::from_rgb(158, 46, 133)
+            };
+            painter.rect_filled(quote_rect, 4.0, neon.linear_multiply(0.18));
+            painter.rect_stroke(
+                quote_rect,
+                4.0,
+                egui::Stroke::new(2.0, neon),
+                egui::StrokeKind::Middle,
+            );
             painter.text(
                 quote_rect.left_top() + egui::vec2(6.0, 6.0),
                 egui::Align2::LEFT_TOP,
@@ -940,11 +1030,64 @@ impl WcGuiApp {
             );
         }
         if self.cfg.show_clock_layer {
-            painter.rect_filled(clock_rect, 4.0, clock_color.linear_multiply(0.6));
+            let neon = if self.selected_element == LayoutElement::Clock {
+                egui::Color32::from_rgb(0, 255, 255)
+            } else {
+                egui::Color32::from_rgb(54, 150, 150)
+            };
+            painter.rect_filled(clock_rect, 4.0, neon.linear_multiply(0.2));
+            painter.rect_stroke(
+                clock_rect,
+                4.0,
+                egui::Stroke::new(2.0, neon),
+                egui::StrokeKind::Middle,
+            );
             painter.text(
                 clock_rect.left_top() + egui::vec2(6.0, 6.0),
                 egui::Align2::LEFT_TOP,
                 "Clock",
+                egui::FontId::proportional(12.0),
+                egui::Color32::WHITE,
+            );
+        }
+        if self.widget_a_enabled {
+            let neon = if self.selected_element == LayoutElement::WidgetA {
+                egui::Color32::from_rgb(128, 255, 0)
+            } else {
+                egui::Color32::from_rgb(74, 140, 48)
+            };
+            painter.rect_filled(widget_a_rect, 4.0, neon.linear_multiply(0.15));
+            painter.rect_stroke(
+                widget_a_rect,
+                4.0,
+                egui::Stroke::new(2.0, neon),
+                egui::StrokeKind::Middle,
+            );
+            painter.text(
+                widget_a_rect.left_top() + egui::vec2(6.0, 6.0),
+                egui::Align2::LEFT_TOP,
+                "Widget A",
+                egui::FontId::proportional(12.0),
+                egui::Color32::WHITE,
+            );
+        }
+        if self.widget_b_enabled {
+            let neon = if self.selected_element == LayoutElement::WidgetB {
+                egui::Color32::from_rgb(255, 120, 0)
+            } else {
+                egui::Color32::from_rgb(166, 91, 28)
+            };
+            painter.rect_filled(widget_b_rect, 4.0, neon.linear_multiply(0.15));
+            painter.rect_stroke(
+                widget_b_rect,
+                4.0,
+                egui::Stroke::new(2.0, neon),
+                egui::StrokeKind::Middle,
+            );
+            painter.text(
+                widget_b_rect.left_top() + egui::vec2(6.0, 6.0),
+                egui::Align2::LEFT_TOP,
+                "Widget B",
                 egui::FontId::proportional(12.0),
                 egui::Color32::WHITE,
             );
@@ -1032,16 +1175,16 @@ impl WcGuiApp {
             LayoutElement::Clock => {
                 ui.heading("Clock Settings");
                 ui.horizontal(|ui| {
-                    ui.label("Clock size");
+                    ui.label("X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_y).speed(1));
+                    ui.label("Text size");
                     ui.add(
                         egui::DragValue::new(&mut self.cfg.clock_font_size)
                             .speed(1)
                             .range(8..=220),
                     );
-                    ui.label("X");
-                    ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_x).speed(1));
-                    ui.label("Y");
-                    ui.add(egui::DragValue::new(&mut self.cfg.clock_pos_y).speed(1));
                 });
                 ui.horizontal(|ui| {
                     edit_color_field(
@@ -1053,8 +1196,58 @@ impl WcGuiApp {
                     );
                 });
             }
+            LayoutElement::WidgetA | LayoutElement::WidgetB => {
+                let (enabled, x, y) = if self.selected_element == LayoutElement::WidgetA {
+                    (
+                        &mut self.widget_a_enabled,
+                        &mut self.widget_a_pos_x,
+                        &mut self.widget_a_pos_y,
+                    )
+                } else {
+                    (
+                        &mut self.widget_b_enabled,
+                        &mut self.widget_b_pos_x,
+                        &mut self.widget_b_pos_y,
+                    )
+                };
+                ui.heading("Widget Placeholder");
+                ui.checkbox(enabled, "Enabled");
+                ui.horizontal(|ui| {
+                    ui.label("X");
+                    ui.add(egui::DragValue::new(x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(y).speed(1));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Widget source");
+                    egui::ComboBox::from_id_salt("future_widget_source")
+                        .selected_text(&self.widget_source)
+                        .show_ui(ui, |ui| {
+                            for s in ["custom_url", "euronews", "aljazeera", "cnn", "weather"] {
+                                ui.selectable_value(&mut self.widget_source, s.to_string(), s);
+                            }
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Widget URL / stream");
+                    ui.text_edit_singleline(&mut self.widget_url);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Playback fps");
+                    let mut fps = 15_i32;
+                    ui.add(egui::DragValue::new(&mut fps).speed(1).range(1..=60));
+                });
+            }
         }
 
+        ui.separator();
+        ui.label("Click a neon box to edit it. Drag inside the frame to place selected element.");
+    }
+
+    fn render_style_tab(&mut self, ui: &mut egui::Ui) {
+        let color_help = self.hover_text("color_format").to_string();
+        ui.heading("Style");
+        ui.label("Primary element styling is edited in Ordering when Quote is selected.");
         ui.separator();
         ui.horizontal(|ui| {
             edit_color_field(
@@ -1090,26 +1283,6 @@ impl WcGuiApp {
             ui.label("dy");
             ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_y).speed(1));
         });
-
-        ui.separator();
-        ui.heading("Future Widget Areas (preview)");
-        ui.horizontal(|ui| {
-            ui.label("Widget source");
-            egui::ComboBox::from_id_salt("future_widget_source")
-                .selected_text(&self.widget_source)
-                .show_ui(ui, |ui| {
-                    for s in ["custom_url", "euronews", "aljazeera", "cnn", "weather"] {
-                        ui.selectable_value(&mut self.widget_source, s.to_string(), s);
-                    }
-                });
-        });
-        ui.horizontal(|ui| {
-            ui.label("Widget URL / stream");
-            ui.text_edit_singleline(&mut self.widget_url);
-        });
-        ui.label(
-            "Note: video/web widget overlays are planned next (including per-widget refresh/fps).",
-        );
     }
 
     fn render_system_tab(&mut self, ui: &mut egui::Ui) {
@@ -1291,9 +1464,10 @@ impl eframe::App for WcGuiApp {
                 }
             });
             ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.active_tab, GuiTab::Ordering, "Ordering");
                 ui.selectable_value(&mut self.active_tab, GuiTab::Images, "Images");
                 ui.selectable_value(&mut self.active_tab, GuiTab::Quotes, "Quotes");
-                ui.selectable_value(&mut self.active_tab, GuiTab::Elements, "Elements");
+                ui.selectable_value(&mut self.active_tab, GuiTab::Style, "Style");
                 ui.selectable_value(&mut self.active_tab, GuiTab::System, "System");
             });
         });
@@ -1332,9 +1506,10 @@ impl eframe::App for WcGuiApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| match self.active_tab {
+                GuiTab::Ordering => self.render_ordering_tab(ui),
                 GuiTab::Images => self.render_images_tab(ui, ctx),
                 GuiTab::Quotes => self.render_quotes_tab(ui),
-                GuiTab::Elements => self.render_elements_tab(ui),
+                GuiTab::Style => self.render_style_tab(ui),
                 GuiTab::System => self.render_system_tab(ui),
             });
         });
@@ -1371,6 +1546,22 @@ fn load_thumbnail(
     let color = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
     Ok(ctx.load_texture(
         format!("thumb-{idx}-{}", path.display()),
+        color,
+        egui::TextureOptions::LINEAR,
+    ))
+}
+
+fn load_ordering_background_texture(
+    ctx: &egui::Context,
+    path: &Path,
+) -> Result<egui::TextureHandle, String> {
+    let img = image::open(path).map_err(|e| format!("decode failed: {e}"))?;
+    let gray = img.thumbnail(1280, 720).grayscale().to_rgba8();
+    let size = [gray.width() as usize, gray.height() as usize];
+    let pixels = gray.into_raw();
+    let color = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+    Ok(ctx.load_texture(
+        format!("ordering-bg-{}", path.display()),
         color,
         egui::TextureOptions::LINEAR,
     ))
