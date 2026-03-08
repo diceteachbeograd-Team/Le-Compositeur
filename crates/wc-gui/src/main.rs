@@ -16,7 +16,7 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "Wallpaper Composer Settings",
+        "Le Compositeur Settings (diceteach)",
         native_options,
         Box::new(|_cc| Ok(Box::new(WcGuiApp::new()))),
     )
