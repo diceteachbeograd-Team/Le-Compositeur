@@ -45,6 +45,9 @@ install -Dpm0644 packaging/linux/wallpaper-composer.metainfo.xml %{buildroot}%{_
 %{_datadir}/metainfo/wallpaper-composer.metainfo.xml
 
 %changelog
+* Sun Mar 08 2026 Wallpaper Composer Contributors <opensource@example.com> - 2026.03.08-4
+- Show GUI version in header and continue date-index release numbering.
+
 * Sun Mar 08 2026 Wallpaper Composer Contributors <opensource@example.com> - 2026.03.08-3
 - Add weather fallback via wttr.in and cleaner news overlay text for widgets.
 

@@ -7,6 +7,8 @@ use wc_core::{
     list_background_images, load_config, load_quotes, to_config_toml,
 };
 
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default().with_app_id("wallpaper-composer");
     if let Some(icon) = load_app_icon() {
@@ -2063,6 +2065,9 @@ impl eframe::App for WcGuiApp {
                 }
                 ui.separator();
                 ui.label(format!("Language: {}", ui_lang_label(self.ui_lang)));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(format!("Version: v{APP_VERSION}"));
+                });
             });
 
             ui.horizontal(|ui| {

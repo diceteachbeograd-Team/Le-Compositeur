@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.03.08-4 - 2026-03-08
+- GUI now shows the current app version in the top-right header area.
+- Continued same-day release index flow (`YYYY.MM.DD-N`) with this increment to `-4`.
+- Refined install/build docs and scripts to align with `2026.03.08-4`.
+
 ## 2026.03.08-3 - 2026-03-08
 - Added weather fallback to `wttr.in` when IP geolocation providers are rate-limited/unavailable.
 - Removed raw stream URL line from news overlay text to improve on-screen readability.
