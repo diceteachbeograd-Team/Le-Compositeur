@@ -1,9 +1,11 @@
 # Changelog
 
-## 2026.03.08-4 - 2026-03-08
-- GUI now shows the current app version in the top-right header area.
-- Continued same-day release index flow (`YYYY.MM.DD-N`) with this increment to `-4`.
-- Refined install/build docs and scripts to align with `2026.03.08-4`.
+## 2026.03.08-5 - 2026-03-08
+- Added configurable Weather/News widget size controls (`W`/`H`) in `Ordering`, `Weather`, and `News` tabs.
+- Weather overlay output is now compact/icon-style for cleaner on-screen display.
+- News overlay text is now rendered as a single concise line.
+- Added custom camera URL handling for News with enforced max `1.0 FPS` and optional `ffmpeg` frame capture.
+- Updated install/build docs and release references to `2026.03.08-5`.
 
 ## 2026.03.08-3 - 2026-03-08
 - Added weather fallback to `wttr.in` when IP geolocation providers are rate-limited/unavailable.

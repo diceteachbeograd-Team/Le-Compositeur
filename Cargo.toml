@@ -12,5 +12,5 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "GPL-3.0-or-later"
-version = "2026.3.8-4"
+version = "2026.3.8-5"
 authors = ["Wallpaper Composer Contributors"]

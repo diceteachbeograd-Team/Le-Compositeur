@@ -21,8 +21,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.08-4
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.08-4-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.08-5
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.08-5-1*.rpm
 wc-gui
 ```
 
@@ -30,8 +30,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.08-4
-sudo apt install ./dist/wallpaper-composer_2026.03.08-4_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.08-5
+sudo apt install ./dist/wallpaper-composer_2026.03.08-5_amd64.deb
 wc-gui
 ```
 
@@ -48,6 +48,16 @@ cargo run -p wc-gui
 - `Weather`: Widget 1 settings (system location/manual location, refresh interval, current weather preview)
 - `News`: Widget 2 settings (free channel presets, custom URL, FPS, audio toggle)
 - `System`: runtime, startup behavior, autostart checkbox, and integration toggles
+
+### Custom Camera Input (News Widget)
+- Set `News -> Channel` to `Custom URL`.
+- Paste your camera source URL (snapshot URL, MJPEG, RTSP, HLS `.m3u8`, or DASH `.mpd`).
+- Camera-like sources are limited to max `1.0 FPS` (enforced), so desktop usage stays stable.
+- If `ffmpeg` is available, one frame is captured from stream sources and rendered as preview image.
+
+### Widget Size
+- Weather and News widgets now have configurable `W`/`H` (width/height in pixels).
+- You can change size in `Ordering` (select Weather/News), `Weather`, and `News`.
 
 ### Startup reliability
 - Autostart now writes a delayed startup entry (`sleep 12`), runs one warmup cycle, then starts loop mode.

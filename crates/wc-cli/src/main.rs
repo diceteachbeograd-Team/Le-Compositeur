@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use reqwest::blocking::Client;
 use serde_json::Value;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
@@ -224,8 +225,12 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             clock_color: &cfg.clock_color,
             weather_pos_x: cfg.weather_pos_x,
             weather_pos_y: cfg.weather_pos_y,
+            weather_width: cfg.weather_widget_width,
+            weather_height: cfg.weather_widget_height,
             news_pos_x: cfg.news_pos_x,
             news_pos_y: cfg.news_pos_y,
+            news_width: cfg.news_widget_width,
+            news_height: cfg.news_widget_height,
             text_stroke_color: &cfg.text_stroke_color,
             text_stroke_width: cfg.text_stroke_width,
             text_undercolor: &cfg.text_undercolor,
@@ -368,6 +373,21 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
         && cfg.news_custom_url.trim().is_empty()
     {
         anyhow::bail!("news_custom_url is required when news_source=custom");
+    }
+    if is_camera_like_url(cfg.news_custom_url.trim()) && cfg.news_fps > 1.0 {
+        anyhow::bail!("camera-like custom news URLs are limited to max 1.0 FPS");
+    }
+    if !(120..=1920).contains(&cfg.weather_widget_width) {
+        anyhow::bail!("weather_widget_width must be between 120 and 1920");
+    }
+    if !(80..=1080).contains(&cfg.weather_widget_height) {
+        anyhow::bail!("weather_widget_height must be between 80 and 1080");
+    }
+    if !(180..=1920).contains(&cfg.news_widget_width) {
+        anyhow::bail!("news_widget_width must be between 180 and 1920");
+    }
+    if !(120..=1080).contains(&cfg.news_widget_height) {
+        anyhow::bail!("news_widget_height must be between 120 and 1080");
     }
 
     let backend = cfg.wallpaper_backend.trim().to_ascii_lowercase();
@@ -697,8 +717,9 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
         .unwrap_or(-1);
 
     Ok(format!(
-        "WEATHER {loc_label}\n{} | {:.1}C (feel {:.1}C)\nHum {:.0}% Wind {:.1} km/h",
-        weather_code_label(code),
+        "📍 {} {} {:.1}C 🌡{:.1}C 💧{:.0}% 🌬{:.1}",
+        compact_location_label(&loc_label),
+        weather_code_icon(code),
         t,
         tf,
         humidity,
@@ -766,8 +787,14 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<String> {
         .unwrap_or(0.0);
 
     Ok(format!(
-        "WEATHER {city}, {country}\n{desc} | {:.1}C (feel {:.1}C)\nHum {:.0}% Wind {:.1} km/h",
-        temp, feels, humidity, wind
+        "📍 {}, {} {} {:.1}C 🌡{:.1}C 💧{:.0}% 🌬{:.1}",
+        city,
+        country,
+        compact_condition_symbol(desc),
+        temp,
+        feels,
+        humidity,
+        wind
     ))
 }
 
@@ -779,14 +806,16 @@ struct NewsWidgetPayload {
 
 fn resolve_news_widget(cfg: &AppConfig) -> Result<NewsWidgetPayload> {
     let (label, stream_url, feed_url) = news_source_profile(cfg);
+    let stream_icon = news_source_icon(cfg.news_source.as_str());
     let headline = if let Some(feed) = feed_url {
         fetch_rss_headline(feed).unwrap_or_else(|| "No headline".to_string())
     } else {
         "Live stream source selected".to_string()
     };
     let preview_image = resolve_news_preview_image(cfg, &stream_url);
+    let line = compact_news_line(&format!("LIVE {label} | {headline}"));
     Ok(NewsWidgetPayload {
-        text: format!("LIVE {label}\n{headline}"),
+        text: format!("{stream_icon} {line}"),
         preview_image,
     })
 }
@@ -864,6 +893,12 @@ fn fetch_rss_headline(url: &str) -> Option<String> {
 }
 
 fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str) -> Option<PathBuf> {
+    if cfg.news_source.eq_ignore_ascii_case("custom")
+        && is_camera_like_url(stream_url)
+        && let Some(path) = capture_camera_frame(stream_url)
+    {
+        return Some(path);
+    }
     let mut candidates = news_preview_candidates(cfg, stream_url);
     candidates.dedup();
     for endpoint in candidates {
@@ -872,6 +907,86 @@ fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str) -> Option<PathB
         }
     }
     None
+}
+
+fn compact_location_label(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.len() <= 24 {
+        return trimmed.to_string();
+    }
+    let compact = trimmed
+        .split(',')
+        .next()
+        .unwrap_or(trimmed)
+        .trim()
+        .to_string();
+    if compact.is_empty() {
+        trimmed.chars().take(24).collect()
+    } else {
+        compact
+    }
+}
+
+fn compact_news_line(input: &str) -> String {
+    let line = input.replace('\n', " ").replace("  ", " ");
+    let mut out = String::new();
+    for c in line.chars() {
+        if c.is_control() {
+            continue;
+        }
+        out.push(c);
+        if out.chars().count() >= 96 {
+            out.push('…');
+            break;
+        }
+    }
+    out
+}
+
+fn news_source_icon(id: &str) -> &'static str {
+    match id {
+        "yahoo_finance" | "bloomberg_tv" => "📈",
+        "techcrunch" | "theverge" => "🧠",
+        "documentary_heaven" => "🎬",
+        _ => "📺",
+    }
+}
+
+fn weather_code_icon(code: i64) -> &'static str {
+    match code {
+        0 => "☀",
+        1..=3 => "⛅",
+        45 | 48 => "🌫",
+        51..=57 => "🌦",
+        61..=67 => "🌧",
+        71..=77 => "❄",
+        80..=86 => "🌧",
+        95..=99 => "⚡",
+        _ => "•",
+    }
+}
+
+fn compact_condition_symbol(desc: &str) -> &'static str {
+    let l = desc.to_ascii_lowercase();
+    if l.contains("thunder") {
+        return "⚡";
+    }
+    if l.contains("snow") {
+        return "❄";
+    }
+    if l.contains("rain") || l.contains("drizzle") || l.contains("shower") {
+        return "🌧";
+    }
+    if l.contains("fog") || l.contains("mist") {
+        return "🌫";
+    }
+    if l.contains("cloud") {
+        return "☁";
+    }
+    if l.contains("clear") || l.contains("sun") {
+        return "☀";
+    }
+    "•"
 }
 
 fn news_preview_candidates(cfg: &AppConfig, stream_url: &str) -> Vec<String> {
@@ -1071,6 +1186,67 @@ fn parse_lat_lon_pair(raw: &str) -> Option<(f64, f64)> {
     Some((lat, lon))
 }
 
+fn is_camera_like_url(url: &str) -> bool {
+    let l = url.trim().to_ascii_lowercase();
+    l.starts_with("rtsp://")
+        || l.ends_with(".m3u8")
+        || l.ends_with(".mpd")
+        || l.contains("mjpeg")
+        || l.contains("snapshot")
+        || l.contains("camera")
+        || l.contains("webcam")
+}
+
+fn command_exists(cmd: &str) -> bool {
+    Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {cmd} >/dev/null 2>&1"))
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn capture_camera_frame(url: &str) -> Option<PathBuf> {
+    if !command_exists("ffmpeg") {
+        return None;
+    }
+    let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
+    fs::create_dir_all(&cache_dir).ok()?;
+    let hash = stable_hash(url);
+    let target = cache_dir.join(format!("camera-{hash}.jpg"));
+    let stamp = cache_dir.join(format!("camera-{hash}.stamp"));
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    let last = fs::read_to_string(&stamp)
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    if now.saturating_sub(last) < 1 && target.exists() {
+        return Some(target);
+    }
+
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(["-y", "-loglevel", "error", "-nostdin"]);
+    if url.to_ascii_lowercase().starts_with("rtsp://") {
+        cmd.args(["-rtsp_transport", "tcp"]);
+    }
+    let status = cmd
+        .args(["-i", url, "-frames:v", "1", "-q:v", "4"])
+        .arg(&target)
+        .status()
+        .ok()?;
+    if !status.success() || !target.exists() {
+        return None;
+    }
+    let _ = fs::write(stamp, format!("{now}\n"));
+    Some(target)
+}
+
+fn stable_hash(input: &str) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    input.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 fn extract_first_xml_tag(raw: &str, tag: &str) -> Option<String> {
     let open = format!("<{tag}>");
     let close = format!("</{tag}>");
@@ -1083,7 +1259,8 @@ fn extract_first_xml_tag(raw: &str, tag: &str) -> Option<String> {
             .replace("&amp;", "&")
             .replace("&lt;", "<")
             .replace("&gt;", ">");
-        let cleaned = value.trim();
+        let decoded = decode_numeric_entities(&value);
+        let cleaned = decoded.trim();
         if !cleaned.is_empty() && !cleaned.to_ascii_lowercase().contains("rss") {
             return Some(cleaned.to_string());
         }
@@ -1092,18 +1269,32 @@ fn extract_first_xml_tag(raw: &str, tag: &str) -> Option<String> {
     None
 }
 
-fn weather_code_label(code: i64) -> &'static str {
-    match code {
-        0 => "Clear",
-        1..=3 => "Partly cloudy",
-        45 | 48 => "Fog",
-        51..=57 => "Drizzle",
-        61..=67 => "Rain",
-        71..=77 => "Snow",
-        80..=86 => "Showers",
-        95..=99 => "Thunderstorm",
-        _ => "Unknown",
+fn decode_numeric_entities(input: &str) -> String {
+    let mut out = String::new();
+    let mut rest = input;
+    while let Some(idx) = rest.find("&#") {
+        out.push_str(&rest[..idx]);
+        let after = &rest[idx + 2..];
+        if let Some(end) = after.find(';') {
+            let num = &after[..end];
+            if let Ok(code) = num.parse::<u32>()
+                && let Some(ch) = char::from_u32(code)
+            {
+                out.push(ch);
+                rest = &after[end + 1..];
+                continue;
+            }
+            out.push_str("&#");
+            out.push_str(num);
+            out.push(';');
+            rest = &after[end + 1..];
+        } else {
+            out.push_str(&rest[idx..]);
+            rest = "";
+        }
     }
+    out.push_str(rest);
+    out
 }
 
 fn quote_pick_state_path(cfg: &AppConfig) -> Result<PathBuf> {

@@ -254,11 +254,23 @@ impl WcGuiApp {
                 "Sta: izvor vesti/dokumentarnog strima za News widget. Kako: izaberi iz liste ili koristi sopstveni URL. Preporuka: kreni sa Euronews.",
                 "作用: News 小组件的视频来源。方法: 从列表选择或使用自定义 URL。建议: 先用 Euronews。"
             ),
+            "news_custom_url" => self.t(
+                "What: custom stream/snapshot URL for News widget. How: use direct image URL, YouTube link, or camera stream URL. Recommended: for IP camera streams keep FPS at max 1.0.",
+                "Was: eigene Stream-/Snapshot-URL für das News-Widget. Wie: direkte Bild-URL, YouTube-Link oder Kamera-Stream-URL nutzen. Empfehlung: bei IP-Kamera-Streams FPS maximal auf 1,0 setzen.",
+                "Sta: prilagođeni stream/snapshot URL za News widget. Kako: koristi direktan URL slike, YouTube link ili URL kamere. Preporuka: za IP kameru drži FPS najviše 1,0.",
+                "作用: News 小组件的自定义流/快照 URL。方法: 可用图片直链、YouTube 链接或摄像头流 URL。建议: IP 摄像头流请将 FPS 设为最多 1.0。"
+            ),
             "news_fps" => self.t(
-                "What: playback frame rate target for future embedded stream widget. How: choose between 0.05 and 30 FPS. Recommended: 1-5 FPS for low resource usage.",
-                "Was: Ziel-Bildrate für zukünftiges eingebettetes Stream-Widget. Wie: zwischen 0,05 und 30 FPS wählen. Empfehlung: 1-5 FPS für geringe Last.",
-                "Sta: ciljna brzina kadrova za budući ugrađeni stream widget. Kako: izaberi između 0,05 i 30 FPS. Preporuka: 1-5 FPS za manju potrošnju resursa.",
-                "作用: 未来内嵌流媒体组件的目标帧率。方法: 在 0.05 到 30 FPS 间设置。建议: 1-5 FPS 以降低资源占用。"
+                "What: playback frame rate target for stream widget. How: choose 0.05-30 FPS. Recommended: 1-5 FPS; custom camera URLs are capped to 1.0 FPS.",
+                "Was: Ziel-Bildrate für das Stream-Widget. Wie: zwischen 0,05 und 30 FPS wählen. Empfehlung: 1-5 FPS; eigene Kamera-URLs werden auf 1,0 FPS begrenzt.",
+                "Sta: ciljna brzina kadrova za stream widget. Kako: izaberi 0,05-30 FPS. Preporuka: 1-5 FPS; custom kamera URL je ograničen na 1,0 FPS.",
+                "作用: 流媒体组件目标帧率。方法: 设置 0.05-30 FPS。建议: 1-5 FPS；自定义摄像头 URL 会限制为 1.0 FPS。"
+            ),
+            "widget_size" => self.t(
+                "What: widget width/height in pixels. How: change W/H to resize weather/news boxes on wallpaper and in Ordering preview. Recommended: start with defaults, then fit your resolution.",
+                "Was: Widget-Breite/Höhe in Pixeln. Wie: W/H anpassen, um Wetter-/News-Boxen im Wallpaper und in der Ordering-Vorschau zu skalieren. Empfehlung: mit Standardwerten starten und dann an Auflösung anpassen.",
+                "Sta: širina/visina widgeta u pikselima. Kako: promeni W/H da bi menjao veličinu weather/news polja na pozadini i u Ordering pregledu. Preporuka: kreni od podrazumevanih vrednosti.",
+                "作用: 组件宽/高（像素）。方法: 调整 W/H 可改变天气/新闻框在壁纸与 Ordering 预览中的尺寸。建议: 先用默认值，再按分辨率微调。"
             ),
             "news_audio_enabled" => self.t(
                 "What: audio flag for future embedded stream playback. How: toggle on/off. Recommended: off by default to avoid disruptive playback.",
@@ -1001,20 +1013,27 @@ impl WcGuiApp {
             ),
             clock_size,
         );
-        let widget_size = egui::vec2(300.0 * sx.max(0.2), 140.0 * sy.max(0.2));
+        let weather_size = egui::vec2(
+            self.cfg.weather_widget_width as f32 * sx.max(0.2),
+            self.cfg.weather_widget_height as f32 * sy.max(0.2),
+        );
+        let news_size = egui::vec2(
+            self.cfg.news_widget_width as f32 * sx.max(0.2),
+            self.cfg.news_widget_height as f32 * sy.max(0.2),
+        );
         let mut weather_rect = egui::Rect::from_min_size(
             egui::pos2(
                 rect.left() + self.cfg.weather_pos_x as f32 * sx,
                 rect.top() + self.cfg.weather_pos_y as f32 * sy,
             ),
-            widget_size,
+            weather_size,
         );
         let mut news_rect = egui::Rect::from_min_size(
             egui::pos2(
                 rect.left() + self.cfg.news_pos_x as f32 * sx,
                 rect.top() + self.cfg.news_pos_y as f32 * sy,
             ),
-            widget_size,
+            news_size,
         );
 
         if response.clicked()
@@ -1074,14 +1093,14 @@ impl WcGuiApp {
                     rect.left() + self.cfg.weather_pos_x as f32 * sx,
                     rect.top() + self.cfg.weather_pos_y as f32 * sy,
                 ),
-                widget_size,
+                weather_size,
             );
             news_rect = egui::Rect::from_min_size(
                 egui::pos2(
                     rect.left() + self.cfg.news_pos_x as f32 * sx,
                     rect.top() + self.cfg.news_pos_y as f32 * sy,
                 ),
-                widget_size,
+                news_size,
             );
         }
 
@@ -1281,6 +1300,20 @@ impl WcGuiApp {
                     ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_x).speed(1));
                     ui.label("Y");
                     ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_y).speed(1));
+                    ui.label("W");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.weather_widget_width)
+                            .speed(2)
+                            .range(120..=1920),
+                    )
+                    .on_hover_text(self.hover_text("widget_size"));
+                    ui.label("H");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.weather_widget_height)
+                            .speed(2)
+                            .range(80..=1080),
+                    )
+                    .on_hover_text(self.hover_text("widget_size"));
                 });
                 ui.horizontal(|ui| {
                     ui.label("Refresh sec");
@@ -1317,6 +1350,20 @@ impl WcGuiApp {
                     ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
                     ui.label("Y");
                     ui.add(egui::DragValue::new(&mut self.cfg.news_pos_y).speed(1));
+                    ui.label("W");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_widget_width)
+                            .speed(2)
+                            .range(180..=1920),
+                    )
+                    .on_hover_text(self.hover_text("widget_size"));
+                    ui.label("H");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_widget_height)
+                            .speed(2)
+                            .range(120..=1080),
+                    )
+                    .on_hover_text(self.hover_text("widget_size"));
                 });
                 ui.horizontal(|ui| {
                     ui.label("Source");
@@ -1337,8 +1384,16 @@ impl WcGuiApp {
                 if self.cfg.news_source == "custom" {
                     ui.horizontal(|ui| {
                         ui.label("Custom URL");
-                        ui.text_edit_singleline(&mut self.cfg.news_custom_url);
+                        ui.text_edit_singleline(&mut self.cfg.news_custom_url)
+                            .on_hover_text(self.hover_text("news_custom_url"));
                     });
+                    if is_camera_like_url(&self.cfg.news_custom_url) && self.cfg.news_fps > 1.0 {
+                        self.cfg.news_fps = 1.0;
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 180, 100),
+                            "Camera source detected: FPS capped to 1.0",
+                        );
+                    }
                 }
                 ui.horizontal(|ui| {
                     ui.label("FPS");
@@ -1435,6 +1490,18 @@ impl WcGuiApp {
             ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_x).speed(1));
             ui.label("Y");
             ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_y).speed(1));
+            ui.label("W");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.weather_widget_width)
+                    .speed(2)
+                    .range(120..=1920),
+            );
+            ui.label("H");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.weather_widget_height)
+                    .speed(2)
+                    .range(80..=1080),
+            );
         });
         ui.separator();
         ui.label(&self.weather_status);
@@ -1463,8 +1530,16 @@ impl WcGuiApp {
         if self.cfg.news_source == "custom" {
             ui.horizontal(|ui| {
                 ui.label("Custom URL");
-                ui.text_edit_singleline(&mut self.cfg.news_custom_url);
+                ui.text_edit_singleline(&mut self.cfg.news_custom_url)
+                    .on_hover_text(self.hover_text("news_custom_url"));
             });
+            if is_camera_like_url(&self.cfg.news_custom_url) && self.cfg.news_fps > 1.0 {
+                self.cfg.news_fps = 1.0;
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 180, 100),
+                    "Camera source detected: FPS capped to 1.0",
+                );
+            }
         }
         ui.horizontal(|ui| {
             ui.label("Playback FPS");
@@ -1482,6 +1557,18 @@ impl WcGuiApp {
             ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
             ui.label("Y");
             ui.add(egui::DragValue::new(&mut self.cfg.news_pos_y).speed(1));
+            ui.label("W");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.news_widget_width)
+                    .speed(2)
+                    .range(180..=1920),
+            );
+            ui.label("H");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.news_widget_height)
+                    .speed(2)
+                    .range(120..=1080),
+            );
         });
         ui.separator();
         ui.label("Selected stream URL:");
@@ -1681,6 +1768,17 @@ fn news_source_url(id: &str, custom: &str) -> String {
         "documentary_heaven" => "https://documentaryheaven.com/".to_string(),
         _ => custom.to_string(),
     }
+}
+
+fn is_camera_like_url(url: &str) -> bool {
+    let l = url.trim().to_ascii_lowercase();
+    l.starts_with("rtsp://")
+        || l.ends_with(".m3u8")
+        || l.ends_with(".mpd")
+        || l.contains("mjpeg")
+        || l.contains("snapshot")
+        || l.contains("camera")
+        || l.contains("webcam")
 }
 
 fn weather_code_label(code: i64) -> &'static str {
@@ -2270,8 +2368,12 @@ fn default_cfg() -> AppConfig {
         show_news_layer: true,
         weather_pos_x: 120,
         weather_pos_y: 120,
+        weather_widget_width: 640,
+        weather_widget_height: 180,
         news_pos_x: 980,
         news_pos_y: 180,
+        news_widget_width: 760,
+        news_widget_height: 240,
         weather_refresh_seconds: 600,
         weather_use_system_location: true,
         weather_location_override: String::new(),
