@@ -371,12 +371,12 @@ impl WcGuiApp {
         #[cfg(target_os = "linux")]
         {
             let home = std::env::var_os("HOME")?;
-            return Some(
+            Some(
                 PathBuf::from(home)
                     .join(".config")
                     .join("autostart")
                     .join("wallpaper-composer.desktop"),
-            );
+            )
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -512,7 +512,7 @@ impl WcGuiApp {
     fn pick_folder_dialog(&self, start: PathBuf) -> Option<PathBuf> {
         #[cfg(target_os = "linux")]
         {
-            return pick_linux_path_dialog(&start, true);
+            pick_linux_path_dialog(&start, true)
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -523,7 +523,7 @@ impl WcGuiApp {
     fn pick_quotes_dialog(&self, base: PathBuf) -> Option<PathBuf> {
         #[cfg(target_os = "linux")]
         {
-            return pick_linux_path_dialog(&base, false);
+            pick_linux_path_dialog(&base, false)
         }
         #[cfg(not(target_os = "linux"))]
         {
