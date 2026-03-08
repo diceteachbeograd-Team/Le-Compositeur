@@ -616,6 +616,27 @@ macOS Intel / Apple Silicon (tar.gz-Artefakt):
   - `Build macos-x86_64` kann fehlschlagen mit: `The configuration 'macos-13-us-default' is not supported`
   - Dann `macos-arm64` aktiv lassen und den Intel-Runner auf ein unterstutztes Image fur euren GitHub-Plan umstellen.
 
+### 6.2 GUI-Schnelleinstieg (neu)
+Tab-Reihenfolge:
+- `Ordering`: Hauptlayout im 16:9-Rahmen (Neon-Boxen) fur `Quote`, `Clock`, `Weather`, `News`.
+- `Images`: Hintergrundquelle + Wallpaper-Backend/Fit.
+- `Quotes`: Spruchquelle + Reihenfolge.
+- `Style`: Kontur, Unterlegung, Schatten.
+- `Weather`: Widget-1-Settings (Auto-Location/System oder manuelle Location, Refresh, Live-Vorschau).
+- `News`: Widget-2-Settings (freie Sender-Presets, Custom-URL, FPS, Audio-Flag).
+- `System`: Laufzeit, Integrationen, Autostart.
+
+Wichtige Bedienlogik:
+- Layer lassen sich in `Ordering` einzeln ein-/ausschalten.
+- Positionierung erfolgt per Drag direkt im Rahmen.
+- Beim Klick auf eine Box erscheinen die passenden Einstellungen darunter.
+- Hover-Hilfen sind mehrsprachig (EN/DE/SR/中文) und erklaren Zweck + empfohlene Defaults.
+
+Autostart nach Login:
+- Im `System`-Tab per Checkbox `Start automatically after login`.
+- Der Eintrag startet mit Delay (`sleep 12`), fuhrt einen Warmup-Run aus und startet dann den Loop.
+- Das reduziert fehlerhafte Wallpaper-Zustaende direkt nach Desktop-Login.
+
 ### 7. CLI-Referenz
 `doctor`
 - zeigt lokale Diagnosewerte (Projekt/Profil/Uhrzeit)
@@ -655,6 +676,19 @@ output_image = "/tmp/wallpaper-composer-current.png"
 image_refresh_seconds = 300
 quote_refresh_seconds = 300
 time_format = "%H:%M"
+show_weather_layer = true
+show_news_layer = true
+weather_pos_x = 120
+weather_pos_y = 120
+news_pos_x = 980
+news_pos_y = 180
+weather_refresh_seconds = 600
+weather_use_system_location = true
+weather_location_override = ""
+news_source = "euronews"
+news_custom_url = ""
+news_fps = 1.0
+news_audio_enabled = false
 ```
 
 Bedeutung:
@@ -669,6 +703,9 @@ Bedeutung:
 - `image_refresh_seconds`: Master-Zeitintervall
 - `quote_refresh_seconds`: wird an den Master angeglichen
 - `time_format`: Uhrzeitformat (chrono-Stil)
+- `show_weather_layer` / `show_news_layer`: Widget-Layer ein/aus
+- `weather_*`: Position, Refresh und Location-Modus fur Wetter-Widget
+- `news_*`: Quelle/URL, FPS und Audio-Flag fur News-Widget
 
 Lokale Quote-Datei (empfohlenes Block-Format):
 ```txt

@@ -9,6 +9,8 @@ authors.workspace = true
 eframe = { package = "eframe", version = "0.31" }
 egui = "0.31"
 image = "0.25"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde_json = "1.0"
 wc-core = { path = "../wc-core" }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]

@@ -72,6 +72,19 @@ pub struct AppConfig {
     pub show_background_layer: bool,
     pub show_quote_layer: bool,
     pub show_clock_layer: bool,
+    pub show_weather_layer: bool,
+    pub show_news_layer: bool,
+    pub weather_pos_x: i32,
+    pub weather_pos_y: i32,
+    pub news_pos_x: i32,
+    pub news_pos_y: i32,
+    pub weather_refresh_seconds: u64,
+    pub weather_use_system_location: bool,
+    pub weather_location_override: String,
+    pub news_source: String,
+    pub news_custom_url: String,
+    pub news_fps: f32,
+    pub news_audio_enabled: bool,
     pub login_screen_integration: bool,
     pub boot_screen_integration: bool,
 }
@@ -126,6 +139,19 @@ wallpaper_fit_mode = "zoom"
 show_background_layer = true
 show_quote_layer = true
 show_clock_layer = true
+show_weather_layer = true
+show_news_layer = true
+weather_pos_x = 120
+weather_pos_y = 120
+news_pos_x = 980
+news_pos_y = 180
+weather_refresh_seconds = 600
+weather_use_system_location = true
+weather_location_override = ""
+news_source = "euronews"
+news_custom_url = ""
+news_fps = 1.0
+news_audio_enabled = false
 login_screen_integration = false
 boot_screen_integration = false
 "##
@@ -134,7 +160,7 @@ boot_screen_integration = false
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\nshow_background_layer = {}\nshow_quote_layer = {}\nshow_clock_layer = {}\nlogin_screen_integration = {}\nboot_screen_integration = {}\n",
+        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\nshow_background_layer = {}\nshow_quote_layer = {}\nshow_clock_layer = {}\nshow_weather_layer = {}\nshow_news_layer = {}\nweather_pos_x = {}\nweather_pos_y = {}\nnews_pos_x = {}\nnews_pos_y = {}\nweather_refresh_seconds = {}\nweather_use_system_location = {}\nweather_location_override = {:?}\nnews_source = {:?}\nnews_custom_url = {:?}\nnews_fps = {}\nnews_audio_enabled = {}\nlogin_screen_integration = {}\nboot_screen_integration = {}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -183,6 +209,19 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.show_background_layer,
         cfg.show_quote_layer,
         cfg.show_clock_layer,
+        cfg.show_weather_layer,
+        cfg.show_news_layer,
+        cfg.weather_pos_x,
+        cfg.weather_pos_y,
+        cfg.news_pos_x,
+        cfg.news_pos_y,
+        cfg.weather_refresh_seconds,
+        cfg.weather_use_system_location,
+        cfg.weather_location_override,
+        cfg.news_source,
+        cfg.news_custom_url,
+        cfg.news_fps,
+        cfg.news_audio_enabled,
         cfg.login_screen_integration,
         cfg.boot_screen_integration
     )
@@ -253,6 +292,19 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"show_background_layer","group":"wallpaper","label":"Show Background Layer","type":"bool","required":false,"default":true},
     {"key":"show_quote_layer","group":"wallpaper","label":"Show Quote Layer","type":"bool","required":false,"default":true},
     {"key":"show_clock_layer","group":"wallpaper","label":"Show Clock Layer","type":"bool","required":false,"default":true},
+    {"key":"show_weather_layer","group":"wallpaper","label":"Show Weather Layer","type":"bool","required":false,"default":true},
+    {"key":"show_news_layer","group":"wallpaper","label":"Show News Layer","type":"bool","required":false,"default":true},
+    {"key":"weather_pos_x","group":"wallpaper","label":"Weather X","type":"i32","required":false,"default":120},
+    {"key":"weather_pos_y","group":"wallpaper","label":"Weather Y","type":"i32","required":false,"default":120},
+    {"key":"news_pos_x","group":"wallpaper","label":"News X","type":"i32","required":false,"default":980},
+    {"key":"news_pos_y","group":"wallpaper","label":"News Y","type":"i32","required":false,"default":180},
+    {"key":"weather_refresh_seconds","group":"wallpaper","label":"Weather Refresh Seconds","type":"u64","required":false,"default":600},
+    {"key":"weather_use_system_location","group":"wallpaper","label":"Weather Use System Location","type":"bool","required":false,"default":true},
+    {"key":"weather_location_override","group":"wallpaper","label":"Weather Location Override","type":"string","required":false,"default":"","visible_when":{"field":"weather_use_system_location","equals":false},"enabled_when":{"field":"weather_use_system_location","equals":false}},
+    {"key":"news_source","group":"wallpaper","label":"News Source","type":"string","required":false,"default":"euronews"},
+    {"key":"news_custom_url","group":"wallpaper","label":"News Custom URL","type":"string","required":false,"default":"","visible_when":{"field":"news_source","equals":"custom"},"enabled_when":{"field":"news_source","equals":"custom"}},
+    {"key":"news_fps","group":"wallpaper","label":"News FPS","type":"f32","required":false,"default":1.0},
+    {"key":"news_audio_enabled","group":"wallpaper","label":"News Audio Enabled","type":"bool","required":false,"default":false},
     {"key":"login_screen_integration","group":"wallpaper","label":"Login Screen Integration","type":"bool","required":false,"default":false},
     {"key":"boot_screen_integration","group":"wallpaper","label":"Boot Screen Integration","type":"bool","required":false,"default":false}
   ]
@@ -325,7 +377,7 @@ pub fn settings_ui_blueprint_json() -> &'static str {
       {
         "id": "wallpaper",
         "title": "Wallpaper",
-        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode", "show_background_layer", "show_quote_layer", "show_clock_layer", "login_screen_integration", "boot_screen_integration"]
+        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode", "show_background_layer", "show_quote_layer", "show_clock_layer", "show_weather_layer", "show_news_layer", "weather_pos_x", "weather_pos_y", "news_pos_x", "news_pos_y", "weather_refresh_seconds", "weather_use_system_location", "weather_location_override", "news_source", "news_custom_url", "news_fps", "news_audio_enabled", "login_screen_integration", "boot_screen_integration"]
       }
     ]
   },
@@ -345,6 +397,10 @@ pub fn settings_ui_blueprint_json() -> &'static str {
     {"field":"show_background_layer"},
     {"field":"show_quote_layer"},
     {"field":"show_clock_layer"},
+    {"field":"show_weather_layer"},
+    {"field":"show_news_layer"},
+    {"field":"weather_location_override","visible_when":{"field":"weather_use_system_location","equals":false},"enabled_when":{"field":"weather_use_system_location","equals":false}},
+    {"field":"news_custom_url","visible_when":{"field":"news_source","equals":"custom"},"enabled_when":{"field":"news_source","equals":"custom"}},
     {"field":"login_screen_integration"},
     {"field":"boot_screen_integration"}
   ]
@@ -413,6 +469,19 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut show_background_layer = None::<bool>;
     let mut show_quote_layer = None::<bool>;
     let mut show_clock_layer = None::<bool>;
+    let mut show_weather_layer = None::<bool>;
+    let mut show_news_layer = None::<bool>;
+    let mut weather_pos_x = None::<i32>;
+    let mut weather_pos_y = None::<i32>;
+    let mut news_pos_x = None::<i32>;
+    let mut news_pos_y = None::<i32>;
+    let mut weather_refresh_seconds = None::<u64>;
+    let mut weather_use_system_location = None::<bool>;
+    let mut weather_location_override = None::<String>;
+    let mut news_source = None::<String>;
+    let mut news_custom_url = None::<String>;
+    let mut news_fps = None::<f32>;
+    let mut news_audio_enabled = None::<bool>;
     let mut login_screen_integration = None::<bool>;
     let mut boot_screen_integration = None::<bool>;
 
@@ -476,6 +545,19 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "show_background_layer" => show_background_layer = parse_bool(value),
             "show_quote_layer" => show_quote_layer = parse_bool(value),
             "show_clock_layer" => show_clock_layer = parse_bool(value),
+            "show_weather_layer" => show_weather_layer = parse_bool(value),
+            "show_news_layer" => show_news_layer = parse_bool(value),
+            "weather_pos_x" => weather_pos_x = parse_i32(value),
+            "weather_pos_y" => weather_pos_y = parse_i32(value),
+            "news_pos_x" => news_pos_x = parse_i32(value),
+            "news_pos_y" => news_pos_y = parse_i32(value),
+            "weather_refresh_seconds" => weather_refresh_seconds = value.parse::<u64>().ok(),
+            "weather_use_system_location" => weather_use_system_location = parse_bool(value),
+            "weather_location_override" => weather_location_override = parse_string(value),
+            "news_source" => news_source = parse_string(value),
+            "news_custom_url" => news_custom_url = parse_string(value),
+            "news_fps" => news_fps = value.parse::<f32>().ok(),
+            "news_audio_enabled" => news_audio_enabled = parse_bool(value),
             "login_screen_integration" => login_screen_integration = parse_bool(value),
             "boot_screen_integration" => boot_screen_integration = parse_bool(value),
             _ => {}
@@ -538,6 +620,19 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         show_background_layer: show_background_layer.unwrap_or(true),
         show_quote_layer: show_quote_layer.unwrap_or(true),
         show_clock_layer: show_clock_layer.unwrap_or(true),
+        show_weather_layer: show_weather_layer.unwrap_or(true),
+        show_news_layer: show_news_layer.unwrap_or(true),
+        weather_pos_x: weather_pos_x.unwrap_or(120),
+        weather_pos_y: weather_pos_y.unwrap_or(120),
+        news_pos_x: news_pos_x.unwrap_or(980),
+        news_pos_y: news_pos_y.unwrap_or(180),
+        weather_refresh_seconds: weather_refresh_seconds.unwrap_or(600).max(60),
+        weather_use_system_location: weather_use_system_location.unwrap_or(true),
+        weather_location_override: weather_location_override.unwrap_or_default(),
+        news_source: news_source.unwrap_or_else(|| "euronews".to_string()),
+        news_custom_url: news_custom_url.unwrap_or_default(),
+        news_fps: news_fps.unwrap_or(1.0).clamp(0.05, 30.0),
+        news_audio_enabled: news_audio_enabled.unwrap_or(false),
         login_screen_integration: login_screen_integration.unwrap_or(false),
         boot_screen_integration: boot_screen_integration.unwrap_or(false),
     })

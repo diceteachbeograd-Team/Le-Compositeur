@@ -41,10 +41,17 @@ cargo run -p wc-gui
 ```
 
 ## GUI structure (current)
-- `Images`: image sources + wallpaper backend apply
-- `Quotes`: quote sources/order only
-- `Elements`: 16:9 layout editor with draggable `Quote` and `Clock` boxes, per-element settings, and layer toggles (`Background`, `Quote`, `Clock`)
-- `System`: runtime + autostart + login/boot integration toggles
+- `Ordering`: 16:9 layout frame with draggable neon boxes and layer on/off toggles (`Background`, `Quote`, `Clock`, `Weather`, `News`)
+- `Images`: background source + wallpaper apply/backend
+- `Quotes`: quote source/order
+- `Style`: text stroke/undercolor/shadow
+- `Weather`: Widget 1 settings (system location/manual location, refresh interval, current weather preview)
+- `News`: Widget 2 settings (free channel presets, custom URL, FPS, audio toggle)
+- `System`: runtime, startup behavior, autostart checkbox, and integration toggles
+
+### Startup reliability
+- Autostart now writes a delayed startup entry (`sleep 12`), runs one warmup cycle, then starts loop mode.
+- This reduces bad wallpaper state right after login/reboot on slower desktop startup sequences.
 
 ## Documentation
 Detailed documentation moved to:

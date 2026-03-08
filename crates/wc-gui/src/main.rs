@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 use wc_core::{
     AppConfig, builtin_image_presets, builtin_quote_presets, default_config_path, expand_tilde,
     list_background_images, load_config, load_quotes, to_config_toml,
@@ -65,6 +66,8 @@ enum GuiTab {
     Images,
     Quotes,
     Style,
+    Weather,
+    News,
     System,
 }
 
@@ -80,8 +83,8 @@ enum UiLang {
 enum LayoutElement {
     Quote,
     Clock,
-    WidgetA,
-    WidgetB,
+    Weather,
+    News,
 }
 
 struct WcGuiApp {
@@ -95,14 +98,10 @@ struct WcGuiApp {
     active_tab: GuiTab,
     ui_lang: UiLang,
     selected_element: LayoutElement,
-    widget_url: String,
-    widget_source: String,
-    widget_a_enabled: bool,
-    widget_b_enabled: bool,
-    widget_a_pos_x: i32,
-    widget_a_pos_y: i32,
-    widget_b_pos_x: i32,
-    widget_b_pos_y: i32,
+    weather_status: String,
+    weather_details: Vec<String>,
+    weather_last_refresh: Option<Instant>,
+    autostart_toggle: bool,
     ordering_bg_texture: Option<egui::TextureHandle>,
 }
 
@@ -126,14 +125,10 @@ impl WcGuiApp {
             active_tab: GuiTab::Ordering,
             ui_lang: detect_ui_lang(),
             selected_element: LayoutElement::Quote,
-            widget_url: String::new(),
-            widget_source: "custom_url".to_string(),
-            widget_a_enabled: true,
-            widget_b_enabled: true,
-            widget_a_pos_x: 120,
-            widget_a_pos_y: 120,
-            widget_b_pos_x: 980,
-            widget_b_pos_y: 180,
+            weather_status: "No weather data yet".to_string(),
+            weather_details: Vec::new(),
+            weather_last_refresh: None,
+            autostart_toggle: Self::autostart_enabled(),
             ordering_bg_texture: None,
         }
     }
@@ -227,6 +222,48 @@ impl WcGuiApp {
                 "Sta: postavlja renderovanu sliku kao pozadinu. Kako: uključi i izaberi backend/fit. Preporuka: prvo testiraj sa Run Once.",
                 "作用: 将渲染结果设置为当前壁纸。方法: 启用后选择后端和适配模式。建议: 先用 Run Once 测试。"
             ),
+            "autostart_enable" => self.t(
+                "What: starts wallpaper loop automatically after login. How: writes/removes a desktop autostart entry with a startup delay. Recommended: enable for daily usage.",
+                "Was: startet die Wallpaper-Schleife automatisch nach dem Login. Wie: erstellt/entfernt einen Desktop-Autostart mit Startverzögerung. Empfehlung: für täglichen Einsatz aktivieren.",
+                "Sta: automatski pokreće wallpaper petlju posle prijave. Kako: upisuje/uklanja autostart unos sa kašnjenjem pri pokretanju. Preporuka: uključi za svakodnevnu upotrebu.",
+                "作用: 登录后自动启动壁纸循环。方法: 写入/移除带延迟的自动启动项。建议: 日常使用可开启。"
+            ),
+            "weather_refresh_seconds" => self.t(
+                "What: weather update interval. How: app refreshes weather in this period when Weather layer is enabled. Recommended: 600 seconds.",
+                "Was: Aktualisierungsintervall für Wetter. Wie: bei aktivem Wetter-Layer werden Daten in diesem Abstand neu geholt. Empfehlung: 600 Sekunden.",
+                "Sta: interval osvežavanja vremena. Kako: kada je Weather sloj uključen, podaci se obnavljaju u ovom periodu. Preporuka: 600 sekundi.",
+                "作用: 天气刷新间隔。方法: 启用天气图层后按该周期更新。建议: 600 秒。"
+            ),
+            "weather_use_system_location" => self.t(
+                "What: use auto-detected location for weather. How: resolves location via network geolocation. Recommended: keep enabled unless detection is wrong.",
+                "Was: automatisch erkannten Standort für Wetter nutzen. Wie: Standort wird per Netzwerk-Geolokalisierung bestimmt. Empfehlung: aktiviert lassen, außer die Erkennung ist falsch.",
+                "Sta: koristi automatski otkrivenu lokaciju za vreme. Kako: lokacija se određuje mrežnom geolokacijom. Preporuka: ostavi uključeno osim ako detekcija greši.",
+                "作用: 使用自动定位获取天气。方法: 通过网络地理定位解析位置。建议: 除非定位错误，否则保持开启。"
+            ),
+            "weather_location_override" => self.t(
+                "What: manual weather location override. How: set city or city,country (example: Belgrade,RS). Recommended: use only if auto-location is inaccurate.",
+                "Was: manuelle Wetter-Location. Wie: Stadt oder Stadt,Ländercode eintragen (z. B. Belgrade,RS). Empfehlung: nur nutzen, wenn Auto-Lokalisierung ungenau ist.",
+                "Sta: ručno zadavanje lokacije za vreme. Kako: unesi grad ili grad,država (npr. Belgrade,RS). Preporuka: koristi samo ako auto-lokacija nije tačna.",
+                "作用: 手动天气位置覆盖。方法: 填写城市或城市,国家代码（如 Belgrade,RS）。建议: 仅在自动定位不准时使用。"
+            ),
+            "news_source" => self.t(
+                "What: news/documentary stream source used by the News widget. How: choose one from the list or custom URL. Recommended: start with Euronews.",
+                "Was: Quelle für News/Doku-Stream im News-Widget. Wie: aus Liste wählen oder eigene URL nutzen. Empfehlung: mit Euronews starten.",
+                "Sta: izvor vesti/dokumentarnog strima za News widget. Kako: izaberi iz liste ili koristi sopstveni URL. Preporuka: kreni sa Euronews.",
+                "作用: News 小组件的视频来源。方法: 从列表选择或使用自定义 URL。建议: 先用 Euronews。"
+            ),
+            "news_fps" => self.t(
+                "What: playback frame rate target for future embedded stream widget. How: choose between 0.05 and 30 FPS. Recommended: 1-5 FPS for low resource usage.",
+                "Was: Ziel-Bildrate für zukünftiges eingebettetes Stream-Widget. Wie: zwischen 0,05 und 30 FPS wählen. Empfehlung: 1-5 FPS für geringe Last.",
+                "Sta: ciljna brzina kadrova za budući ugrađeni stream widget. Kako: izaberi između 0,05 i 30 FPS. Preporuka: 1-5 FPS za manju potrošnju resursa.",
+                "作用: 未来内嵌流媒体组件的目标帧率。方法: 在 0.05 到 30 FPS 间设置。建议: 1-5 FPS 以降低资源占用。"
+            ),
+            "news_audio_enabled" => self.t(
+                "What: audio flag for future embedded stream playback. How: toggle on/off. Recommended: off by default to avoid disruptive playback.",
+                "Was: Audio-Schalter für zukünftige eingebettete Stream-Wiedergabe. Wie: ein/aus. Empfehlung: standardmäßig aus, um störende Wiedergabe zu vermeiden.",
+                "Sta: audio prekidač za buduću ugrađenu reprodukciju streama. Kako: uključi/isključi. Preporuka: podrazumevano isključeno zbog ometanja.",
+                "作用: 未来内嵌流播放的音频开关。方法: 开/关。建议: 默认关闭，避免打扰。"
+            ),
             "login_screen_integration" => self.t(
                 "What: enable login-screen background integration. How: keeps this feature toggle in config for the login integration workflow. Recommended: keep off until login integration is validated on your distro.",
                 "Was: Login-Screen-Hintergrund-Integration aktivieren. Wie: speichert den Schalter in der Config für den Login-Workflow. Empfehlung: ausgeschaltet lassen, bis die Login-Integration auf deiner Distribution validiert ist.",
@@ -261,6 +298,7 @@ impl WcGuiApp {
                 self.status = "Config loaded".to_string();
                 self.refresh_thumbnails(ctx);
                 self.refresh_quotes_preview();
+                self.autostart_toggle = Self::autostart_enabled();
             }
             Err(e) => self.status = format!("Load failed: {e}"),
         }
@@ -435,7 +473,7 @@ impl WcGuiApp {
             return;
         };
 
-        let config = self.config_path.clone();
+        let config = shell_quote_single(&self.config_path);
         if let Some(parent) = path.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
         {
@@ -444,11 +482,14 @@ impl WcGuiApp {
         }
 
         let content = format!(
-            "[Desktop Entry]\nType=Application\nName=Wallpaper Composer Runner\nComment=Start Wallpaper Composer background runner on login\nExec=wc-cli run --config {}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+            "[Desktop Entry]\nType=Application\nName=Wallpaper Composer Runner\nComment=Start Wallpaper Composer background runner on login\nExec=/usr/bin/bash -lc \"sleep 12; wc-cli run --once --config {0}; wc-cli run --config {0}\"\nTerminal=false\nX-GNOME-Autostart-enabled=true\nX-GNOME-Autostart-Delay=12\n",
             config
         );
         match std::fs::write(&path, content) {
-            Ok(()) => self.status = format!("Autostart installed: {}", path.display()),
+            Ok(()) => {
+                self.autostart_toggle = true;
+                self.status = format!("Autostart installed: {}", path.display());
+            }
             Err(e) => self.status = format!("Autostart install failed: {e}"),
         }
     }
@@ -463,8 +504,19 @@ impl WcGuiApp {
             return;
         }
         match std::fs::remove_file(&path) {
-            Ok(()) => self.status = format!("Autostart removed: {}", path.display()),
+            Ok(()) => {
+                self.autostart_toggle = false;
+                self.status = format!("Autostart removed: {}", path.display());
+            }
             Err(e) => self.status = format!("Autostart remove failed: {e}"),
+        }
+    }
+
+    fn sync_autostart_toggle(&mut self) {
+        if self.autostart_toggle && !Self::autostart_enabled() {
+            self.install_autostart();
+        } else if !self.autostart_toggle && Self::autostart_enabled() {
+            self.remove_autostart();
         }
     }
 
@@ -482,6 +534,33 @@ impl WcGuiApp {
             Err(e) => {
                 self.status = format!("Runner state check failed: {e}");
                 self.runner = None;
+            }
+        }
+    }
+
+    fn refresh_weather_if_needed(&mut self) {
+        if !self.cfg.show_weather_layer {
+            return;
+        }
+        let interval = Duration::from_secs(self.cfg.weather_refresh_seconds.max(60));
+        if let Some(last) = self.weather_last_refresh
+            && last.elapsed() < interval
+        {
+            return;
+        }
+        self.refresh_weather_now();
+    }
+
+    fn refresh_weather_now(&mut self) {
+        match fetch_weather_snapshot(&self.cfg) {
+            Ok((headline, details)) => {
+                self.weather_status = headline;
+                self.weather_details = details;
+                self.weather_last_refresh = Some(Instant::now());
+            }
+            Err(err) => {
+                self.weather_status = format!("Weather refresh failed: {err}");
+                self.weather_details.clear();
             }
         }
     }
@@ -845,8 +924,8 @@ impl WcGuiApp {
                 .on_hover_text("Enable/disable rendered background layer.");
             ui.checkbox(&mut self.cfg.show_quote_layer, "Quote");
             ui.checkbox(&mut self.cfg.show_clock_layer, "Clock");
-            ui.checkbox(&mut self.widget_a_enabled, "Widget A");
-            ui.checkbox(&mut self.widget_b_enabled, "Widget B");
+            ui.checkbox(&mut self.cfg.show_weather_layer, "Weather");
+            ui.checkbox(&mut self.cfg.show_news_layer, "News");
         });
 
         ui.horizontal(|ui| {
@@ -855,8 +934,8 @@ impl WcGuiApp {
                 .selected_text(match self.selected_element {
                     LayoutElement::Quote => "Quote Box",
                     LayoutElement::Clock => "Clock",
-                    LayoutElement::WidgetA => "Widget A",
-                    LayoutElement::WidgetB => "Widget B",
+                    LayoutElement::Weather => "Weather",
+                    LayoutElement::News => "News",
                 })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
@@ -867,14 +946,10 @@ impl WcGuiApp {
                     ui.selectable_value(&mut self.selected_element, LayoutElement::Clock, "Clock");
                     ui.selectable_value(
                         &mut self.selected_element,
-                        LayoutElement::WidgetA,
-                        "Widget A",
+                        LayoutElement::Weather,
+                        "Weather",
                     );
-                    ui.selectable_value(
-                        &mut self.selected_element,
-                        LayoutElement::WidgetB,
-                        "Widget B",
-                    );
+                    ui.selectable_value(&mut self.selected_element, LayoutElement::News, "News");
                 });
         });
 
@@ -924,18 +999,18 @@ impl WcGuiApp {
             ),
             clock_size,
         );
-        let widget_size = egui::vec2(260.0 * sx.max(0.2), 120.0 * sy.max(0.2));
-        let mut widget_a_rect = egui::Rect::from_min_size(
+        let widget_size = egui::vec2(300.0 * sx.max(0.2), 140.0 * sy.max(0.2));
+        let mut weather_rect = egui::Rect::from_min_size(
             egui::pos2(
-                rect.left() + self.widget_a_pos_x as f32 * sx,
-                rect.top() + self.widget_a_pos_y as f32 * sy,
+                rect.left() + self.cfg.weather_pos_x as f32 * sx,
+                rect.top() + self.cfg.weather_pos_y as f32 * sy,
             ),
             widget_size,
         );
-        let mut widget_b_rect = egui::Rect::from_min_size(
+        let mut news_rect = egui::Rect::from_min_size(
             egui::pos2(
-                rect.left() + self.widget_b_pos_x as f32 * sx,
-                rect.top() + self.widget_b_pos_y as f32 * sy,
+                rect.left() + self.cfg.news_pos_x as f32 * sx,
+                rect.top() + self.cfg.news_pos_y as f32 * sy,
             ),
             widget_size,
         );
@@ -947,10 +1022,10 @@ impl WcGuiApp {
                 self.selected_element = LayoutElement::Quote;
             } else if clock_rect.contains(pos) {
                 self.selected_element = LayoutElement::Clock;
-            } else if widget_a_rect.contains(pos) {
-                self.selected_element = LayoutElement::WidgetA;
-            } else if widget_b_rect.contains(pos) {
-                self.selected_element = LayoutElement::WidgetB;
+            } else if weather_rect.contains(pos) {
+                self.selected_element = LayoutElement::Weather;
+            } else if news_rect.contains(pos) {
+                self.selected_element = LayoutElement::News;
             }
         }
         if response.dragged()
@@ -969,13 +1044,13 @@ impl WcGuiApp {
                     self.cfg.clock_pos_x = world_x;
                     self.cfg.clock_pos_y = world_y;
                 }
-                LayoutElement::WidgetA => {
-                    self.widget_a_pos_x = world_x;
-                    self.widget_a_pos_y = world_y;
+                LayoutElement::Weather => {
+                    self.cfg.weather_pos_x = world_x;
+                    self.cfg.weather_pos_y = world_y;
                 }
-                LayoutElement::WidgetB => {
-                    self.widget_b_pos_x = world_x;
-                    self.widget_b_pos_y = world_y;
+                LayoutElement::News => {
+                    self.cfg.news_pos_x = world_x;
+                    self.cfg.news_pos_y = world_y;
                 }
             }
             quote_rect = egui::Rect::from_min_size(
@@ -992,17 +1067,17 @@ impl WcGuiApp {
                 ),
                 clock_size,
             );
-            widget_a_rect = egui::Rect::from_min_size(
+            weather_rect = egui::Rect::from_min_size(
                 egui::pos2(
-                    rect.left() + self.widget_a_pos_x as f32 * sx,
-                    rect.top() + self.widget_a_pos_y as f32 * sy,
+                    rect.left() + self.cfg.weather_pos_x as f32 * sx,
+                    rect.top() + self.cfg.weather_pos_y as f32 * sy,
                 ),
                 widget_size,
             );
-            widget_b_rect = egui::Rect::from_min_size(
+            news_rect = egui::Rect::from_min_size(
                 egui::pos2(
-                    rect.left() + self.widget_b_pos_x as f32 * sx,
-                    rect.top() + self.widget_b_pos_y as f32 * sy,
+                    rect.left() + self.cfg.news_pos_x as f32 * sx,
+                    rect.top() + self.cfg.news_pos_y as f32 * sy,
                 ),
                 widget_size,
             );
@@ -1050,44 +1125,44 @@ impl WcGuiApp {
                 egui::Color32::WHITE,
             );
         }
-        if self.widget_a_enabled {
-            let neon = if self.selected_element == LayoutElement::WidgetA {
+        if self.cfg.show_weather_layer {
+            let neon = if self.selected_element == LayoutElement::Weather {
                 egui::Color32::from_rgb(128, 255, 0)
             } else {
                 egui::Color32::from_rgb(74, 140, 48)
             };
-            painter.rect_filled(widget_a_rect, 4.0, neon.linear_multiply(0.15));
+            painter.rect_filled(weather_rect, 4.0, neon.linear_multiply(0.15));
             painter.rect_stroke(
-                widget_a_rect,
+                weather_rect,
                 4.0,
                 egui::Stroke::new(2.0, neon),
                 egui::StrokeKind::Middle,
             );
             painter.text(
-                widget_a_rect.left_top() + egui::vec2(6.0, 6.0),
+                weather_rect.left_top() + egui::vec2(6.0, 6.0),
                 egui::Align2::LEFT_TOP,
-                "Widget A",
+                "Weather",
                 egui::FontId::proportional(12.0),
                 egui::Color32::WHITE,
             );
         }
-        if self.widget_b_enabled {
-            let neon = if self.selected_element == LayoutElement::WidgetB {
+        if self.cfg.show_news_layer {
+            let neon = if self.selected_element == LayoutElement::News {
                 egui::Color32::from_rgb(255, 120, 0)
             } else {
                 egui::Color32::from_rgb(166, 91, 28)
             };
-            painter.rect_filled(widget_b_rect, 4.0, neon.linear_multiply(0.15));
+            painter.rect_filled(news_rect, 4.0, neon.linear_multiply(0.15));
             painter.rect_stroke(
-                widget_b_rect,
+                news_rect,
                 4.0,
                 egui::Stroke::new(2.0, neon),
                 egui::StrokeKind::Middle,
             );
             painter.text(
-                widget_b_rect.left_top() + egui::vec2(6.0, 6.0),
+                news_rect.left_top() + egui::vec2(6.0, 6.0),
                 egui::Align2::LEFT_TOP,
-                "Widget B",
+                "News",
                 egui::FontId::proportional(12.0),
                 egui::Color32::WHITE,
             );
@@ -1196,46 +1271,83 @@ impl WcGuiApp {
                     );
                 });
             }
-            LayoutElement::WidgetA | LayoutElement::WidgetB => {
-                let (enabled, x, y) = if self.selected_element == LayoutElement::WidgetA {
-                    (
-                        &mut self.widget_a_enabled,
-                        &mut self.widget_a_pos_x,
-                        &mut self.widget_a_pos_y,
-                    )
-                } else {
-                    (
-                        &mut self.widget_b_enabled,
-                        &mut self.widget_b_pos_x,
-                        &mut self.widget_b_pos_y,
-                    )
-                };
-                ui.heading("Widget Placeholder");
-                ui.checkbox(enabled, "Enabled");
+            LayoutElement::Weather => {
+                ui.heading("Weather Widget Settings");
+                ui.checkbox(&mut self.cfg.show_weather_layer, "Enabled");
                 ui.horizontal(|ui| {
                     ui.label("X");
-                    ui.add(egui::DragValue::new(x).speed(1));
+                    ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_x).speed(1));
                     ui.label("Y");
-                    ui.add(egui::DragValue::new(y).speed(1));
+                    ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_y).speed(1));
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Widget source");
-                    egui::ComboBox::from_id_salt("future_widget_source")
-                        .selected_text(&self.widget_source)
+                    ui.label("Refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.weather_refresh_seconds)
+                            .speed(10)
+                            .range(60..=3600),
+                    )
+                    .on_hover_text(self.hover_text("weather_refresh_seconds"));
+                    if ui.button("Refresh now").clicked() {
+                        self.refresh_weather_now();
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.checkbox(
+                        &mut self.cfg.weather_use_system_location,
+                        "Use system location",
+                    )
+                    .on_hover_text(self.hover_text("weather_use_system_location"));
+                });
+                if !self.cfg.weather_use_system_location {
+                    ui.horizontal(|ui| {
+                        ui.label("Location");
+                        ui.text_edit_singleline(&mut self.cfg.weather_location_override)
+                            .on_hover_text(self.hover_text("weather_location_override"));
+                    });
+                }
+            }
+            LayoutElement::News => {
+                ui.heading("News Widget Settings");
+                ui.checkbox(&mut self.cfg.show_news_layer, "Enabled");
+                ui.horizontal(|ui| {
+                    ui.label("X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_pos_y).speed(1));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Source");
+                    egui::ComboBox::from_id_salt("news_source_ordering")
+                        .selected_text(news_source_label(&self.cfg.news_source))
                         .show_ui(ui, |ui| {
-                            for s in ["custom_url", "euronews", "aljazeera", "cnn", "weather"] {
-                                ui.selectable_value(&mut self.widget_source, s.to_string(), s);
+                            for &(id, label) in news_sources() {
+                                ui.selectable_value(
+                                    &mut self.cfg.news_source,
+                                    id.to_string(),
+                                    label,
+                                );
                             }
-                        });
+                        })
+                        .response
+                        .on_hover_text(self.hover_text("news_source"));
                 });
+                if self.cfg.news_source == "custom" {
+                    ui.horizontal(|ui| {
+                        ui.label("Custom URL");
+                        ui.text_edit_singleline(&mut self.cfg.news_custom_url);
+                    });
+                }
                 ui.horizontal(|ui| {
-                    ui.label("Widget URL / stream");
-                    ui.text_edit_singleline(&mut self.widget_url);
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Playback fps");
-                    let mut fps = 15_i32;
-                    ui.add(egui::DragValue::new(&mut fps).speed(1).range(1..=60));
+                    ui.label("FPS");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_fps)
+                            .speed(0.1)
+                            .range(0.05..=30.0),
+                    )
+                    .on_hover_text(self.hover_text("news_fps"));
+                    ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
+                        .on_hover_text(self.hover_text("news_audio_enabled"));
                 });
             }
         }
@@ -1285,6 +1397,98 @@ impl WcGuiApp {
         });
     }
 
+    fn render_weather_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Weather");
+        ui.label("Widget 1: weather data for your desktop location");
+        ui.separator();
+        ui.checkbox(&mut self.cfg.show_weather_layer, "Enable weather widget");
+        ui.horizontal(|ui| {
+            ui.label("Refresh seconds");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.weather_refresh_seconds)
+                    .speed(10)
+                    .range(60..=3600),
+            )
+            .on_hover_text(self.hover_text("weather_refresh_seconds"));
+            if ui.button("Refresh now").clicked() {
+                self.refresh_weather_now();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.checkbox(
+                &mut self.cfg.weather_use_system_location,
+                "Use system location",
+            )
+            .on_hover_text(self.hover_text("weather_use_system_location"));
+        });
+        if !self.cfg.weather_use_system_location {
+            ui.horizontal(|ui| {
+                ui.label("Location override");
+                ui.text_edit_singleline(&mut self.cfg.weather_location_override)
+                    .on_hover_text(self.hover_text("weather_location_override"));
+            });
+        }
+        ui.horizontal(|ui| {
+            ui.label("Position X");
+            ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_x).speed(1));
+            ui.label("Y");
+            ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_y).speed(1));
+        });
+        ui.separator();
+        ui.label(&self.weather_status);
+        for line in &self.weather_details {
+            ui.label(line);
+        }
+    }
+
+    fn render_news_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("News");
+        ui.label("Widget 2: configurable live/news stream source.");
+        ui.separator();
+        ui.checkbox(&mut self.cfg.show_news_layer, "Enable news widget");
+        ui.horizontal(|ui| {
+            ui.label("Channel");
+            egui::ComboBox::from_id_salt("news_source_tab")
+                .selected_text(news_source_label(&self.cfg.news_source))
+                .show_ui(ui, |ui| {
+                    for &(id, label) in news_sources() {
+                        ui.selectable_value(&mut self.cfg.news_source, id.to_string(), label);
+                    }
+                })
+                .response
+                .on_hover_text(self.hover_text("news_source"));
+        });
+        if self.cfg.news_source == "custom" {
+            ui.horizontal(|ui| {
+                ui.label("Custom URL");
+                ui.text_edit_singleline(&mut self.cfg.news_custom_url);
+            });
+        }
+        ui.horizontal(|ui| {
+            ui.label("Playback FPS");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.news_fps)
+                    .speed(0.1)
+                    .range(0.05..=30.0),
+            )
+            .on_hover_text(self.hover_text("news_fps"));
+            ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
+                .on_hover_text(self.hover_text("news_audio_enabled"));
+        });
+        ui.horizontal(|ui| {
+            ui.label("Position X");
+            ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
+            ui.label("Y");
+            ui.add(egui::DragValue::new(&mut self.cfg.news_pos_y).speed(1));
+        });
+        ui.separator();
+        ui.label("Selected stream URL:");
+        ui.monospace(news_source_url(
+            &self.cfg.news_source,
+            &self.cfg.news_custom_url,
+        ));
+    }
+
     fn render_system_tab(&mut self, ui: &mut egui::Ui) {
         ui.heading("Runtime");
         ui.horizontal(|ui| {
@@ -1295,6 +1499,17 @@ impl WcGuiApp {
         });
         ui.separator();
         ui.heading("Autostart");
+        ui.horizontal(|ui| {
+            let response = ui
+                .checkbox(
+                    &mut self.autostart_toggle,
+                    "Start automatically after login",
+                )
+                .on_hover_text(self.hover_text("autostart_enable"));
+            if response.changed() {
+                self.sync_autostart_toggle();
+            }
+        });
         ui.horizontal(|ui| {
             ui.label(if Self::autostart_enabled() {
                 "Status: enabled"
@@ -1320,6 +1535,37 @@ impl WcGuiApp {
             "Enable boot-screen integration",
         )
         .on_hover_text(self.hover_text("boot_screen_integration"));
+        ui.separator();
+        ui.heading("Widget Integrations");
+        ui.horizontal(|ui| {
+            ui.label("News channel");
+            egui::ComboBox::from_id_salt("news_source_system")
+                .selected_text(news_source_label(&self.cfg.news_source))
+                .show_ui(ui, |ui| {
+                    for &(id, label) in news_sources() {
+                        ui.selectable_value(&mut self.cfg.news_source, id.to_string(), label);
+                    }
+                })
+                .response
+                .on_hover_text(self.hover_text("news_source"));
+        });
+        if self.cfg.news_source == "custom" {
+            ui.horizontal(|ui| {
+                ui.label("Custom URL");
+                ui.text_edit_singleline(&mut self.cfg.news_custom_url);
+            });
+        }
+        ui.horizontal(|ui| {
+            ui.label("News FPS");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.news_fps)
+                    .speed(0.1)
+                    .range(0.05..=30.0),
+            )
+            .on_hover_text(self.hover_text("news_fps"));
+            ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
+                .on_hover_text(self.hover_text("news_audio_enabled"));
+        });
     }
 }
 
@@ -1367,6 +1613,187 @@ fn run_kdialog_picker(start: &Path, directory: bool) -> Option<PathBuf> {
     Some(PathBuf::from(value))
 }
 
+fn shell_quote_single(input: &str) -> String {
+    if input.is_empty() {
+        return "''".to_string();
+    }
+    format!("'{}'", input.replace('\'', "'\"'\"'"))
+}
+
+fn news_sources() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("euronews", "News: Euronews Live"),
+        ("aljazeera", "News: Al Jazeera English"),
+        ("france24", "News: France24 English"),
+        ("dw", "News: DW News"),
+        ("yahoo_finance", "Boerse: Yahoo Finance Live"),
+        ("bloomberg_tv", "Boerse: Bloomberg TV"),
+        ("techcrunch", "Tech: TechCrunch Live"),
+        ("theverge", "Tech: The Verge"),
+        ("nasa_tv", "Docs: NASA TV"),
+        ("documentary_heaven", "Docs: DocumentaryHeaven"),
+        ("custom", "Custom URL"),
+    ]
+}
+
+fn news_source_label(id: &str) -> &'static str {
+    news_sources()
+        .iter()
+        .find_map(|(k, v)| if *k == id { Some(*v) } else { None })
+        .unwrap_or("Custom URL")
+}
+
+fn news_source_url(id: &str, custom: &str) -> String {
+    match id {
+        "euronews" => "https://www.youtube.com/watch?v=pykpO5kQJ98".to_string(),
+        "aljazeera" => "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(),
+        "france24" => "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(),
+        "dw" => "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(),
+        "yahoo_finance" => "https://www.youtube.com/watch?v=9Auq9mYxFEE".to_string(),
+        "bloomberg_tv" => "https://www.youtube.com/watch?v=dp8PhLsUcFE".to_string(),
+        "techcrunch" => "https://techcrunch.com/".to_string(),
+        "theverge" => "https://www.theverge.com/tech".to_string(),
+        "nasa_tv" => "https://www.youtube.com/watch?v=21X5lGlDOfg".to_string(),
+        "documentary_heaven" => "https://documentaryheaven.com/".to_string(),
+        _ => custom.to_string(),
+    }
+}
+
+fn weather_code_label(code: i64) -> &'static str {
+    match code {
+        0 => "Clear sky",
+        1..=3 => "Partly cloudy",
+        45 | 48 => "Fog",
+        51 | 53 | 55 => "Drizzle",
+        56 | 57 => "Freezing drizzle",
+        61 | 63 | 65 => "Rain",
+        66 | 67 => "Freezing rain",
+        71 | 73 | 75 | 77 => "Snow",
+        80..=82 => "Rain showers",
+        85 | 86 => "Snow showers",
+        95 => "Thunderstorm",
+        96 | 99 => "Thunderstorm with hail",
+        _ => "Unknown",
+    }
+}
+
+fn parse_lat_lon_from_geocode(
+    client: &reqwest::blocking::Client,
+    query: &str,
+) -> Option<(f64, f64)> {
+    let query = query.trim();
+    if query.is_empty() {
+        return None;
+    }
+    let safe_query = query.replace(' ', "+");
+    let url = format!(
+        "https://geocoding-api.open-meteo.com/v1/search?name={safe_query}&count=1&language=en&format=json"
+    );
+    let geo = client
+        .get(url)
+        .send()
+        .ok()?
+        .json::<serde_json::Value>()
+        .ok()?;
+    let first = geo.get("results")?.as_array()?.first()?;
+    let lat = first.get("latitude")?.as_f64()?;
+    let lon = first.get("longitude")?.as_f64()?;
+    Some((lat, lon))
+}
+
+fn fetch_weather_snapshot(cfg: &AppConfig) -> Result<(String, Vec<String>), String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .build()
+        .map_err(|e| format!("http init failed: {e}"))?;
+
+    let (lat, lon, location_name) = if cfg.weather_use_system_location {
+        let ip_geo = client
+            .get("https://ipapi.co/json/")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .map_err(|e| format!("location lookup failed: {e}"))?
+            .json::<serde_json::Value>()
+            .map_err(|e| format!("location payload invalid: {e}"))?;
+        let lat = ip_geo
+            .get("latitude")
+            .and_then(|v| v.as_f64())
+            .ok_or("location payload misses latitude")?;
+        let lon = ip_geo
+            .get("longitude")
+            .and_then(|v| v.as_f64())
+            .ok_or("location payload misses longitude")?;
+        let city = ip_geo
+            .get("city")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown city");
+        let country = ip_geo
+            .get("country_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown country");
+        (lat, lon, format!("{city}, {country}"))
+    } else if let Some((lat, lon)) =
+        parse_lat_lon_from_geocode(&client, &cfg.weather_location_override)
+    {
+        (lat, lon, cfg.weather_location_override.clone())
+    } else {
+        return Err("manual location could not be resolved (use e.g. Belgrade,RS)".to_string());
+    };
+
+    let weather_url = format!(
+        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,precipitation&timezone=auto"
+    );
+    let payload = client
+        .get(weather_url)
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| format!("weather request failed: {e}"))?
+        .json::<serde_json::Value>()
+        .map_err(|e| format!("weather payload invalid: {e}"))?;
+
+    let current = payload
+        .get("current")
+        .ok_or("weather payload has no 'current' field")?;
+    let temp = current
+        .get("temperature_2m")
+        .and_then(|v| v.as_f64())
+        .ok_or("weather payload misses temperature_2m")?;
+    let apparent = current
+        .get("apparent_temperature")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(temp);
+    let humidity = current
+        .get("relative_humidity_2m")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let wind_speed = current
+        .get("wind_speed_10m")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let wind_dir = current
+        .get("wind_direction_10m")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let precipitation = current
+        .get("precipitation")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let code = current
+        .get("weather_code")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(-1);
+    let condition = weather_code_label(code);
+
+    let headline = format!("{location_name}: {temp:.1}°C ({condition}) | feels {apparent:.1}°C");
+    let details = vec![
+        format!("Humidity: {humidity:.0}%"),
+        format!("Wind: {wind_speed:.1} km/h @ {wind_dir:.0}°"),
+        format!("Precipitation: {precipitation:.1} mm"),
+        "Source: Open-Meteo + IP geolocation".to_string(),
+    ];
+    Ok((headline, details))
+}
+
 fn detect_ui_lang() -> UiLang {
     let locale = std::env::var("LC_ALL")
         .ok()
@@ -1409,6 +1836,7 @@ impl eframe::App for WcGuiApp {
         if self.quote_preview.is_empty() {
             self.refresh_quotes_preview();
         }
+        self.refresh_weather_if_needed();
 
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -1468,6 +1896,8 @@ impl eframe::App for WcGuiApp {
                 ui.selectable_value(&mut self.active_tab, GuiTab::Images, "Images");
                 ui.selectable_value(&mut self.active_tab, GuiTab::Quotes, "Quotes");
                 ui.selectable_value(&mut self.active_tab, GuiTab::Style, "Style");
+                ui.selectable_value(&mut self.active_tab, GuiTab::Weather, "Weather");
+                ui.selectable_value(&mut self.active_tab, GuiTab::News, "News");
                 ui.selectable_value(&mut self.active_tab, GuiTab::System, "System");
             });
         });
@@ -1510,6 +1940,8 @@ impl eframe::App for WcGuiApp {
                 GuiTab::Images => self.render_images_tab(ui, ctx),
                 GuiTab::Quotes => self.render_quotes_tab(ui),
                 GuiTab::Style => self.render_style_tab(ui),
+                GuiTab::Weather => self.render_weather_tab(ui),
+                GuiTab::News => self.render_news_tab(ui),
                 GuiTab::System => self.render_system_tab(ui),
             });
         });
@@ -1617,6 +2049,19 @@ fn default_cfg() -> AppConfig {
         show_background_layer: true,
         show_quote_layer: true,
         show_clock_layer: true,
+        show_weather_layer: true,
+        show_news_layer: true,
+        weather_pos_x: 120,
+        weather_pos_y: 120,
+        news_pos_x: 980,
+        news_pos_y: 180,
+        weather_refresh_seconds: 600,
+        weather_use_system_location: true,
+        weather_location_override: String::new(),
+        news_source: "euronews".to_string(),
+        news_custom_url: String::new(),
+        news_fps: 1.0,
+        news_audio_enabled: false,
         login_screen_integration: false,
         boot_screen_integration: false,
     }
