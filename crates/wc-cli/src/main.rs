@@ -169,8 +169,16 @@ fn main() -> Result<()> {
 fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> {
     let output_path = expand_tilde(&cfg.output_image)?;
     let source_image = resolve_source_image(cfg, image_cycle)?;
-    let quote = resolve_quote(cfg, quote_cycle)?;
-    let clock = chrono::Local::now().format(&cfg.time_format).to_string();
+    let quote = if cfg.show_quote_layer {
+        resolve_quote(cfg, quote_cycle)?
+    } else {
+        String::new()
+    };
+    let clock = if cfg.show_clock_layer {
+        chrono::Local::now().format(&cfg.time_format).to_string()
+    } else {
+        String::new()
+    };
     let (canvas_width, canvas_height) = detect_canvas_size();
     let (image_pool_size, quote_pool_size) = detect_local_pool_sizes(cfg);
 
@@ -224,10 +232,11 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     println!("preview_output: {}", output_path.display());
     println!("preview_metadata: {}", render.meta_path.display());
 
+    let effective_apply_wallpaper = cfg.apply_wallpaper && cfg.show_background_layer;
     let apply_status = apply_wallpaper(
         &cfg.wallpaper_backend,
         &cfg.wallpaper_fit_mode,
-        cfg.apply_wallpaper,
+        effective_apply_wallpaper,
         &output_path,
     )
     .map_err(anyhow::Error::msg)?;

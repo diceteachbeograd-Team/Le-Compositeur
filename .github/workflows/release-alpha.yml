@@ -5,6 +5,10 @@ on:
   push:
     tags:
       - "v*"
+      - "[0-9]*"
+
+permissions:
+  contents: write
 
 jobs:
   build-artifacts:
@@ -20,12 +24,9 @@ jobs:
           - name: windows-x86_64
             os: windows-latest
             archive_ext: zip
-          - name: macos-x86_64
-            os: macos-13
-            archive_ext: tar.gz
           - name: macos-arm64
             os: macos-14
-            archive_ext: tar.gz
+            archive_ext: dmg
 
     steps:
       - name: Checkout
@@ -34,36 +35,105 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build binaries
-        run: cargo build --release -p wc-cli -p wc-gui
+      - name: Build GUI binary
+        run: cargo build --release -p wc-gui
 
       - name: Prepare bundle (Linux/macOS)
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && matrix.name != 'macos-arm64'
         run: |
-          mkdir -p dist/wallpaper-composer-${{ matrix.name }}/bin
-          cp target/release/wc-cli dist/wallpaper-composer-${{ matrix.name }}/bin/
-          cp target/release/wc-gui dist/wallpaper-composer-${{ matrix.name }}/bin/
-          cp README.md LICENSE dist/wallpaper-composer-${{ matrix.name }}/
-          tar -C dist -czf dist/wallpaper-composer-${{ matrix.name }}.tar.gz wallpaper-composer-${{ matrix.name }}
+          mkdir -p dist/le-compositeur-${{ matrix.name }}/bin
+          cp target/release/wc-gui dist/le-compositeur-${{ matrix.name }}/bin/le-compositeur
+          chmod +x dist/le-compositeur-${{ matrix.name }}/bin/le-compositeur
+          cp README.md LICENSE dist/le-compositeur-${{ matrix.name }}/
+          cp dist/le-compositeur-${{ matrix.name }}/bin/le-compositeur dist/le-compositeur-${{ matrix.name }}
+          tar -C dist -czf dist/le-compositeur-${{ matrix.name }}.tar.gz le-compositeur-${{ matrix.name }}
+
+      - name: Prepare macOS ARM app bundle + DMG
+        if: matrix.name == 'macos-arm64'
+        run: |
+          APP_ROOT="dist/Le Compositeur.app/Contents"
+          mkdir -p "${APP_ROOT}/MacOS"
+          cp target/release/wc-gui "${APP_ROOT}/MacOS/Le Compositeur"
+          chmod +x "${APP_ROOT}/MacOS/Le Compositeur"
+          cat > "${APP_ROOT}/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+            <dict>
+              <key>CFBundleName</key>
+              <string>Le Compositeur</string>
+              <key>CFBundleDisplayName</key>
+              <string>Le Compositeur</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.diceteachbeograd.lecompositeur</string>
+              <key>CFBundleExecutable</key>
+              <string>Le Compositeur</string>
+              <key>CFBundleVersion</key>
+              <string>${{ github.ref_name }}</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${{ github.ref_name }}</string>
+              <key>NSHumanReadableCopyright</key>
+              <string>diceteachbeograd-Team</string>
+            </dict>
+          </plist>
+          hdiutil create -volname "Le Compositeur" -srcfolder "dist/Le Compositeur.app" -ov -format UDZO "dist/le-compositeur-macos-arm64.dmg"
+          cp target/release/wc-gui dist/le-compositeur-macos-arm64
 
       - name: Prepare bundle (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist/wallpaper-composer-${{ matrix.name }}/bin | Out-Null
-          Copy-Item target/release/wc-cli.exe dist/wallpaper-composer-${{ matrix.name }}/bin/
-          Copy-Item target/release/wc-gui.exe dist/wallpaper-composer-${{ matrix.name }}/bin/
-          Copy-Item README.md, LICENSE dist/wallpaper-composer-${{ matrix.name }}/
-          Compress-Archive -Path dist/wallpaper-composer-${{ matrix.name }} -DestinationPath dist/wallpaper-composer-${{ matrix.name }}.zip -Force
+          New-Item -ItemType Directory -Force -Path dist/le-compositeur-${{ matrix.name }}/bin | Out-Null
+          Copy-Item target/release/wc-gui.exe dist/le-compositeur-${{ matrix.name }}/bin/LeCompositeur.exe
+          Copy-Item README.md, LICENSE dist/le-compositeur-${{ matrix.name }}/
+          Copy-Item dist/le-compositeur-${{ matrix.name }}/bin/LeCompositeur.exe dist/LeCompositeur-${{ matrix.name }}.exe
+          Compress-Archive -Path dist/le-compositeur-${{ matrix.name }} -DestinationPath dist/le-compositeur-${{ matrix.name }}.zip -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wallpaper-composer-${{ matrix.name }}
-          path: dist/wallpaper-composer-${{ matrix.name }}.${{ matrix.archive_ext }}
+          name: release-${{ matrix.name }}
+          path: |
+            dist/le-compositeur-${{ matrix.name }}.${{ matrix.archive_ext }}
+            dist/le-compositeur-${{ matrix.name }}
+            dist/LeCompositeur-${{ matrix.name }}.exe
 
-      - name: Publish on GitHub Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/')
+  publish-release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Write release notes
+        run: |
+          cat > RELEASE_BODY.md <<'EOF'
+          ## Wallpaper Composer Release
+
+          End-user app name: **Le Compositeur**.
+
+          Included artifacts:
+          - Linux: `le-compositeur-linux-x86_64.tar.gz` + `le-compositeur-linux-x86_64` binary
+          - Windows: `le-compositeur-windows-x86_64.zip` + `LeCompositeur-windows-x86_64.exe`
+          - macOS ARM: `le-compositeur-macos-arm64.tar.gz` + `le-compositeur-macos-arm64` binary
+
+          Notes:
+          - GUI app is the primary end-user app.
+          - CLI remains available for advanced/manual workflows from source builds.
+          - Project attribution: diceteachbeograd-Team.
+          EOF
+
+      - name: Publish release once (no duplicated notes)
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/wallpaper-composer-${{ matrix.name }}.${{ matrix.archive_ext }}
+          name: Wallpaper Composer ${{ github.ref_name }}
+          body_path: RELEASE_BODY.md
+          generate_release_notes: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-pre') }}
+          files: release-assets/**
