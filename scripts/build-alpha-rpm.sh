@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${1:-1.20260308.1}"
+RELEASE_TAG="${1:-2026.03.08-1}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PKG_NAME="wallpaper-composer"
-TARBALL="${PKG_NAME}-${VERSION}.tar.gz"
+RPM_VERSION="${RELEASE_TAG%-*}"
+RPM_RELEASE="${RELEASE_TAG##*-}"
+TARBALL="${PKG_NAME}-${RPM_VERSION}.tar.gz"
 
 need_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -47,17 +49,18 @@ cargo build --release -p wc-cli -p wc-gui
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
-mkdir -p "$tmpdir/${PKG_NAME}-${VERSION}"
-rsync -a --exclude target --exclude .git ./ "$tmpdir/${PKG_NAME}-${VERSION}/"
+mkdir -p "$tmpdir/${PKG_NAME}-${RPM_VERSION}"
+rsync -a --exclude target --exclude .git ./ "$tmpdir/${PKG_NAME}-${RPM_VERSION}/"
 
-tar -C "$tmpdir" -czf "$tmpdir/$TARBALL" "${PKG_NAME}-${VERSION}"
+tar -C "$tmpdir" -czf "$tmpdir/$TARBALL" "${PKG_NAME}-${RPM_VERSION}"
 
 mkdir -p "$HOME/rpmbuild/SOURCES"
 cp "$tmpdir/$TARBALL" "$HOME/rpmbuild/SOURCES/"
 
 rpmbuild -ba packaging/rpm/wallpaper-composer.spec \
   --define "_topdir $HOME/rpmbuild" \
-  --define "version $VERSION"
+  --define "version $RPM_VERSION" \
+  --define "release $RPM_RELEASE"
 
 echo "RPM build complete."
 echo "Packages:"

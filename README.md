@@ -21,8 +21,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 1.20260308.1
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-1.20260308.1-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.08-1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.08-1-1*.rpm
 wc-gui
 ```
 
@@ -30,8 +30,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 1.20260308.1
-sudo apt install ./dist/wallpaper-composer_1.20260308.1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.08-1
+sudo apt install ./dist/wallpaper-composer_2026.03.08-1_amd64.deb
 wc-gui
 ```
 
