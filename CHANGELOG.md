@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.03.08-2 - 2026-03-08
+- Added weather geolocation fallback chain (`ipapi.co` -> `ipwho.is` -> `ipinfo.io`) to avoid hard failures on provider rate limits.
+- Added optional fallback from auto-location to manual geocode when `weather_location_override` is set.
+- Added visual news widget preview image rendering (stream thumbnail/image when available) plus text overlay.
+- Improved runtime diagnostics with `news_preview_image` path output.
+- Updated version references, packaging defaults, and release docs to `2026.03.08-2`.
+
 ## 2026.03.08-1 - 2026-03-08
 - Added new GUI tabs `Weather` and `News` (before `System`) with dedicated settings.
 - Added weather widget configuration and live weather snapshot refresh (default 10 minutes).

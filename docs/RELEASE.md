@@ -14,7 +14,7 @@ Workflow file:
 - `.github/workflows/release-alpha.yml`
 
 Trigger:
-- push tags: `v*` or numeric tags like `2026.03.08-1`
+- push tags: `v*` or numeric tags like `2026.03.08-2`
 - manual `workflow_dispatch`
 
 Release publish strategy:
@@ -60,7 +60,7 @@ These are not yet auto-published by the current GitHub release workflow.
 ## 6. Tagging and release type
 
 Stable release:
-- tags like `2026.03.08-1` or `v1.20260308.1`
+- tags like `2026.03.08-2` or `v1.20260308.1`
 
 Pre-release:
 - tags containing one of:

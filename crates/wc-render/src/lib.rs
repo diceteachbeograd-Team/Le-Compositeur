@@ -8,6 +8,7 @@ pub struct PreviewText<'a> {
     pub clock: &'a str,
     pub weather: &'a str,
     pub news: &'a str,
+    pub news_image: Option<&'a Path>,
     pub quote_font_size: u32,
     pub quote_pos_x: i32,
     pub quote_pos_y: i32,
@@ -65,12 +66,15 @@ pub fn render_preview_to_file(
 
     let meta_path = metadata_path_for(output_image);
     let metadata = format!(
-        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nweather = {:?}\nnews = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\nweather_pos_x = {}\nweather_pos_y = {}\nnews_pos_x = {}\nnews_pos_y = {}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
+        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nweather = {:?}\nnews = {:?}\nnews_image = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\nweather_pos_x = {}\nweather_pos_y = {}\nnews_pos_x = {}\nnews_pos_y = {}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
         render_mode,
         text.quote,
         text.clock,
         text.weather,
         text.news,
+        text.news_image
+            .map(|p| p.display().to_string())
+            .unwrap_or_default(),
         text.quote_font_size,
         text.quote_pos_x,
         text.quote_pos_y,
@@ -358,16 +362,34 @@ fn render_with_imagemagick(
     }
 
     if !text.news.trim().is_empty() {
+        let news_box_w = (canvas_w / 2).max(420);
+        let news_box_h = (canvas_h / 4).max(180);
+        if let Some(news_image) = text.news_image
+            && news_image.exists()
+        {
+            args.push("(".to_string());
+            args.push(news_image.display().to_string());
+            args.push("-auto-orient".to_string());
+            args.push("-resize".to_string());
+            args.push(format!("{news_box_w}x{news_box_h}^"));
+            args.push("-gravity".to_string());
+            args.push("Center".to_string());
+            args.push("-extent".to_string());
+            args.push(format!("{news_box_w}x{news_box_h}"));
+            args.push(")".to_string());
+            args.push("-gravity".to_string());
+            args.push("NorthWest".to_string());
+            args.push("-geometry".to_string());
+            args.push(format!("+{}+{}", text.news_pos_x, text.news_pos_y));
+            args.push("-composite".to_string());
+        }
+
         let news_size = (text.clock_font_size.saturating_mul(65) / 100).max(16);
         args.push("(".to_string());
         args.push("-background".to_string());
         args.push("none".to_string());
         args.push("-size".to_string());
-        args.push(format!(
-            "{}x{}",
-            (canvas_w / 2).max(420),
-            (canvas_h / 7).max(120)
-        ));
+        args.push(format!("{news_box_w}x{}", (canvas_h / 7).max(120)));
         args.push("-fill".to_string());
         args.push("#FF5CF3".to_string());
         args.push("-stroke".to_string());
@@ -387,7 +409,14 @@ fn render_with_imagemagick(
         args.push("-gravity".to_string());
         args.push("NorthWest".to_string());
         args.push("-geometry".to_string());
-        args.push(format!("+{}+{}", text.news_pos_x, text.news_pos_y));
+        let news_text_y = if text.news_image.is_some() {
+            text.news_pos_y
+                .saturating_add(news_box_h as i32)
+                .saturating_add(8)
+        } else {
+            text.news_pos_y
+        };
+        args.push(format!("+{}+{}", text.news_pos_x, news_text_y));
         args.push("-composite".to_string());
     }
 
@@ -854,6 +883,7 @@ mod tests {
                 clock: "13:37",
                 weather: "Belgrade 13C clear",
                 news: "LIVE: Euronews",
+                news_image: None,
                 quote_font_size: 24,
                 quote_pos_x: 10,
                 quote_pos_y: 20,
@@ -911,6 +941,7 @@ mod tests {
                 clock: "12:34",
                 weather: "Rain 4C",
                 news: "LIVE",
+                news_image: None,
                 quote_font_size: 24,
                 quote_pos_x: 2,
                 quote_pos_y: 2,

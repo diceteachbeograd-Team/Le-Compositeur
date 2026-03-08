@@ -45,5 +45,8 @@ install -Dpm0644 packaging/linux/wallpaper-composer.metainfo.xml %{buildroot}%{_
 %{_datadir}/metainfo/wallpaper-composer.metainfo.xml
 
 %changelog
+* Sun Mar 08 2026 Wallpaper Composer Contributors <opensource@example.com> - 2026.03.08-2
+- Add weather geolocation fallbacks and news preview image overlay support.
+
 * Sun Mar 08 2026 Wallpaper Composer Contributors <opensource@example.com> - 2026.03.08-1
 - Alpha packaging update with GUI binary, desktop entry, icon, and metainfo.

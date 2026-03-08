@@ -1723,41 +1723,158 @@ fn parse_lat_lon_from_geocode(
     Some((lat, lon))
 }
 
+fn parse_lat_lon_pair(raw: &str) -> Option<(f64, f64)> {
+    let mut parts = raw.split(',');
+    let lat = parts.next()?.trim().parse::<f64>().ok()?;
+    let lon = parts.next()?.trim().parse::<f64>().ok()?;
+    Some((lat, lon))
+}
+
+fn lookup_system_location_snapshot(
+    client: &reqwest::blocking::Client,
+) -> Result<(f64, f64, String, String), String> {
+    let mut errors = Vec::<String>::new();
+
+    let ipapi = client
+        .get("https://ipapi.co/json/")
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.json::<serde_json::Value>().map_err(|e| e.to_string()));
+    match ipapi {
+        Ok(geo) => {
+            if let (Some(lat), Some(lon)) = (
+                geo.get("latitude").and_then(|v| v.as_f64()),
+                geo.get("longitude").and_then(|v| v.as_f64()),
+            ) {
+                let city = geo
+                    .get("city")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown city");
+                let country = geo
+                    .get("country_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown country");
+                return Ok((
+                    lat,
+                    lon,
+                    format!("{city}, {country}"),
+                    "ipapi.co".to_string(),
+                ));
+            }
+            errors.push("ipapi.co: missing coordinates".to_string());
+        }
+        Err(e) => errors.push(format!("ipapi.co: {e}")),
+    }
+
+    let ipwho = client
+        .get("https://ipwho.is/")
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.json::<serde_json::Value>().map_err(|e| e.to_string()));
+    match ipwho {
+        Ok(geo) => {
+            let success = geo.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+            if success {
+                if let (Some(lat), Some(lon)) = (
+                    geo.get("latitude").and_then(|v| v.as_f64()),
+                    geo.get("longitude").and_then(|v| v.as_f64()),
+                ) {
+                    let city = geo
+                        .get("city")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown city");
+                    let country = geo
+                        .get("country")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown country");
+                    return Ok((
+                        lat,
+                        lon,
+                        format!("{city}, {country}"),
+                        "ipwho.is".to_string(),
+                    ));
+                }
+                errors.push("ipwho.is: missing coordinates".to_string());
+            } else {
+                errors.push("ipwho.is: success=false".to_string());
+            }
+        }
+        Err(e) => errors.push(format!("ipwho.is: {e}")),
+    }
+
+    let ipinfo = client
+        .get("https://ipinfo.io/json")
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.json::<serde_json::Value>().map_err(|e| e.to_string()));
+    match ipinfo {
+        Ok(geo) => {
+            if let Some((lat, lon)) = geo
+                .get("loc")
+                .and_then(|v| v.as_str())
+                .and_then(parse_lat_lon_pair)
+            {
+                let city = geo
+                    .get("city")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown city");
+                let country = geo
+                    .get("country")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown country");
+                return Ok((
+                    lat,
+                    lon,
+                    format!("{city}, {country}"),
+                    "ipinfo.io".to_string(),
+                ));
+            }
+            errors.push("ipinfo.io: missing loc".to_string());
+        }
+        Err(e) => errors.push(format!("ipinfo.io: {e}")),
+    }
+
+    Err(format!(
+        "location lookup failed across providers: {}",
+        errors.join(" | ")
+    ))
+}
+
 fn fetch_weather_snapshot(cfg: &AppConfig) -> Result<(String, Vec<String>), String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(8))
         .build()
         .map_err(|e| format!("http init failed: {e}"))?;
 
-    let (lat, lon, location_name) = if cfg.weather_use_system_location {
-        let ip_geo = client
-            .get("https://ipapi.co/json/")
-            .send()
-            .and_then(|r| r.error_for_status())
-            .map_err(|e| format!("location lookup failed: {e}"))?
-            .json::<serde_json::Value>()
-            .map_err(|e| format!("location payload invalid: {e}"))?;
-        let lat = ip_geo
-            .get("latitude")
-            .and_then(|v| v.as_f64())
-            .ok_or("location payload misses latitude")?;
-        let lon = ip_geo
-            .get("longitude")
-            .and_then(|v| v.as_f64())
-            .ok_or("location payload misses longitude")?;
-        let city = ip_geo
-            .get("city")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown city");
-        let country = ip_geo
-            .get("country_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown country");
-        (lat, lon, format!("{city}, {country}"))
+    let (lat, lon, location_name, geo_provider) = if cfg.weather_use_system_location {
+        match lookup_system_location_snapshot(&client) {
+            Ok(v) => v,
+            Err(primary_err) => {
+                let manual = cfg.weather_location_override.trim();
+                if let Some((lat, lon)) = parse_lat_lon_from_geocode(&client, manual) {
+                    (
+                        lat,
+                        lon,
+                        manual.to_string(),
+                        "manual geocode fallback".to_string(),
+                    )
+                } else {
+                    return Err(primary_err);
+                }
+            }
+        }
     } else if let Some((lat, lon)) =
         parse_lat_lon_from_geocode(&client, &cfg.weather_location_override)
     {
-        (lat, lon, cfg.weather_location_override.clone())
+        (
+            lat,
+            lon,
+            cfg.weather_location_override.clone(),
+            "manual geocode".to_string(),
+        )
     } else {
         return Err("manual location could not be resolved (use e.g. Belgrade,RS)".to_string());
     };
@@ -1811,7 +1928,7 @@ fn fetch_weather_snapshot(cfg: &AppConfig) -> Result<(String, Vec<String>), Stri
         format!("Humidity: {humidity:.0}%"),
         format!("Wind: {wind_speed:.1} km/h @ {wind_dir:.0}°"),
         format!("Precipitation: {precipitation:.1} mm"),
-        "Source: Open-Meteo + IP geolocation".to_string(),
+        format!("Source: Open-Meteo + {geo_provider}"),
     ];
     Ok((headline, details))
 }

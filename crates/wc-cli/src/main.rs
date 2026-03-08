@@ -186,11 +186,18 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     } else {
         String::new()
     };
-    let news = if cfg.show_news_layer {
-        resolve_news_widget(cfg).unwrap_or_else(|e| format!("News unavailable ({e})"))
+    let news_payload = if cfg.show_news_layer {
+        resolve_news_widget(cfg).unwrap_or_else(|e| NewsWidgetPayload {
+            text: format!("News unavailable ({e})"),
+            preview_image: None,
+        })
     } else {
-        String::new()
+        NewsWidgetPayload {
+            text: String::new(),
+            preview_image: None,
+        }
     };
+    let news = news_payload.text.clone();
     let (canvas_width, canvas_height) = detect_canvas_size();
     let (image_pool_size, quote_pool_size) = detect_local_pool_sizes(cfg);
 
@@ -203,6 +210,7 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             clock: &clock,
             weather: &weather,
             news: &news,
+            news_image: news_payload.preview_image.as_deref(),
             quote_font_size: cfg.quote_font_size,
             quote_pos_x: cfg.quote_pos_x,
             quote_pos_y: cfg.quote_pos_y,
@@ -247,6 +255,9 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     println!("clock: {}", clock);
     println!("weather: {}", weather);
     println!("news: {}", news);
+    if let Some(path) = &news_payload.preview_image {
+        println!("news_preview_image: {}", path.display());
+    }
     println!("canvas: {}x{}", canvas_width, canvas_height);
     println!("preview_mode: {}", render.preview_mode);
     println!("preview_output: {}", output_path.display());
@@ -632,52 +643,23 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
     let client = Client::builder().timeout(Duration::from_secs(8)).build()?;
 
     let (lat, lon, loc_label) = if cfg.weather_use_system_location {
-        let geo = client
-            .get("https://ipapi.co/json/")
-            .send()?
-            .error_for_status()?
-            .json::<Value>()?;
-        let lat = geo
-            .get("latitude")
-            .and_then(Value::as_f64)
-            .ok_or_else(|| anyhow::anyhow!("missing latitude"))?;
-        let lon = geo
-            .get("longitude")
-            .and_then(Value::as_f64)
-            .ok_or_else(|| anyhow::anyhow!("missing longitude"))?;
-        let city = geo.get("city").and_then(Value::as_str).unwrap_or("Unknown");
-        let country = geo
-            .get("country_name")
-            .and_then(Value::as_str)
-            .unwrap_or("Unknown");
-        (lat, lon, format!("{city}, {country}"))
+        match lookup_system_location(&client) {
+            Ok(v) => v,
+            Err(primary_err) => {
+                let query = cfg.weather_location_override.trim();
+                if query.is_empty() {
+                    anyhow::bail!("{primary_err}");
+                }
+                let (lat, lon) = geocode_location(&client, query)?;
+                (lat, lon, query.to_string())
+            }
+        }
     } else {
         let query = cfg.weather_location_override.trim();
         if query.is_empty() {
             anyhow::bail!("set weather location override");
         }
-        let search_url = format!(
-            "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=en&format=json",
-            query.replace(' ', "+")
-        );
-        let geo = client
-            .get(search_url)
-            .send()?
-            .error_for_status()?
-            .json::<Value>()?;
-        let first = geo
-            .get("results")
-            .and_then(Value::as_array)
-            .and_then(|v| v.first())
-            .ok_or_else(|| anyhow::anyhow!("location not found"))?;
-        let lat = first
-            .get("latitude")
-            .and_then(Value::as_f64)
-            .ok_or_else(|| anyhow::anyhow!("missing latitude"))?;
-        let lon = first
-            .get("longitude")
-            .and_then(Value::as_f64)
-            .ok_or_else(|| anyhow::anyhow!("missing longitude"))?;
+        let (lat, lon) = geocode_location(&client, query)?;
         (lat, lon, query.to_string())
     };
 
@@ -723,14 +705,24 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
     ))
 }
 
-fn resolve_news_widget(cfg: &AppConfig) -> Result<String> {
+#[derive(Debug, Clone)]
+struct NewsWidgetPayload {
+    text: String,
+    preview_image: Option<PathBuf>,
+}
+
+fn resolve_news_widget(cfg: &AppConfig) -> Result<NewsWidgetPayload> {
     let (label, stream_url, feed_url) = news_source_profile(cfg);
     let headline = if let Some(feed) = feed_url {
         fetch_rss_headline(feed).unwrap_or_else(|| "No headline".to_string())
     } else {
         "Live stream source selected".to_string()
     };
-    Ok(format!("LIVE {label}\n{headline}\n{stream_url}"))
+    let preview_image = resolve_news_preview_image(cfg, &stream_url);
+    Ok(NewsWidgetPayload {
+        text: format!("LIVE {label}\n{headline}\n{stream_url}"),
+        preview_image,
+    })
 }
 
 fn news_source_profile(cfg: &AppConfig) -> (&str, String, Option<&'static str>) {
@@ -803,6 +795,208 @@ fn fetch_rss_headline(url: &str) -> Option<String> {
         .text()
         .ok()?;
     extract_first_xml_tag(&body, "title")
+}
+
+fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str) -> Option<PathBuf> {
+    let mut candidates = news_preview_candidates(cfg, stream_url);
+    candidates.dedup();
+    for endpoint in candidates {
+        if let Ok(path) = fetch_remote_image(endpoint, ImageProvider::Generic) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn news_preview_candidates(cfg: &AppConfig, stream_url: &str) -> Vec<String> {
+    let mut out = Vec::<String>::new();
+    if let Some(video_id) = extract_youtube_video_id(stream_url) {
+        out.push(format!(
+            "https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+        ));
+        out.push(format!(
+            "https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+        ));
+    }
+    let stream_lower = stream_url.to_ascii_lowercase();
+    if stream_lower.ends_with(".jpg")
+        || stream_lower.ends_with(".jpeg")
+        || stream_lower.ends_with(".png")
+        || stream_lower.ends_with(".webp")
+    {
+        out.push(stream_url.to_string());
+    }
+    out.push(format!(
+        "https://picsum.photos/seed/news-{}-preview/1280/720.jpg",
+        cfg.news_source.replace(' ', "-")
+    ));
+    out
+}
+
+fn extract_youtube_video_id(url: &str) -> Option<String> {
+    if let Some(idx) = url.find("youtu.be/") {
+        let tail = &url[idx + "youtu.be/".len()..];
+        let id = tail
+            .split(['?', '&', '/', '#'])
+            .next()
+            .unwrap_or_default()
+            .trim();
+        if is_valid_youtube_id(id) {
+            return Some(id.to_string());
+        }
+    }
+    if let Some(idx) = url.find("watch?v=") {
+        let tail = &url[idx + "watch?v=".len()..];
+        let id = tail
+            .split(['&', '#', '/'])
+            .next()
+            .unwrap_or_default()
+            .trim();
+        if is_valid_youtube_id(id) {
+            return Some(id.to_string());
+        }
+    }
+    if let Some(idx) = url.find("/live/") {
+        let tail = &url[idx + "/live/".len()..];
+        let id = tail
+            .split(['?', '&', '/', '#'])
+            .next()
+            .unwrap_or_default()
+            .trim();
+        if is_valid_youtube_id(id) {
+            return Some(id.to_string());
+        }
+    }
+    None
+}
+
+fn is_valid_youtube_id(id: &str) -> bool {
+    if id.len() < 6 {
+        return false;
+    }
+    id.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn geocode_location(client: &Client, query: &str) -> Result<(f64, f64)> {
+    let search_url = format!(
+        "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=en&format=json",
+        query.replace(' ', "+")
+    );
+    let geo = client
+        .get(search_url)
+        .send()?
+        .error_for_status()?
+        .json::<Value>()?;
+    let first = geo
+        .get("results")
+        .and_then(Value::as_array)
+        .and_then(|v| v.first())
+        .ok_or_else(|| anyhow::anyhow!("location not found"))?;
+    let lat = first
+        .get("latitude")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| anyhow::anyhow!("missing latitude"))?;
+    let lon = first
+        .get("longitude")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| anyhow::anyhow!("missing longitude"))?;
+    Ok((lat, lon))
+}
+
+fn lookup_system_location(client: &Client) -> Result<(f64, f64, String)> {
+    let mut errors = Vec::<String>::new();
+
+    let ipapi = client
+        .get("https://ipapi.co/json/")
+        .send()
+        .and_then(|r| r.error_for_status())
+        .and_then(|r| r.json::<Value>());
+    match ipapi {
+        Ok(geo) => {
+            let lat = geo
+                .get("latitude")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| anyhow::anyhow!("ipapi missing latitude"))?;
+            let lon = geo
+                .get("longitude")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| anyhow::anyhow!("ipapi missing longitude"))?;
+            let city = geo.get("city").and_then(Value::as_str).unwrap_or("Unknown");
+            let country = geo
+                .get("country_name")
+                .and_then(Value::as_str)
+                .unwrap_or("Unknown");
+            return Ok((lat, lon, format!("{city}, {country}")));
+        }
+        Err(e) => errors.push(format!("ipapi: {e}")),
+    }
+
+    let ipwho = client
+        .get("https://ipwho.is/")
+        .send()
+        .and_then(|r| r.error_for_status())
+        .and_then(|r| r.json::<Value>());
+    match ipwho {
+        Ok(geo) => {
+            let success = geo.get("success").and_then(Value::as_bool).unwrap_or(true);
+            if !success {
+                errors.push("ipwho: success=false".to_string());
+            } else {
+                let lat = geo
+                    .get("latitude")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| anyhow::anyhow!("ipwho missing latitude"))?;
+                let lon = geo
+                    .get("longitude")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| anyhow::anyhow!("ipwho missing longitude"))?;
+                let city = geo.get("city").and_then(Value::as_str).unwrap_or("Unknown");
+                let country = geo
+                    .get("country")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Unknown");
+                return Ok((lat, lon, format!("{city}, {country}")));
+            }
+        }
+        Err(e) => errors.push(format!("ipwho: {e}")),
+    }
+
+    let ipinfo = client
+        .get("https://ipinfo.io/json")
+        .send()
+        .and_then(|r| r.error_for_status())
+        .and_then(|r| r.json::<Value>());
+    match ipinfo {
+        Ok(geo) => {
+            if let Some((lat, lon)) = geo
+                .get("loc")
+                .and_then(Value::as_str)
+                .and_then(parse_lat_lon_pair)
+            {
+                let city = geo.get("city").and_then(Value::as_str).unwrap_or("Unknown");
+                let country = geo
+                    .get("country")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Unknown");
+                return Ok((lat, lon, format!("{city}, {country}")));
+            }
+            errors.push("ipinfo: missing loc".to_string());
+        }
+        Err(e) => errors.push(format!("ipinfo: {e}")),
+    }
+
+    anyhow::bail!(
+        "location lookup failed across providers; {}. Set weather_location_override to bypass geolocation.",
+        errors.join(" | ")
+    )
+}
+
+fn parse_lat_lon_pair(raw: &str) -> Option<(f64, f64)> {
+    let mut parts = raw.split(',');
+    let lat = parts.next()?.trim().parse::<f64>().ok()?;
+    let lon = parts.next()?.trim().parse::<f64>().ok()?;
+    Some((lat, lon))
 }
 
 fn extract_first_xml_tag(raw: &str, tag: &str) -> Option<String> {
