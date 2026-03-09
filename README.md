@@ -5,7 +5,7 @@ Dynamic desktop compositor (Rust) by diceteachbeograd-Team.
 Status: active hobby project (use at your own risk).
 
 ## Download (Latest)
-- Direct link: [github.com/diceteachbeograd-Team/wallpaper-composer/releases/latest](https://github.com/diceteachbeograd-Team/wallpaper-composer/releases/latest)
+- Direct link: [github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest](https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest)
 
 ### Which file is for which OS?
 - Linux: `le-compositeur-linux-x86_64.deb` or `le-compositeur-linux-x86_64.rpm`

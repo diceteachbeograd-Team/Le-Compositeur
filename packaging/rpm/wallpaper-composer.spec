@@ -4,7 +4,7 @@ Release:        %{?release}%{!?release:1}%{?dist}
 Summary:        Le Compositeur dynamic desktop GUI (Rust)
 
 License:        GPL-3.0-or-later
-URL:            https://github.com/diceteachbeograd-Team/wallpaper-composer
+URL:            https://github.com/diceteachbeograd-Team/Le-Compositeur
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  rust

@@ -194,8 +194,8 @@ jobs:
           ## Le Compositeur Release
 
           Direct downloads:
-          - Latest releases page: https://github.com/diceteachbeograd-Team/wallpaper-composer/releases/latest
-          - This tag: https://github.com/diceteachbeograd-Team/wallpaper-composer/releases/tag/${{ github.ref_name }}
+          - Latest releases page: https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest
+          - This tag: https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/tag/${{ github.ref_name }}
 
           Included artifacts:
           - Linux: `le-compositeur-linux-x86_64.tar.gz`, `le-compositeur-linux-x86_64.deb`, `le-compositeur-linux-x86_64.rpm`, `le-compositeur-linux-x86_64`

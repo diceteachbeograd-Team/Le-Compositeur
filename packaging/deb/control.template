@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Le Compositeur Contributors <opensource@example.com>
 Standards-Version: 4.7.0
 Build-Depends: debhelper-compat (= 13), rustc, cargo
-Homepage: https://github.com/diceteachbeograd-Team/wallpaper-composer
+Homepage: https://github.com/diceteachbeograd-Team/Le-Compositeur
 
 Package: wallpaper-composer
 Architecture: any
