@@ -1,7 +1,7 @@
 Name:           wallpaper-composer
 Version:        %{?version}%{!?version:2026.03.08}
 Release:        %{?release}%{!?release:1}%{?dist}
-Summary:        Dynamic Linux wallpaper composer (Rust)
+Summary:        Le Compositeur dynamic desktop GUI (Rust)
 
 License:        GPL-3.0-or-later
 URL:            https://github.com/diceteachbeograd-Team/wallpaper-composer
@@ -12,7 +12,7 @@ BuildRequires:  cargo
 BuildRequires:  desktop-file-utils
 
 %description
-Wallpaper Composer renders dynamic wallpapers using local or public image/quote sources,
+Le Compositeur renders dynamic wallpapers using local or public image/quote sources,
 clock overlays, and desktop backend integration.
 
 %prep
@@ -45,15 +45,20 @@ install -Dpm0644 packaging/linux/wallpaper-composer.metainfo.xml %{buildroot}%{_
 %{_datadir}/metainfo/wallpaper-composer.metainfo.xml
 
 %changelog
-* Sun Mar 08 2026 Wallpaper Composer Contributors <opensource@example.com> - 2026.03.08-5
+* Mon Mar 09 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.09-2
+- Add fixed 16:9 News size presets in GUI and enforce preset snapping.
+- Improve release artifact workflow with explicit OS-targeted package outputs.
+- Rebrand user-facing desktop/metainfo/README strings to Le Compositeur.
+
+* Sun Mar 08 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.08-5
 - Add configurable weather/news widget sizes and compact weather/news overlay rendering.
 - Add custom camera URL support for News widget with 1.0 FPS cap.
 
-* Sun Mar 08 2026 Wallpaper Composer Contributors <opensource@example.com> - 2026.03.08-3
+* Sun Mar 08 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.08-3
 - Add weather fallback via wttr.in and cleaner news overlay text for widgets.
 
-* Sun Mar 08 2026 Wallpaper Composer Contributors <opensource@example.com> - 2026.03.08-2
+* Sun Mar 08 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.08-2
 - Add weather geolocation fallbacks and news preview image overlay support.
 
-* Sun Mar 08 2026 Wallpaper Composer Contributors <opensource@example.com> - 2026.03.08-1
+* Sun Mar 08 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.08-1
 - Alpha packaging update with GUI binary, desktop entry, icon, and metainfo.

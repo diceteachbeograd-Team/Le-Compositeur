@@ -23,10 +23,11 @@ use wc_source::{ImageProvider, QuoteProvider, fetch_remote_image, fetch_remote_q
 
 const MAX_STORED_HISTORY: usize = 64;
 const BUNDLED_LOCAL_QUOTES: &str = include_str!("../../../assets/quotes/local/local-quotes.md");
+const WEATHER_GEO_CACHE_MAX_AGE_SECS: u64 = 7 * 24 * 60 * 60;
 
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
-#[command(about = "Wallpaper Composer CLI", version)]
+#[command(about = "Le Compositeur CLI", version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -182,13 +183,23 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     } else {
         String::new()
     };
-    let weather = if cfg.show_weather_layer {
-        resolve_weather_widget(cfg).unwrap_or_else(|e| format!("Weather unavailable ({e})"))
+    let weather_payload = if cfg.show_weather_layer {
+        resolve_weather_widget(cfg).unwrap_or_else(|e| WeatherWidgetPayload {
+            text: format!(
+                "⚠ {}",
+                compact_news_line(&format!("weather unavailable ({e})"))
+            ),
+            minimap_image: None,
+        })
     } else {
-        String::new()
+        WeatherWidgetPayload {
+            text: String::new(),
+            minimap_image: None,
+        }
     };
+    let weather = weather_payload.text.clone();
     let news_payload = if cfg.show_news_layer {
-        resolve_news_widget(cfg).unwrap_or_else(|e| NewsWidgetPayload {
+        resolve_news_widget(cfg, image_cycle).unwrap_or_else(|e| NewsWidgetPayload {
             text: format!("News unavailable ({e})"),
             preview_image: None,
         })
@@ -210,6 +221,7 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             quote: &quote,
             clock: &clock,
             weather: &weather,
+            weather_map_image: weather_payload.minimap_image.as_deref(),
             news: &news,
             news_image: news_payload.preview_image.as_deref(),
             quote_font_size: cfg.quote_font_size,
@@ -686,10 +698,30 @@ fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {
     Ok(strip_project_line_suffix(&raw))
 }
 
-fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
+#[derive(Debug, Clone)]
+struct GeoLocation {
+    lat: f64,
+    lon: f64,
+    label: String,
+    country_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnitSystem {
+    Metric,
+    Imperial,
+}
+
+#[derive(Debug, Clone)]
+struct WeatherWidgetPayload {
+    text: String,
+    minimap_image: Option<PathBuf>,
+}
+
+fn resolve_weather_widget(cfg: &AppConfig) -> Result<WeatherWidgetPayload> {
     let client = Client::builder().timeout(Duration::from_secs(8)).build()?;
 
-    let (lat, lon, loc_label) = if cfg.weather_use_system_location {
+    let geo = if cfg.weather_use_system_location {
         match lookup_system_location(&client) {
             Ok(v) => v,
             Err(primary_err) => {
@@ -698,8 +730,7 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
                     return resolve_weather_widget_wttr(&client)
                         .map_err(|wttr_err| anyhow::anyhow!("{primary_err}; {wttr_err}"));
                 }
-                let (lat, lon) = geocode_location(&client, query)?;
-                (lat, lon, query.to_string())
+                geocode_location(&client, query)?
             }
         }
     } else {
@@ -707,12 +738,17 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
         if query.is_empty() {
             anyhow::bail!("set weather location override");
         }
-        let (lat, lon) = geocode_location(&client, query)?;
-        (lat, lon, query.to_string())
+        geocode_location(&client, query)?
     };
 
+    let units = unit_system_for_country(geo.country_code.as_deref());
+    let unit_query = match units {
+        UnitSystem::Metric => "",
+        UnitSystem::Imperial => "&temperature_unit=fahrenheit&windspeed_unit=mph",
+    };
     let weather_url = format!(
-        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m&timezone=auto"
+        "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m&hourly=precipitation_probability&forecast_days=1&timezone=auto{}",
+        geo.lat, geo.lon, unit_query
     );
     let payload = client
         .get(weather_url)
@@ -726,12 +762,16 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
         .get("temperature_2m")
         .and_then(Value::as_f64)
         .ok_or_else(|| anyhow::anyhow!("missing temperature"))?;
-    let tf = current
+    let feels = current
         .get("apparent_temperature")
         .and_then(Value::as_f64)
         .unwrap_or(t);
     let wind = current
         .get("wind_speed_10m")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let wind_deg = current
+        .get("wind_direction_10m")
         .and_then(Value::as_f64)
         .unwrap_or(0.0);
     let humidity = current
@@ -742,19 +782,44 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
         .get("weather_code")
         .and_then(Value::as_i64)
         .unwrap_or(-1);
-
-    Ok(format!(
-        "📍 {} {} {:.1}C 🌡{:.1}C 💧{:.0}% 🌬{:.1}",
-        compact_location_label(&loc_label),
+    let current_time = current.get("time").and_then(Value::as_str);
+    let rain_prob = current_time
+        .and_then(|time| precipitation_probability(&payload, time))
+        .unwrap_or(0.0);
+    let (wind_arrow, wind_dir) = compass_arrow(wind_deg);
+    let temp_unit = match units {
+        UnitSystem::Metric => "C",
+        UnitSystem::Imperial => "F",
+    };
+    let wind_unit = match units {
+        UnitSystem::Metric => "km/h",
+        UnitSystem::Imperial => "mph",
+    };
+    let minimap_image = resolve_weather_minimap(geo.lat, geo.lon);
+    let loc = compact_location_label(&geo.label);
+    let text = format!(
+        "{} {}\n🌡 {:.1}{}  ﹒  🤲 {:.1}{}  ﹒  ☔ {:.0}%\n🧭 {} {}  ﹒  🌬 {:.1} {}  ﹒  🫧 {:.0}%",
         weather_code_icon(code),
+        loc,
         t,
-        tf,
-        humidity,
-        wind
-    ))
+        temp_unit,
+        feels,
+        temp_unit,
+        rain_prob,
+        wind_arrow,
+        wind_dir,
+        wind,
+        wind_unit,
+        humidity
+    );
+
+    Ok(WeatherWidgetPayload {
+        text,
+        minimap_image,
+    })
 }
 
-fn resolve_weather_widget_wttr(client: &Client) -> Result<String> {
+fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> {
     let payload = client
         .get("https://wttr.in/?format=j1")
         .send()?
@@ -797,13 +862,13 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<String> {
         .and_then(Value::as_str)
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(0.0);
-    let feels = current
-        .get("FeelsLikeC")
-        .and_then(Value::as_str)
-        .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(temp);
     let humidity = current
         .get("humidity")
+        .and_then(Value::as_str)
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    let rain = current
+        .get("chanceofrain")
         .and_then(Value::as_str)
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(0.0);
@@ -813,16 +878,26 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<String> {
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(0.0);
 
-    Ok(format!(
-        "📍 {}, {} {} {:.1}C 🌡{:.1}C 💧{:.0}% 🌬{:.1}",
-        city,
-        country,
-        compact_condition_symbol(desc),
-        temp,
-        feels,
-        humidity,
-        wind
-    ))
+    let wind_dir = current
+        .get("winddir16Point")
+        .and_then(Value::as_str)
+        .unwrap_or("N");
+    let wind_arrow = compass_arrow_for_name(wind_dir);
+    Ok(WeatherWidgetPayload {
+        text: format!(
+            "{} {}, {}\n🌡 {:.1}C  ﹒  🫧 {:.0}%  ﹒  ☔ {:.0}%\n🧭 {} {}  ﹒  🌬 {:.1} km/h",
+            compact_condition_symbol(desc),
+            city,
+            country,
+            temp,
+            humidity,
+            rain,
+            wind_arrow,
+            wind_dir,
+            wind
+        ),
+        minimap_image: None,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -831,18 +906,18 @@ struct NewsWidgetPayload {
     preview_image: Option<PathBuf>,
 }
 
-fn resolve_news_widget(cfg: &AppConfig) -> Result<NewsWidgetPayload> {
+fn resolve_news_widget(cfg: &AppConfig, cycle: u64) -> Result<NewsWidgetPayload> {
     let (label, stream_url, feed_url) = news_source_profile(cfg);
-    let stream_icon = news_source_icon(cfg.news_source.as_str());
     let headline = if let Some(feed) = feed_url {
-        fetch_rss_headline(feed).unwrap_or_else(|| "No headline".to_string())
+        fetch_rss_headline(feed).unwrap_or_else(|| "no headline".to_string())
     } else {
-        "Live stream source selected".to_string()
+        "live source selected".to_string()
     };
     let preview_image = resolve_news_preview_image(cfg, &stream_url);
-    let line = compact_news_line(&format!("LIVE {label} | {headline}"));
+    let raw_line = compact_news_line(&format!("{label} ◆ {headline}"));
+    let line = news_ticker_frame(&raw_line, cycle);
     Ok(NewsWidgetPayload {
-        text: format!("{stream_icon} {line}"),
+        text: line,
         preview_image,
     })
 }
@@ -916,16 +991,21 @@ fn fetch_rss_headline(url: &str) -> Option<String> {
         .ok()?
         .text()
         .ok()?;
-    extract_first_xml_tag(&body, "title")
+    extract_first_rss_item_title(&body).or_else(|| extract_first_xml_tag(&body, "title"))
 }
 
 fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str) -> Option<PathBuf> {
+    if let Some(path) = capture_stream_preview(stream_url) {
+        return Some(path);
+    }
+
     if cfg.news_source.eq_ignore_ascii_case("custom")
         && is_camera_like_url(stream_url)
         && let Some(path) = capture_camera_frame(stream_url)
     {
         return Some(path);
     }
+
     let mut candidates = news_preview_candidates(cfg, stream_url);
     candidates.dedup();
     for endpoint in candidates {
@@ -954,6 +1034,66 @@ fn compact_location_label(raw: &str) -> String {
     }
 }
 
+fn unit_system_for_country(country_code: Option<&str>) -> UnitSystem {
+    match country_code
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_uppercase()
+        .as_str()
+    {
+        "US" | "LR" | "MM" => UnitSystem::Imperial,
+        _ => UnitSystem::Metric,
+    }
+}
+
+fn resolve_weather_minimap(lat: f64, lon: f64) -> Option<PathBuf> {
+    let endpoint = format!(
+        "https://staticmap.openstreetmap.de/staticmap.php?center={lat:.4},{lon:.4}&zoom=7&size=640x360&maptype=mapnik&markers={lat:.4},{lon:.4},lightblue1"
+    );
+    fetch_remote_image(endpoint, ImageProvider::Generic).ok()
+}
+
+fn precipitation_probability(payload: &Value, current_time: &str) -> Option<f64> {
+    let hourly = payload.get("hourly")?;
+    let times = hourly.get("time")?.as_array()?;
+    let probs = hourly.get("precipitation_probability")?.as_array()?;
+    let idx = times
+        .iter()
+        .position(|t| t.as_str().unwrap_or_default() == current_time)?;
+    probs.get(idx).and_then(Value::as_f64)
+}
+
+fn compass_arrow(deg: f64) -> (&'static str, &'static str) {
+    let mut d = deg % 360.0;
+    if d < 0.0 {
+        d += 360.0;
+    }
+    match ((d + 22.5) / 45.0).floor() as usize % 8 {
+        0 => ("↑", "N"),
+        1 => ("↗", "NE"),
+        2 => ("→", "E"),
+        3 => ("↘", "SE"),
+        4 => ("↓", "S"),
+        5 => ("↙", "SW"),
+        6 => ("←", "W"),
+        _ => ("↖", "NW"),
+    }
+}
+
+fn compass_arrow_for_name(dir: &str) -> &'static str {
+    match dir.trim().to_ascii_uppercase().as_str() {
+        "N" => "↑",
+        "NNE" | "NE" | "ENE" => "↗",
+        "E" => "→",
+        "ESE" | "SE" | "SSE" => "↘",
+        "S" => "↓",
+        "SSW" | "SW" | "WSW" => "↙",
+        "W" => "←",
+        "WNW" | "NW" | "NNW" => "↖",
+        _ => "•",
+    }
+}
+
 fn compact_news_line(input: &str) -> String {
     let line = input.replace('\n', " ").replace("  ", " ");
     let mut out = String::new();
@@ -970,13 +1110,38 @@ fn compact_news_line(input: &str) -> String {
     out
 }
 
-fn news_source_icon(id: &str) -> &'static str {
-    match id {
-        "yahoo_finance" | "bloomberg_tv" => "📈",
-        "techcrunch" | "theverge" => "🧠",
-        "documentary_heaven" => "🎬",
-        _ => "📺",
+fn news_ticker_frame(input: &str, cycle: u64) -> String {
+    let clean = compact_news_line(input);
+    let chars = clean.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return "LIVE ◆ no data".to_string();
     }
+    let shift = (cycle as usize) % chars.len();
+    let ordered = chars[shift..]
+        .iter()
+        .chain(chars[..shift].iter())
+        .collect::<String>();
+    format!("LIVE ◆ {} ◆ {}", ordered, clean)
+}
+
+fn extract_first_rss_item_title(raw: &str) -> Option<String> {
+    let item_start = raw.find("<item")?;
+    let sub = &raw[item_start..];
+    extract_first_xml_tag(sub, "title")
+}
+
+fn capture_stream_preview(stream_url: &str) -> Option<PathBuf> {
+    let lower = stream_url.trim().to_ascii_lowercase();
+    if is_camera_like_url(stream_url)
+        || lower.ends_with(".m3u8")
+        || lower.ends_with(".mp4")
+        || lower.ends_with(".webm")
+        || lower.ends_with(".mkv")
+        || lower.contains("stream")
+    {
+        return capture_camera_frame(stream_url);
+    }
+    None
 }
 
 fn weather_code_icon(code: i64) -> &'static str {
@@ -1092,7 +1257,7 @@ fn is_valid_youtube_id(id: &str) -> bool {
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-fn geocode_location(client: &Client, query: &str) -> Result<(f64, f64)> {
+fn geocode_location(client: &Client, query: &str) -> Result<GeoLocation> {
     let search_url = format!(
         "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=en&format=json",
         query.replace(' ', "+")
@@ -1115,10 +1280,81 @@ fn geocode_location(client: &Client, query: &str) -> Result<(f64, f64)> {
         .get("longitude")
         .and_then(Value::as_f64)
         .ok_or_else(|| anyhow::anyhow!("missing longitude"))?;
-    Ok((lat, lon))
+    let name = first
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or(query)
+        .to_string();
+    let country = first
+        .get("country")
+        .and_then(Value::as_str)
+        .unwrap_or("Unknown")
+        .to_string();
+    let country_code = first
+        .get("country_code")
+        .and_then(Value::as_str)
+        .map(|s| s.to_string());
+    Ok(GeoLocation {
+        lat,
+        lon,
+        label: format!("{name}, {country}"),
+        country_code,
+    })
 }
 
-fn lookup_system_location(client: &Client) -> Result<(f64, f64, String)> {
+fn weather_geo_cache_path() -> Option<PathBuf> {
+    let p = expand_tilde("~/.cache/wallpaper-composer/weather-geo.json").ok()?;
+    if let Some(parent) = p.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    Some(p)
+}
+
+fn load_cached_geo_location(max_age_secs: Option<u64>) -> Option<GeoLocation> {
+    let path = weather_geo_cache_path()?;
+    if let Some(max_age) = max_age_secs {
+        let modified = fs::metadata(&path).ok()?.modified().ok()?;
+        let age = SystemTime::now()
+            .duration_since(modified)
+            .ok()
+            .map(|d| d.as_secs())
+            .unwrap_or(max_age.saturating_add(1));
+        if age > max_age {
+            return None;
+        }
+    }
+    let raw = fs::read_to_string(path).ok()?;
+    let payload = serde_json::from_str::<Value>(&raw).ok()?;
+    Some(GeoLocation {
+        lat: payload.get("lat")?.as_f64()?,
+        lon: payload.get("lon")?.as_f64()?,
+        label: payload.get("label")?.as_str()?.to_string(),
+        country_code: payload
+            .get("country_code")
+            .and_then(Value::as_str)
+            .map(|v| v.to_string()),
+    })
+}
+
+fn store_cached_geo_location(geo: &GeoLocation) {
+    let Some(path) = weather_geo_cache_path() else {
+        return;
+    };
+    let payload = serde_json::json!({
+        "lat": geo.lat,
+        "lon": geo.lon,
+        "label": geo.label,
+        "country_code": geo.country_code,
+        "updated_unix": SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+    });
+    let _ = fs::write(path, payload.to_string());
+}
+
+fn lookup_system_location(client: &Client) -> Result<GeoLocation> {
+    if let Some(cached) = load_cached_geo_location(Some(WEATHER_GEO_CACHE_MAX_AGE_SECS)) {
+        return Ok(cached);
+    }
+
     let mut errors = Vec::<String>::new();
 
     let ipapi = client
@@ -1141,7 +1377,18 @@ fn lookup_system_location(client: &Client) -> Result<(f64, f64, String)> {
                 .get("country_name")
                 .and_then(Value::as_str)
                 .unwrap_or("Unknown");
-            return Ok((lat, lon, format!("{city}, {country}")));
+            let country_code = geo
+                .get("country_code")
+                .and_then(Value::as_str)
+                .map(|v| v.to_string());
+            let geo_loc = GeoLocation {
+                lat,
+                lon,
+                label: format!("{city}, {country}"),
+                country_code,
+            };
+            store_cached_geo_location(&geo_loc);
+            return Ok(geo_loc);
         }
         Err(e) => errors.push(format!("ipapi: {e}")),
     }
@@ -1170,7 +1417,18 @@ fn lookup_system_location(client: &Client) -> Result<(f64, f64, String)> {
                     .get("country")
                     .and_then(Value::as_str)
                     .unwrap_or("Unknown");
-                return Ok((lat, lon, format!("{city}, {country}")));
+                let country_code = geo
+                    .get("country_code")
+                    .and_then(Value::as_str)
+                    .map(|v| v.to_string());
+                let geo_loc = GeoLocation {
+                    lat,
+                    lon,
+                    label: format!("{city}, {country}"),
+                    country_code,
+                };
+                store_cached_geo_location(&geo_loc);
+                return Ok(geo_loc);
             }
         }
         Err(e) => errors.push(format!("ipwho: {e}")),
@@ -1193,11 +1451,26 @@ fn lookup_system_location(client: &Client) -> Result<(f64, f64, String)> {
                     .get("country")
                     .and_then(Value::as_str)
                     .unwrap_or("Unknown");
-                return Ok((lat, lon, format!("{city}, {country}")));
+                let country_code = geo
+                    .get("country")
+                    .and_then(Value::as_str)
+                    .map(|v| v.to_string());
+                let geo_loc = GeoLocation {
+                    lat,
+                    lon,
+                    label: format!("{city}, {country}"),
+                    country_code,
+                };
+                store_cached_geo_location(&geo_loc);
+                return Ok(geo_loc);
             }
             errors.push("ipinfo: missing loc".to_string());
         }
         Err(e) => errors.push(format!("ipinfo: {e}")),
+    }
+
+    if let Some(stale_cached) = load_cached_geo_location(None) {
+        return Ok(stale_cached);
     }
 
     anyhow::bail!(

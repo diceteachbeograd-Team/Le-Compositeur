@@ -143,6 +143,13 @@ impl WcGuiApp {
         }
     }
 
+    fn enforce_news_widget_size_preset(&mut self) {
+        let (w, h) =
+            nearest_news_size_preset(self.cfg.news_widget_width, self.cfg.news_widget_height);
+        self.cfg.news_widget_width = w;
+        self.cfg.news_widget_height = h;
+    }
+
     fn hover_text(&self, key: &str) -> &str {
         match key {
             "config_path" => self.t(
@@ -495,7 +502,7 @@ impl WcGuiApp {
         }
 
         let content = format!(
-            "[Desktop Entry]\nType=Application\nName=Wallpaper Composer Runner\nComment=Start Wallpaper Composer background runner on login\nTryExec=/usr/bin/wc-cli\nExec=/usr/bin/bash -lc \"sleep 12; /usr/bin/wc-cli run --once --config {0}; /usr/bin/wc-cli run --config {0}\"\nTerminal=false\nX-GNOME-Autostart-enabled=true\nX-GNOME-Autostart-Delay=12\n",
+            "[Desktop Entry]\nType=Application\nName=Le Compositeur Runner\nComment=Start Le Compositeur background runner on login\nTryExec=/usr/bin/wc-cli\nExec=/usr/bin/bash -lc \"sleep 12; /usr/bin/wc-cli run --once --config {0}; /usr/bin/wc-cli run --config {0}\"\nTerminal=false\nX-GNOME-Autostart-enabled=true\nX-GNOME-Autostart-Delay=12\n",
             config
         );
         match std::fs::write(&path, content) {
@@ -1473,20 +1480,29 @@ impl WcGuiApp {
                     ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
                     ui.label("Y");
                     ui.add(egui::DragValue::new(&mut self.cfg.news_pos_y).speed(1));
-                    ui.label("W");
-                    ui.add(
-                        egui::DragValue::new(&mut self.cfg.news_widget_width)
-                            .speed(2)
-                            .range(180..=1920),
+                    ui.label("Size (16:9)");
+                    let mut selected = current_news_size_id(
+                        self.cfg.news_widget_width,
+                        self.cfg.news_widget_height,
                     )
-                    .on_hover_text(self.hover_text("widget_size"));
-                    ui.label("H");
-                    ui.add(
-                        egui::DragValue::new(&mut self.cfg.news_widget_height)
-                            .speed(2)
-                            .range(120..=1080),
-                    )
-                    .on_hover_text(self.hover_text("widget_size"));
+                    .to_string();
+                    egui::ComboBox::from_id_salt("news_size_ordering")
+                        .selected_text(news_size_label(selected.as_str()))
+                        .show_ui(ui, |ui| {
+                            for (id, label, _, _) in news_size_presets() {
+                                ui.selectable_value(&mut selected, (*id).to_string(), *label);
+                            }
+                        })
+                        .response
+                        .on_hover_text(self.hover_text("widget_size"));
+                    if let Some((_, _, w, h)) = news_size_presets()
+                        .iter()
+                        .copied()
+                        .find(|(id, _, _, _)| *id == selected)
+                    {
+                        self.cfg.news_widget_width = w;
+                        self.cfg.news_widget_height = h;
+                    }
                 });
                 ui.horizontal(|ui| {
                     ui.label("Source");
@@ -1650,7 +1666,7 @@ impl WcGuiApp {
 
     fn render_news_tab(&mut self, ui: &mut egui::Ui) {
         ui.heading("News");
-        ui.label("Widget 2: configurable live/news stream source.");
+        ui.label("Widget 2: configurable live/news stream source (fixed 16:9 frame).");
         ui.separator();
         ui.checkbox(&mut self.cfg.show_news_layer, "Enable news widget");
         ui.horizontal(|ui| {
@@ -1695,18 +1711,25 @@ impl WcGuiApp {
             ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
             ui.label("Y");
             ui.add(egui::DragValue::new(&mut self.cfg.news_pos_y).speed(1));
-            ui.label("W");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.news_widget_width)
-                    .speed(2)
-                    .range(180..=1920),
-            );
-            ui.label("H");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.news_widget_height)
-                    .speed(2)
-                    .range(120..=1080),
-            );
+            ui.label("Size (16:9)");
+            let mut selected =
+                current_news_size_id(self.cfg.news_widget_width, self.cfg.news_widget_height)
+                    .to_string();
+            egui::ComboBox::from_id_salt("news_size_tab")
+                .selected_text(news_size_label(selected.as_str()))
+                .show_ui(ui, |ui| {
+                    for (id, label, _, _) in news_size_presets() {
+                        ui.selectable_value(&mut selected, (*id).to_string(), *label);
+                    }
+                });
+            if let Some((_, _, w, h)) = news_size_presets()
+                .iter()
+                .copied()
+                .find(|(id, _, _, _)| *id == selected)
+            {
+                self.cfg.news_widget_width = w;
+                self.cfg.news_widget_height = h;
+            }
         });
         ui.separator();
         ui.label("Selected stream URL:");
@@ -1795,7 +1818,7 @@ impl WcGuiApp {
         });
         ui.separator();
         ui.collapsing("Support the Team", |ui| {
-            ui.label("If Wallpaper Composer helps you, you can support diceteachbeograd-Team.");
+            ui.label("If Le Compositeur helps you, you can support diceteachbeograd-Team.");
             ui.label("XRP/Monero-style address:");
             ui.monospace("raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5");
             ui.label("Litecoin address:");
@@ -1883,6 +1906,59 @@ fn news_sources() -> &'static [(&'static str, &'static str)] {
         ("documentary_heaven", "Docs: DocumentaryHeaven"),
         ("custom", "Custom URL"),
     ]
+}
+
+fn news_size_presets() -> &'static [(&'static str, &'static str, u32, u32)] {
+    &[
+        ("xs", "XS (320x180)", 320, 180),
+        ("s", "S (480x270)", 480, 270),
+        ("m", "M (640x360)", 640, 360),
+        ("l", "L (800x450)", 800, 450),
+        ("xl", "XL (960x540)", 960, 540),
+        ("hd", "HD (1280x720)", 1280, 720),
+    ]
+}
+
+fn news_size_label(id: &str) -> &'static str {
+    news_size_presets()
+        .iter()
+        .find_map(|(k, label, _, _)| if *k == id { Some(*label) } else { None })
+        .unwrap_or("M (640x360)")
+}
+
+fn current_news_size_id(width: u32, height: u32) -> &'static str {
+    if let Some((id, _, _, _)) = news_size_presets()
+        .iter()
+        .find(|(_, _, w, h)| *w == width && *h == height)
+    {
+        return id;
+    }
+    let (w, h) = nearest_news_size_preset(width, height);
+    news_size_presets()
+        .iter()
+        .find_map(|(id, _, ww, hh)| {
+            if *ww == w && *hh == h {
+                Some(*id)
+            } else {
+                None
+            }
+        })
+        .unwrap_or("m")
+}
+
+fn nearest_news_size_preset(width: u32, height: u32) -> (u32, u32) {
+    let mut best = (640, 360);
+    let mut best_score = u64::MAX;
+    for (_, _, w, h) in news_size_presets() {
+        let dw = width.abs_diff(*w) as u64;
+        let dh = height.abs_diff(*h) as u64;
+        let score = dw.saturating_mul(dw).saturating_add(dh.saturating_mul(dh));
+        if score < best_score {
+            best_score = score;
+            best = (*w, *h);
+        }
+    }
+    best
 }
 
 fn news_source_label(id: &str) -> &'static str {
@@ -2279,6 +2355,7 @@ impl eframe::App for WcGuiApp {
         if self.cfg.quote_min_font_size > self.cfg.quote_font_size {
             self.cfg.quote_min_font_size = self.cfg.quote_font_size;
         }
+        self.enforce_news_widget_size_preset();
 
         if self.thumbnails.is_empty() || self.thumbnails_for_dir != self.cfg.image_dir {
             self.refresh_thumbnails(ctx);

@@ -1,4 +1,4 @@
-# Wallpaper Composer Projekt-Playbook (Rust, Linux, Wayland)
+# Le Compositeur Projekt-Playbook (Rust, Linux, Wayland)
 
 Dieses Dokument ist die zentrale Projektakte und dient als **Agent-Handoff**.
 Wenn ein neuer Agent startet, bekommt er dieses Dokument zuerst.

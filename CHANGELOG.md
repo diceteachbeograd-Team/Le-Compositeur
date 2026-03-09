@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026.03.09-2 - 2026-03-09
+- Added fixed 16:9 News widget size presets in GUI (dropdown, no free W/H typing).
+- Enforced News widget 16:9 rendering in preview output for consistent video framing.
+- Added weather geolocation cache fallback to reduce provider-rate-limit failures.
+- Updated GitHub release workflow to produce cleaner OS-specific artifacts:
+  - Linux: `.tar.gz`, `.deb`, `.rpm`, binary
+  - Windows: `.zip`, `.exe`
+  - macOS ARM: `.dmg`
+- Rebranded main user-facing names to **Le Compositeur** in README, desktop entry, and metainfo.
+
 ## 2026.03.08-5 - 2026-03-08
 - Added configurable Weather/News widget size controls (`W`/`H`) in `Ordering`, `Weather`, and `News` tabs.
 - Weather overlay output is now compact/icon-style for cleaner on-screen display.

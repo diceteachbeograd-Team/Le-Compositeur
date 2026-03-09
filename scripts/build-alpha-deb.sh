@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-2026.03.08-5}"
+VERSION="${1:-2026.03.09-2}"
 PKG_DIR="${ROOT_DIR}/dist/deb-root"
 
 need_cmd() {
@@ -51,8 +51,8 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: amd64
-Maintainer: Wallpaper Composer Contributors <opensource@example.com>
-Description: Dynamic Linux wallpaper composer (Rust)
+Maintainer: Le Compositeur Contributors <opensource@example.com>
+Description: Le Compositeur dynamic desktop GUI (Rust)
  Includes wc-cli and wc-gui alpha binaries.
 CONTROL
 

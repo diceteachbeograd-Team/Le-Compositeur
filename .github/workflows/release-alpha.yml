@@ -20,13 +20,10 @@ jobs:
         include:
           - name: linux-x86_64
             os: ubuntu-latest
-            archive_ext: tar.gz
           - name: windows-x86_64
             os: windows-latest
-            archive_ext: zip
           - name: macos-arm64
             os: macos-14
-            archive_ext: dmg
 
     steps:
       - name: Checkout
@@ -38,19 +35,90 @@ jobs:
       - name: Build GUI binary
         run: cargo build --release -p wc-gui
 
-      - name: Prepare bundle (Linux/macOS)
-        if: runner.os != 'Windows' && matrix.name != 'macos-arm64'
+      - name: Build Linux bundles (.tar.gz + .deb + .rpm)
+        if: matrix.name == 'linux-x86_64'
         run: |
-          mkdir -p dist/le-compositeur-${{ matrix.name }}/bin
-          cp target/release/wc-gui dist/le-compositeur-${{ matrix.name }}/bin/le-compositeur
-          chmod +x dist/le-compositeur-${{ matrix.name }}/bin/le-compositeur
-          cp README.md LICENSE dist/le-compositeur-${{ matrix.name }}/
-          cp dist/le-compositeur-${{ matrix.name }}/bin/le-compositeur dist/le-compositeur-${{ matrix.name }}
-          tar -C dist -czf dist/le-compositeur-${{ matrix.name }}.tar.gz le-compositeur-${{ matrix.name }}
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev build-essential
+          sudo gem install --no-document fpm
 
-      - name: Prepare macOS ARM app bundle + DMG
+          TAG="${GITHUB_REF_NAME#v}"
+          if [[ "$TAG" == *-* ]]; then
+            BASE="${TAG%-*}"
+            IDX="${TAG##*-}"
+          else
+            BASE="$TAG"
+            IDX="1"
+          fi
+
+          mkdir -p dist/le-compositeur-linux-x86_64-bundle/bin
+          cp target/release/wc-gui dist/le-compositeur-linux-x86_64-bundle/bin/le-compositeur
+          chmod +x dist/le-compositeur-linux-x86_64-bundle/bin/le-compositeur
+          cp README.md LICENSE dist/le-compositeur-linux-x86_64-bundle/
+          cp target/release/wc-gui dist/le-compositeur-linux-x86_64
+          chmod +x dist/le-compositeur-linux-x86_64
+          tar -C dist -czf dist/le-compositeur-linux-x86_64.tar.gz le-compositeur-linux-x86_64-bundle
+
+          mkdir -p dist/linux-root/usr/bin
+          mkdir -p dist/linux-root/usr/share/applications
+          mkdir -p dist/linux-root/usr/share/icons/hicolor/512x512/apps
+          mkdir -p dist/linux-root/usr/share/doc/le-compositeur
+          cp target/release/wc-gui dist/linux-root/usr/bin/le-compositeur
+          chmod +x dist/linux-root/usr/bin/le-compositeur
+          cp assets/icons/wallpaper-composer.png dist/linux-root/usr/share/icons/hicolor/512x512/apps/le-compositeur.png
+          cp README.md dist/linux-root/usr/share/doc/le-compositeur/README.md
+          cat > dist/linux-root/usr/share/applications/le-compositeur.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Le Compositeur
+          Comment=Dynamic desktop compositor with quotes, weather and news widgets
+          Exec=le-compositeur
+          Icon=le-compositeur
+          Terminal=false
+          Categories=Graphics;Utility;
+          Keywords=wallpaper;desktop;widgets;quotes;clock;
+          EOF
+
+          fpm -s dir -t deb \
+            -n le-compositeur \
+            -v "${BASE}" \
+            --iteration "${IDX}" \
+            --architecture amd64 \
+            --license "GPL-3.0-or-later" \
+            --description "Le Compositeur desktop GUI" \
+            --url "https://github.com/${GITHUB_REPOSITORY}" \
+            -C dist/linux-root \
+            usr
+
+          fpm -s dir -t rpm \
+            -n le-compositeur \
+            -v "${BASE}" \
+            --iteration "${IDX}" \
+            --architecture x86_64 \
+            --license "GPL-3.0-or-later" \
+            --description "Le Compositeur desktop GUI" \
+            --url "https://github.com/${GITHUB_REPOSITORY}" \
+            -C dist/linux-root \
+            usr
+
+          cp dist/*.deb dist/le-compositeur-linux-x86_64.deb
+          cp dist/*.rpm dist/le-compositeur-linux-x86_64.rpm
+
+      - name: Build Windows bundles (.zip + .exe)
+        if: matrix.name == 'windows-x86_64'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/le-compositeur-windows-x86_64/bin | Out-Null
+          Copy-Item target/release/wc-gui.exe dist/le-compositeur-windows-x86_64/bin/LeCompositeur.exe
+          Copy-Item README.md, LICENSE dist/le-compositeur-windows-x86_64/
+          Copy-Item dist/le-compositeur-windows-x86_64/bin/LeCompositeur.exe dist/LeCompositeur-windows-x86_64.exe
+          Compress-Archive -Path dist/le-compositeur-windows-x86_64 -DestinationPath dist/le-compositeur-windows-x86_64.zip -Force
+
+      - name: Build macOS ARM bundle (.dmg)
         if: matrix.name == 'macos-arm64'
         run: |
+          set -euo pipefail
           APP_ROOT="dist/Le Compositeur.app/Contents"
           mkdir -p "${APP_ROOT}/MacOS"
           cp target/release/wc-gui "${APP_ROOT}/MacOS/Le Compositeur"
@@ -76,27 +144,36 @@ jobs:
               <string>diceteachbeograd-Team</string>
             </dict>
           </plist>
+          PLIST
           hdiutil create -volname "Le Compositeur" -srcfolder "dist/Le Compositeur.app" -ov -format UDZO "dist/le-compositeur-macos-arm64.dmg"
-          cp target/release/wc-gui dist/le-compositeur-macos-arm64
 
-      - name: Prepare bundle (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist/le-compositeur-${{ matrix.name }}/bin | Out-Null
-          Copy-Item target/release/wc-gui.exe dist/le-compositeur-${{ matrix.name }}/bin/LeCompositeur.exe
-          Copy-Item README.md, LICENSE dist/le-compositeur-${{ matrix.name }}/
-          Copy-Item dist/le-compositeur-${{ matrix.name }}/bin/LeCompositeur.exe dist/LeCompositeur-${{ matrix.name }}.exe
-          Compress-Archive -Path dist/le-compositeur-${{ matrix.name }} -DestinationPath dist/le-compositeur-${{ matrix.name }}.zip -Force
-
-      - name: Upload artifact
+      - name: Upload Linux release files
+        if: matrix.name == 'linux-x86_64'
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.name }}
+          name: release-linux-x86_64
           path: |
-            dist/le-compositeur-${{ matrix.name }}.${{ matrix.archive_ext }}
-            dist/le-compositeur-${{ matrix.name }}
-            dist/LeCompositeur-${{ matrix.name }}.exe
+            dist/le-compositeur-linux-x86_64
+            dist/le-compositeur-linux-x86_64.tar.gz
+            dist/le-compositeur-linux-x86_64.deb
+            dist/le-compositeur-linux-x86_64.rpm
+
+      - name: Upload Windows release files
+        if: matrix.name == 'windows-x86_64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-x86_64
+          path: |
+            dist/le-compositeur-windows-x86_64.zip
+            dist/LeCompositeur-windows-x86_64.exe
+
+      - name: Upload macOS release files
+        if: matrix.name == 'macos-arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-arm64
+          path: |
+            dist/le-compositeur-macos-arm64.dmg
 
   publish-release:
     name: Publish GitHub Release
@@ -114,26 +191,27 @@ jobs:
       - name: Write release notes
         run: |
           cat > RELEASE_BODY.md <<'EOF'
-          ## Wallpaper Composer Release
+          ## Le Compositeur Release
 
-          End-user app name: **Le Compositeur**.
+          Direct downloads:
+          - Latest releases page: https://github.com/diceteachbeograd-Team/wallpaper-composer/releases/latest
+          - This tag: https://github.com/diceteachbeograd-Team/wallpaper-composer/releases/tag/${{ github.ref_name }}
 
           Included artifacts:
-          - Linux: `le-compositeur-linux-x86_64.tar.gz` + `le-compositeur-linux-x86_64` binary
-          - Windows: `le-compositeur-windows-x86_64.zip` + `LeCompositeur-windows-x86_64.exe`
-          - macOS ARM: `le-compositeur-macos-arm64.tar.gz` + `le-compositeur-macos-arm64` binary
+          - Linux: `le-compositeur-linux-x86_64.tar.gz`, `le-compositeur-linux-x86_64.deb`, `le-compositeur-linux-x86_64.rpm`, `le-compositeur-linux-x86_64`
+          - Windows: `le-compositeur-windows-x86_64.zip`, `LeCompositeur-windows-x86_64.exe`
+          - macOS ARM: `le-compositeur-macos-arm64.dmg`
 
           Notes:
-          - GUI app is the primary end-user app.
-          - CLI remains available for advanced/manual workflows from source builds.
-          - Project attribution: diceteachbeograd-Team.
+          - End-user application name: **Le Compositeur**
+          - Project attribution: **diceteachbeograd-Team**
           EOF
 
       - name: Publish release once (no duplicated notes)
         uses: softprops/action-gh-release@v2
         with:
-          name: Wallpaper Composer ${{ github.ref_name }}
+          name: Le Compositeur ${{ github.ref_name }}
           body_path: RELEASE_BODY.md
           generate_release_notes: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-pre') }}
-          files: release-assets/**
+          files: release-assets/*

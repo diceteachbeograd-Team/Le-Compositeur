@@ -1,5 +1,11 @@
 # TODO and Progress
 
+## UX / Visual Backlog (new)
+- [ ] Run a dedicated UI/UX design pass for tabs, button grouping, and action flow (Ordering/Images/Quotes/Style/System).
+- [ ] Create a cleaner information hierarchy for advanced features (weather/news widgets, autostart, integrations).
+- [ ] Define a consistent visual system (spacing, typography, accent colors, iconography) for a stronger cyber-ops look.
+- [ ] Reduce control duplication between tabs and keep "quick actions" visible without clutter.
+
 ## Current Status
 - MVP engine works on Fedora VM (image selection, quote selection, clock overlay, apply wallpaper).
 - Rotation now supports separate timers for image and quote.

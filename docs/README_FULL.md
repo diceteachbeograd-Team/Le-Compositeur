@@ -1,4 +1,4 @@
-# Wallpaper Composer
+# Le Compositeur
 
 EN | DE | SR | 中文
 
@@ -61,7 +61,7 @@ SR:
 ## English
 
 ### 1. What this project is
-Wallpaper Composer is an open-source Rust application for Linux desktop environments.
+Le Compositeur is an open-source Rust application for Linux desktop environments.
 It will generate dynamic wallpapers from:
 - an image folder,
 - rotating quotes from `.txt`/`.md`,
@@ -99,7 +99,7 @@ Not implemented yet:
 ### 3. Technology stack and versions
 Core stack:
 - Language: Rust (edition `2024`)
-- Workspace version: `2026.03.08-5`
+- Workspace version: `2026.03.09-2`
 - License: `GPL-3.0-or-later`
 
 Crates currently in use:
@@ -197,18 +197,18 @@ just migrate
 
 Alpha packaging helpers:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.08-5
-./scripts/build-alpha-deb.sh 2026.03.08-5
+./scripts/build-alpha-rpm.sh 2026.03.09-2
+./scripts/build-alpha-deb.sh 2026.03.09-2
 ```
 
 ### 6.1 Run on your system (release)
 Versioning scheme:
 - release version format: `YYYY.MM.DD-N`
-- example: `2026.03.08-5`
+- example: `2026.03.09-2`
 - if multiple builds happen on the same date, increment `N` (`.2`, `.3`, ...)
 
 You can choose either path:
-- `Option A`: download prebuilt release artifacts from GitHub Releases (tag `v...` or numeric tag like `2026.03.08-5`)
+- `Option A`: download prebuilt release artifacts from GitHub Releases (tag `v...` or numeric tag like `2026.03.09-2`)
 - `Option B`: build packages locally from source
 
 Fedora / RHEL (RPM):
@@ -220,8 +220,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B: local build + install
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.08-5
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.08-5-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.09-2
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.09-2-1*.rpm
 
 # start GUI
 wc-gui
@@ -239,8 +239,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B: local build + install
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.08-5
-sudo apt install ./dist/wallpaper-composer_2026.03.08-5_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.09-2
+sudo apt install ./dist/wallpaper-composer_2026.03.09-2_amd64.deb
 
 # start GUI
 wc-gui
@@ -385,7 +385,7 @@ Prototype UI:
 ### 8. Configuration reference (starter)
 Generated example:
 ```toml
-# Wallpaper Composer config
+# Le Compositeur config
 image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
 image_source = "local"
@@ -506,7 +506,7 @@ This software is provided "as is", without warranty of any kind.
 Wichtiger Hinweis: Dieses Projekt ist ein Hobby-Projekt und Nutzung erfolgt auf eigene Gefahr. Bugs konnen gemeldet werden, aber es gibt keine garantierte Bearbeitungszeit.
 
 ### 1. Projektziel
-Wallpaper Composer ist eine Open-Source-Anwendung in Rust fur Linux-Desktops.
+Le Compositeur ist eine Open-Source-Anwendung in Rust fur Linux-Desktops.
 Das Programm erzeugt dynamische Hintergrunde aus:
 - einem Bildordner,
 - rotierenden Spruchen aus `.txt`/`.md`,
@@ -541,7 +541,7 @@ Noch offen:
 
 ### 3. Technologien und Versionen
 - Sprache: Rust (Edition `2024`)
-- Projektversion: `2026.03.08-5`
+- Projektversion: `2026.03.09-2`
 - Lizenz: `GPL-3.0-or-later`
 
 Aktuell genutzte Crates:
@@ -598,18 +598,18 @@ cargo run -p wc-gui
 
 Alpha-Paket-Helfer:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.08-5
-./scripts/build-alpha-deb.sh 2026.03.08-5
+./scripts/build-alpha-rpm.sh 2026.03.09-2
+./scripts/build-alpha-deb.sh 2026.03.09-2
 ```
 
 ### 6.1 Auf deinem System starten (release)
 Versionsschema:
 - Release-Format: `YYYY.MM.DD-N`
-- Beispiel: `2026.03.08-5`
+- Beispiel: `2026.03.09-2`
 - bei mehreren Builds am gleichen Tag `N` hochzahlen (`.2`, `.3`, ...)
 
 Zwei Wege:
-- `Option A`: fertige Release-Artefakte aus GitHub Releases laden (Tag `v...` oder numerisch wie `2026.03.08-5`)
+- `Option A`: fertige Release-Artefakte aus GitHub Releases laden (Tag `v...` oder numerisch wie `2026.03.09-2`)
 - `Option B`: lokal aus Source bauen
 
 Fedora / RHEL (RPM):
@@ -620,8 +620,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.08-5
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.08-5-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.09-2
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.09-2-1*.rpm
 
 wc-gui
 wc-cli run --once
@@ -635,8 +635,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.08-5
-sudo apt install ./dist/wallpaper-composer_2026.03.08-5_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.09-2
+sudo apt install ./dist/wallpaper-composer_2026.03.09-2_amd64.deb
 
 wc-gui
 wc-cli run --once
@@ -710,7 +710,7 @@ Autostart nach Login:
 
 ### 8. Konfigurationsreferenz
 ```toml
-# Wallpaper Composer config
+# Le Compositeur config
 image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
 image_source = "local"
@@ -811,7 +811,7 @@ Bereitstellung ohne Gewahrleistung.
 Vazna napomena: ovo je hobi projekat i koristi se na sopstvenu odgovornost. Bug prijave su dobrodosle, ali vreme ispravke nije garantovano.
 
 ### 1. Cilj projekta
-Wallpaper Composer je open-source aplikacija u Rust-u za Linux desktop okruzenja.
+Le Compositeur je open-source aplikacija u Rust-u za Linux desktop okruzenja.
 Program pravi dinamicne pozadine iz:
 - foldera sa slikama,
 - rotirajucih citata iz `.txt`/`.md`,
@@ -845,7 +845,7 @@ Nije jos uradjeno:
 
 ### 3. Tehnologije i verzije
 - Jezik: Rust (edition `2024`)
-- Verzija projekta: `2026.03.08-5`
+- Verzija projekta: `2026.03.09-2`
 - Licenca: `GPL-3.0-or-later`
 
 Crate-ovi:
@@ -902,18 +902,18 @@ cargo run -p wc-gui
 
 Alpha helper skripte:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.08-5
-./scripts/build-alpha-deb.sh 2026.03.08-5
+./scripts/build-alpha-rpm.sh 2026.03.09-2
+./scripts/build-alpha-deb.sh 2026.03.09-2
 ```
 
 ### 6.1 Pokretanje na svom sistemu (release)
 Verzionisanje:
 - format izdanja: `YYYY.MM.DD-N`
-- primer: `2026.03.08-5`
+- primer: `2026.03.09-2`
 - za vise buildova istog dana povecaj `N` (`.2`, `.3`, ...)
 
 Imas dve opcije:
-- `Option A`: prebuilt release artefakti sa GitHub Releases (tag `v...` ili numericki kao `2026.03.08-5`)
+- `Option A`: prebuilt release artefakti sa GitHub Releases (tag `v...` ili numericki kao `2026.03.09-2`)
 - `Option B`: lokalni build iz source koda
 
 Fedora / RHEL (RPM):
@@ -924,8 +924,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.08-5
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.08-5-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.09-2
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.09-2-1*.rpm
 
 wc-gui
 wc-cli run --once
@@ -939,8 +939,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.08-5
-sudo apt install ./dist/wallpaper-composer_2026.03.08-5_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.09-2
+sudo apt install ./dist/wallpaper-composer_2026.03.09-2_amd64.deb
 
 wc-gui
 wc-cli run --once
@@ -993,7 +993,7 @@ macOS Intel / Apple Silicon (tar.gz):
 
 ### 8. Config referenca
 ```toml
-# Wallpaper Composer config
+# Le Compositeur config
 image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
 image_source = "local"
@@ -1074,7 +1074,7 @@ Softver se isporucuje bez garancije.
 重要提示：本项目是兴趣项目，使用风险由你自行承担。欢迎提交 bug，但修复时间不作保证。
 
 ### 1. 项目目标
-Wallpaper Composer 是一个面向 Linux 桌面环境的 Rust 开源项目。
+Le Compositeur 是一个面向 Linux 桌面环境的 Rust 开源项目。
 目标是从以下内容生成动态壁纸：
 - 图片目录，
 - 来自 `.txt`/`.md` 的轮换语录，
@@ -1108,7 +1108,7 @@ Wallpaper Composer 是一个面向 Linux 桌面环境的 Rust 开源项目。
 
 ### 3. 技术栈与版本
 - 语言：Rust（edition `2024`）
-- 项目版本：`2026.03.08-5`
+- 项目版本：`2026.03.09-2`
 - 许可证：`GPL-3.0-or-later`
 
 当前依赖：
@@ -1165,18 +1165,18 @@ cargo run -p wc-gui
 
 Alpha 打包脚本：
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.08-5
-./scripts/build-alpha-deb.sh 2026.03.08-5
+./scripts/build-alpha-rpm.sh 2026.03.09-2
+./scripts/build-alpha-deb.sh 2026.03.09-2
 ```
 
 ### 6.1 在你的系统上启动（release）
 版本规则：
 - 发布格式：`YYYY.MM.DD-N`
-- 示例：`2026.03.08-5`
+- 示例：`2026.03.09-2`
 - 同一天多次构建时递增 `N`（`.2`、`.3`）
 
 可选两种方式：
-- `Option A`：从 GitHub Releases 下载预构建产物（标签 `v...` 或数字标签如 `2026.03.08-5`）
+- `Option A`：从 GitHub Releases 下载预构建产物（标签 `v...` 或数字标签如 `2026.03.09-2`）
 - `Option B`：本地从源码构建
 
 Fedora / RHEL（RPM）：
@@ -1187,8 +1187,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.08-5
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.08-5-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.09-2
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.09-2-1*.rpm
 
 wc-gui
 wc-cli run --once
@@ -1202,8 +1202,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.08-5
-sudo apt install ./dist/wallpaper-composer_2026.03.08-5_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.09-2
+sudo apt install ./dist/wallpaper-composer_2026.03.09-2_amd64.deb
 
 wc-gui
 wc-cli run --once
@@ -1256,7 +1256,7 @@ macOS Intel / Apple Silicon（tar.gz）：
 
 ### 8. 配置说明
 ```toml
-# Wallpaper Composer config
+# Le Compositeur config
 image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
 image_source = "local"

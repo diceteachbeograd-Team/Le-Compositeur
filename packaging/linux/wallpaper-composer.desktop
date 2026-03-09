@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Wallpaper Composer
-Comment=Dynamic wallpaper composer with quotes and clock overlays
+Name=Le Compositeur
+Comment=Dynamic desktop compositor with quotes, weather and news widgets
 Exec=wc-gui
 Icon=/usr/share/icons/hicolor/512x512/apps/wallpaper-composer.png
 Terminal=false

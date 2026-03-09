@@ -14,7 +14,7 @@ Workflow file:
 - `.github/workflows/release-alpha.yml`
 
 Trigger:
-- push tags: `v*` or numeric tags like `2026.03.08-5`
+- push tags: `v*` or numeric tags like `2026.03.09-2`
 - manual `workflow_dispatch`
 
 Release publish strategy:
@@ -31,12 +31,13 @@ GitHub release assets currently include:
 - Linux:
   - `le-compositeur-linux-x86_64.tar.gz`
   - `le-compositeur-linux-x86_64` (single GUI binary)
+  - `le-compositeur-linux-x86_64.deb`
+  - `le-compositeur-linux-x86_64.rpm`
 - Windows:
   - `le-compositeur-windows-x86_64.zip`
   - `LeCompositeur-windows-x86_64.exe` (single GUI binary)
 - macOS ARM:
   - `le-compositeur-macos-arm64.dmg`
-  - `le-compositeur-macos-arm64` (single GUI binary)
 
 Note:
 - `macos-x86_64` is currently excluded from CI due to unsupported runner image in this project setup.
@@ -55,12 +56,10 @@ If you build packages locally:
 - RPM output: `~/rpmbuild/RPMS/x86_64/`
 - DEB output: `./dist/`
 
-These are not yet auto-published by the current GitHub release workflow.
-
 ## 6. Tagging and release type
 
 Stable release:
-- tags like `2026.03.08-5` or `v1.20260308.1`
+- tags like `2026.03.09-2` or `v1.20260309.2`
 
 Pre-release:
 - tags containing one of:
@@ -74,6 +73,6 @@ Pre-release:
 ```bash
 git checkout main
 git pull origin main
-git tag 2026.03.08-5
-git push origin 2026.03.08-5
+git tag 2026.03.09-2
+git push origin 2026.03.09-2
 ```

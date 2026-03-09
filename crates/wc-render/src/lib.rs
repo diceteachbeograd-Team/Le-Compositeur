@@ -7,6 +7,7 @@ pub struct PreviewText<'a> {
     pub quote: &'a str,
     pub clock: &'a str,
     pub weather: &'a str,
+    pub weather_map_image: Option<&'a Path>,
     pub news: &'a str,
     pub news_image: Option<&'a Path>,
     pub quote_font_size: u32,
@@ -76,11 +77,14 @@ pub fn render_preview_to_file(
 
     let meta_path = metadata_path_for(output_image);
     let metadata = format!(
-        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nweather = {:?}\nnews = {:?}\nnews_image = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_width = {}\nweather_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_width = {}\nnews_height = {}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
+        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nweather = {:?}\nweather_map_image = {:?}\nnews = {:?}\nnews_image = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_width = {}\nweather_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_width = {}\nnews_height = {}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
         render_mode,
         text.quote,
         text.clock,
         text.weather,
+        text.weather_map_image
+            .map(|p| p.display().to_string())
+            .unwrap_or_default(),
         text.news,
         text.news_image
             .map(|p| p.display().to_string())
@@ -349,15 +353,65 @@ fn render_with_imagemagick(
 
     if !text.weather.trim().is_empty() {
         let weather_size = text.weather_font_size.clamp(10, 220);
+        let weather_box_w = text.weather_width.clamp(120, canvas_w.max(120));
+        let weather_box_h = text.weather_height.clamp(80, canvas_h.max(80));
+
+        // Cyber panel background behind weather minimap + metrics.
+        args.push("(".to_string());
+        args.push("-size".to_string());
+        args.push(format!("{}x{}", weather_box_w, weather_box_h));
+        args.push("xc:#02131CB8".to_string());
+        args.push(")".to_string());
+        args.push("-gravity".to_string());
+        args.push("NorthWest".to_string());
+        args.push("-geometry".to_string());
+        args.push(format!("+{}+{}", text.weather_pos_x, text.weather_pos_y));
+        args.push("-composite".to_string());
+
+        let mut weather_text_x = text.weather_pos_x;
+        let mut weather_text_w = weather_box_w;
+        if let Some(map_img) = text.weather_map_image
+            && map_img.exists()
+        {
+            let map_w = (weather_box_w.saturating_mul(42) / 100)
+                .max(120)
+                .min(weather_box_w.saturating_sub(80));
+            let map_h = weather_box_h.saturating_sub(16).max(64);
+
+            args.push("(".to_string());
+            args.push(map_img.display().to_string());
+            args.push("-auto-orient".to_string());
+            args.push("-resize".to_string());
+            args.push(format!("{map_w}x{map_h}^"));
+            args.push("-gravity".to_string());
+            args.push("Center".to_string());
+            args.push("-extent".to_string());
+            args.push(format!("{map_w}x{map_h}"));
+            args.push("-modulate".to_string());
+            args.push("110,95,105".to_string());
+            args.push(")".to_string());
+            args.push("-gravity".to_string());
+            args.push("NorthWest".to_string());
+            args.push("-geometry".to_string());
+            args.push(format!(
+                "+{}+{}",
+                text.weather_pos_x.saturating_add(8),
+                text.weather_pos_y.saturating_add(8)
+            ));
+            args.push("-composite".to_string());
+
+            weather_text_x = text
+                .weather_pos_x
+                .saturating_add(map_w as i32)
+                .saturating_add(16);
+            weather_text_w = weather_box_w.saturating_sub(map_w).saturating_sub(22);
+        }
+
         args.push("(".to_string());
         args.push("-background".to_string());
         args.push("none".to_string());
         args.push("-size".to_string());
-        args.push(format!(
-            "{}x{}",
-            text.weather_width.clamp(120, canvas_w.max(120)),
-            text.weather_height.clamp(80, canvas_h.max(80))
-        ));
+        args.push(format!("{}x{}", weather_text_w, weather_box_h));
         args.push("-fill".to_string());
         args.push(text.weather_color.to_string());
         args.push("-stroke".to_string());
@@ -377,13 +431,14 @@ fn render_with_imagemagick(
         args.push("-gravity".to_string());
         args.push("NorthWest".to_string());
         args.push("-geometry".to_string());
-        args.push(format!("+{}+{}", text.weather_pos_x, text.weather_pos_y));
+        args.push(format!("+{}+{}", weather_text_x, text.weather_pos_y));
         args.push("-composite".to_string());
     }
 
     if !text.news.trim().is_empty() {
-        let news_box_w = text.news_width.clamp(180, canvas_w.max(180));
-        let news_box_h = text.news_height.clamp(120, canvas_h.max(120));
+        let news_box_w = text.news_width.clamp(320, canvas_w.max(320));
+        let news_box_h = news_box_w.saturating_mul(9) / 16;
+        let news_text_h = (text.clock_font_size.saturating_mul(7) / 5).clamp(44, 92);
         if let Some(news_image) = text.news_image
             && news_image.exists()
         {
@@ -404,27 +459,27 @@ fn render_with_imagemagick(
             args.push("-composite".to_string());
         }
 
-        let news_size = (text.clock_font_size.saturating_mul(65) / 100).max(16);
+        let news_size = (text.clock_font_size.saturating_mul(58) / 100).max(14);
         args.push("(".to_string());
         args.push("-background".to_string());
         args.push("none".to_string());
         args.push("-size".to_string());
-        args.push(format!("{news_box_w}x{}", (news_box_h / 3).max(56)));
+        args.push(format!("{news_box_w}x{news_text_h}"));
         args.push("-fill".to_string());
-        args.push("#FF5CF3".to_string());
+        args.push("#39FF14".to_string());
         args.push("-stroke".to_string());
-        args.push("#2A0027".to_string());
+        args.push("#062200".to_string());
         args.push("-strokewidth".to_string());
         args.push("1".to_string());
         args.push("-undercolor".to_string());
-        args.push("#080018B3".to_string());
+        args.push("#001108D9".to_string());
         args.push("-gravity".to_string());
         args.push("West".to_string());
         args.push("-font".to_string());
-        args.push(text.font_family.to_string());
+        args.push("DejaVu-Sans-Mono".to_string());
         args.push("-pointsize".to_string());
         args.push(news_size.to_string());
-        args.push(format!("label:{}", text.news));
+        args.push(format!("caption:▮ {}", text.news));
         args.push(")".to_string());
         args.push("-gravity".to_string());
         args.push("NorthWest".to_string());
@@ -902,6 +957,7 @@ mod tests {
                 quote: "Focus.",
                 clock: "13:37",
                 weather: "Belgrade 13C clear",
+                weather_map_image: None,
                 news: "LIVE: Euronews",
                 news_image: None,
                 quote_font_size: 24,
@@ -970,6 +1026,7 @@ mod tests {
                 quote: "HELLO",
                 clock: "12:34",
                 weather: "Rain 4C",
+                weather_map_image: None,
                 news: "LIVE",
                 news_image: None,
                 quote_font_size: 24,
