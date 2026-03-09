@@ -30,7 +30,7 @@ ln -s le-compositeur %{buildroot}%{_bindir}/wc-gui
 ln -s le-compositeur-cli %{buildroot}%{_bindir}/wc-cli
 install -Dpm0644 README.md %{buildroot}%{_docdir}/%{name}/README.md
 install -Dpm0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
-install -Dpm0644 assets/icons/wallpaper-composer.png %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/le-compositeur.png
+install -Dpm0644 assets/icons/le-compositeur.png %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/le-compositeur.png
 install -Dpm0644 assets/quotes/local/local-quotes.md %{buildroot}%{_datadir}/%{name}/quotes/local-quotes.md
 install -Dpm0644 packaging/linux/le-compositeur.desktop %{buildroot}%{_datadir}/applications/le-compositeur.desktop
 install -Dpm0644 packaging/linux/le-compositeur.metainfo.xml %{buildroot}%{_datadir}/metainfo/le-compositeur.metainfo.xml
@@ -49,6 +49,10 @@ install -Dpm0644 packaging/linux/le-compositeur.metainfo.xml %{buildroot}%{_data
 %{_datadir}/metainfo/le-compositeur.metainfo.xml
 
 %changelog
+* Mon Mar 09 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.09-4
+- Finalize le-compositeur package naming and icon asset paths.
+- Align release/docs install commands with RPM release index format.
+
 * Mon Mar 09 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.09-3
 - Rename Linux package output to le-compositeur and add le-compositeur binaries.
 - Keep wc-cli and wc-gui symlinks for compatibility.

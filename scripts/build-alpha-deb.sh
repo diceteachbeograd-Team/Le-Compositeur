@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-2026.03.09-3}"
+VERSION="${1:-2026.03.09-4}"
 PKG_DIR="${ROOT_DIR}/dist/deb-root"
 
 need_cmd() {
@@ -32,10 +32,10 @@ cd "$ROOT_DIR"
 need_cmd cargo || { hint_missing_deb_deps; exit 1; }
 need_cmd dpkg-deb || { hint_missing_deb_deps; exit 1; }
 need_file "assets/quotes/local/local-quotes.md" || exit 1
-need_file "assets/icons/wallpaper-composer.png" || {
+need_file "assets/icons/le-compositeur.png" || {
   cat >&2 <<'EOF'
 hint: place your preferred app icon at:
-  assets/icons/wallpaper-composer.png
+  assets/icons/le-compositeur.png
 EOF
   exit 1
 }
@@ -62,7 +62,7 @@ install -m0755 packaging/linux/le-compositeur-wrapper.sh "$PKG_DIR/usr/bin/le-co
 ln -sf le-compositeur "$PKG_DIR/usr/bin/wc-gui"
 ln -sf le-compositeur-cli "$PKG_DIR/usr/bin/wc-cli"
 install -m0644 packaging/linux/le-compositeur.desktop "$PKG_DIR/usr/share/applications/le-compositeur.desktop"
-install -m0644 assets/icons/wallpaper-composer.png "$PKG_DIR/usr/share/icons/hicolor/512x512/apps/le-compositeur.png"
+install -m0644 assets/icons/le-compositeur.png "$PKG_DIR/usr/share/icons/hicolor/512x512/apps/le-compositeur.png"
 install -m0644 assets/quotes/local/local-quotes.md "$PKG_DIR/usr/share/le-compositeur/quotes/local-quotes.md"
 
 dpkg-deb --build "$PKG_DIR" "${ROOT_DIR}/dist/le-compositeur_${VERSION}_amd64.deb"

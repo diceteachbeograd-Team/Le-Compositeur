@@ -30,15 +30,9 @@ fn load_app_icon() -> Option<egui::IconData> {
     if let Ok(p) = std::env::var("WC_GUI_ICON") {
         candidates.push(PathBuf::from(p));
     }
-    candidates.push(PathBuf::from("assets/icons/wallpaper-composer.png"));
+    candidates.push(PathBuf::from("assets/icons/le-compositeur.png"));
     candidates.push(PathBuf::from(
         "/usr/share/icons/hicolor/512x512/apps/le-compositeur.png",
-    ));
-    candidates.push(PathBuf::from(
-        "/usr/share/icons/hicolor/512x512/apps/wallpaper-composer.png",
-    ));
-    candidates.push(PathBuf::from(
-        "/usr/share/icons/hicolor/256x256/apps/wallpaper-composer.png",
     ));
 
     for path in candidates {

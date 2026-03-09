@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RELEASE_TAG="${1:-2026.03.09-3}"
+RELEASE_TAG="${1:-2026.03.09-4}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PKG_NAME="le-compositeur"
 RPM_VERSION="${RELEASE_TAG%-*}"
@@ -36,10 +36,10 @@ need_cmd cargo || { hint_missing_fedora_deps; exit 1; }
 need_cmd rpmbuild || { hint_missing_fedora_deps; exit 1; }
 need_cmd rsync || { hint_missing_fedora_deps; exit 1; }
 need_file "assets/quotes/local/local-quotes.md" || exit 1
-need_file "assets/icons/wallpaper-composer.png" || {
+need_file "assets/icons/le-compositeur.png" || {
   cat >&2 <<'EOF'
 hint: place your preferred app icon at:
-  assets/icons/wallpaper-composer.png
+  assets/icons/le-compositeur.png
 EOF
   exit 1
 }
@@ -57,7 +57,7 @@ tar -C "$tmpdir" -czf "$tmpdir/$TARBALL" "${PKG_NAME}-${RPM_VERSION}"
 mkdir -p "$HOME/rpmbuild/SOURCES"
 cp "$tmpdir/$TARBALL" "$HOME/rpmbuild/SOURCES/"
 
-rpmbuild -ba packaging/rpm/wallpaper-composer.spec \
+rpmbuild -ba packaging/rpm/le-compositeur.spec \
   --define "_topdir $HOME/rpmbuild" \
   --define "version $RPM_VERSION" \
   --define "release $RPM_RELEASE"

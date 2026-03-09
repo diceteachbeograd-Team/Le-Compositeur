@@ -4,12 +4,12 @@ This document tracks packaging status and next steps for distribution.
 
 ## Current status
 - CI workflow exists for `fmt`, `clippy`, `test`.
-- RPM alpha spec includes CLI+GUI install metadata: `packaging/rpm/wallpaper-composer.spec`.
+- RPM alpha spec includes CLI+GUI install metadata: `packaging/rpm/le-compositeur.spec`.
 - DEB template includes alpha package metadata: `packaging/deb/control.template`.
 - Linux desktop packaging assets are present:
   - `packaging/linux/le-compositeur.desktop`
   - `packaging/linux/le-compositeur.metainfo.xml`
-  - `assets/icons/wallpaper-composer.svg`
+  - `assets/icons/le-compositeur.svg`
 - Alpha build scripts:
   - `scripts/build-alpha-rpm.sh`
   - `scripts/build-alpha-deb.sh`

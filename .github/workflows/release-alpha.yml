@@ -66,7 +66,7 @@ jobs:
           mkdir -p dist/linux-root/usr/share/doc/le-compositeur
           cp target/release/wc-gui dist/linux-root/usr/bin/le-compositeur
           chmod +x dist/linux-root/usr/bin/le-compositeur
-          cp assets/icons/wallpaper-composer.png dist/linux-root/usr/share/icons/hicolor/512x512/apps/le-compositeur.png
+          cp assets/icons/le-compositeur.png dist/linux-root/usr/share/icons/hicolor/512x512/apps/le-compositeur.png
           cp README.md dist/linux-root/usr/share/doc/le-compositeur/README.md
           cat > dist/linux-root/usr/share/applications/le-compositeur.desktop <<'EOF'
           [Desktop Entry]
