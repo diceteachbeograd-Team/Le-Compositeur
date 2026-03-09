@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-2026.03.09-2}"
+VERSION="${1:-2026.03.09-3}"
 PKG_DIR="${ROOT_DIR}/dist/deb-root"
 
 need_cmd() {
@@ -43,10 +43,10 @@ EOF
 cargo build --release -p wc-cli -p wc-gui
 
 rm -rf "$PKG_DIR"
-mkdir -p "$PKG_DIR/DEBIAN" "$PKG_DIR/usr/bin" "$PKG_DIR/usr/libexec/wallpaper-composer" "$PKG_DIR/usr/share/applications" "$PKG_DIR/usr/share/icons/hicolor/512x512/apps" "$PKG_DIR/usr/share/wallpaper-composer/quotes"
+mkdir -p "$PKG_DIR/DEBIAN" "$PKG_DIR/usr/bin" "$PKG_DIR/usr/libexec/le-compositeur" "$PKG_DIR/usr/share/applications" "$PKG_DIR/usr/share/icons/hicolor/512x512/apps" "$PKG_DIR/usr/share/le-compositeur/quotes"
 
 cat > "$PKG_DIR/DEBIAN/control" <<CONTROL
-Package: wallpaper-composer
+Package: le-compositeur
 Version: ${VERSION}
 Section: utils
 Priority: optional
@@ -56,14 +56,16 @@ Description: Le Compositeur dynamic desktop GUI (Rust)
  Includes wc-cli and wc-gui alpha binaries.
 CONTROL
 
-install -m0755 target/release/wc-cli "$PKG_DIR/usr/bin/wc-cli"
-install -m0755 target/release/wc-gui "$PKG_DIR/usr/libexec/wallpaper-composer/wc-gui-bin"
-install -m0755 packaging/linux/wc-gui-wrapper.sh "$PKG_DIR/usr/bin/wc-gui"
-install -m0644 packaging/linux/wallpaper-composer.desktop "$PKG_DIR/usr/share/applications/wallpaper-composer.desktop"
-install -m0644 assets/icons/wallpaper-composer.png "$PKG_DIR/usr/share/icons/hicolor/512x512/apps/wallpaper-composer.png"
-install -m0644 assets/quotes/local/local-quotes.md "$PKG_DIR/usr/share/wallpaper-composer/quotes/local-quotes.md"
+install -m0755 target/release/wc-cli "$PKG_DIR/usr/bin/le-compositeur-cli"
+install -m0755 target/release/wc-gui "$PKG_DIR/usr/libexec/le-compositeur/le-compositeur-bin"
+install -m0755 packaging/linux/le-compositeur-wrapper.sh "$PKG_DIR/usr/bin/le-compositeur"
+ln -sf le-compositeur "$PKG_DIR/usr/bin/wc-gui"
+ln -sf le-compositeur-cli "$PKG_DIR/usr/bin/wc-cli"
+install -m0644 packaging/linux/le-compositeur.desktop "$PKG_DIR/usr/share/applications/le-compositeur.desktop"
+install -m0644 assets/icons/wallpaper-composer.png "$PKG_DIR/usr/share/icons/hicolor/512x512/apps/le-compositeur.png"
+install -m0644 assets/quotes/local/local-quotes.md "$PKG_DIR/usr/share/le-compositeur/quotes/local-quotes.md"
 
-dpkg-deb --build "$PKG_DIR" "${ROOT_DIR}/dist/wallpaper-composer_${VERSION}_amd64.deb"
+dpkg-deb --build "$PKG_DIR" "${ROOT_DIR}/dist/le-compositeur_${VERSION}_amd64.deb"
 
 echo "DEB build complete:"
-ls -lah "${ROOT_DIR}/dist/wallpaper-composer_${VERSION}_amd64.deb"
+ls -lah "${ROOT_DIR}/dist/le-compositeur_${VERSION}_amd64.deb"

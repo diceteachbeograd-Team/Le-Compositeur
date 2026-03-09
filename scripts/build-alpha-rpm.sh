@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RELEASE_TAG="${1:-2026.03.09-2}"
+RELEASE_TAG="${1:-2026.03.09-3}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-PKG_NAME="wallpaper-composer"
+PKG_NAME="le-compositeur"
 RPM_VERSION="${RELEASE_TAG%-*}"
 RPM_RELEASE="${RELEASE_TAG##*-}"
 TARBALL="${PKG_NAME}-${RPM_VERSION}.tar.gz"

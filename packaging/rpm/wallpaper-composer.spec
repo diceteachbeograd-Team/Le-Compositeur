@@ -1,5 +1,5 @@
-Name:           wallpaper-composer
-Version:        %{?version}%{!?version:2026.03.08}
+Name:           le-compositeur
+Version:        %{?version}%{!?version:2026.03.09}
 Release:        %{?release}%{!?release:1}%{?dist}
 Summary:        Le Compositeur dynamic desktop GUI (Rust)
 
@@ -23,28 +23,36 @@ cargo build --release -p wc-cli
 cargo build --release -p wc-gui
 
 %install
-install -Dpm0755 target/release/wc-cli %{buildroot}%{_bindir}/wc-cli
-install -Dpm0755 target/release/wc-gui %{buildroot}%{_libexecdir}/%{name}/wc-gui-bin
-install -Dpm0755 packaging/linux/wc-gui-wrapper.sh %{buildroot}%{_bindir}/wc-gui
+install -Dpm0755 target/release/wc-cli %{buildroot}%{_bindir}/le-compositeur-cli
+install -Dpm0755 target/release/wc-gui %{buildroot}%{_libexecdir}/%{name}/le-compositeur-bin
+install -Dpm0755 packaging/linux/le-compositeur-wrapper.sh %{buildroot}%{_bindir}/le-compositeur
+ln -s le-compositeur %{buildroot}%{_bindir}/wc-gui
+ln -s le-compositeur-cli %{buildroot}%{_bindir}/wc-cli
 install -Dpm0644 README.md %{buildroot}%{_docdir}/%{name}/README.md
 install -Dpm0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
-install -Dpm0644 assets/icons/wallpaper-composer.png %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/wallpaper-composer.png
-install -Dpm0644 assets/quotes/local/local-quotes.md %{buildroot}%{_datadir}/wallpaper-composer/quotes/local-quotes.md
-install -Dpm0644 packaging/linux/wallpaper-composer.desktop %{buildroot}%{_datadir}/applications/wallpaper-composer.desktop
-install -Dpm0644 packaging/linux/wallpaper-composer.metainfo.xml %{buildroot}%{_datadir}/metainfo/wallpaper-composer.metainfo.xml
+install -Dpm0644 assets/icons/wallpaper-composer.png %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/le-compositeur.png
+install -Dpm0644 assets/quotes/local/local-quotes.md %{buildroot}%{_datadir}/%{name}/quotes/local-quotes.md
+install -Dpm0644 packaging/linux/le-compositeur.desktop %{buildroot}%{_datadir}/applications/le-compositeur.desktop
+install -Dpm0644 packaging/linux/le-compositeur.metainfo.xml %{buildroot}%{_datadir}/metainfo/le-compositeur.metainfo.xml
 
 %files
 %license %{_licensedir}/%{name}/LICENSE
 %doc %{_docdir}/%{name}/README.md
 %{_bindir}/wc-cli
 %{_bindir}/wc-gui
-%{_libexecdir}/%{name}/wc-gui-bin
-%{_datadir}/icons/hicolor/512x512/apps/wallpaper-composer.png
-%{_datadir}/wallpaper-composer/quotes/local-quotes.md
-%{_datadir}/applications/wallpaper-composer.desktop
-%{_datadir}/metainfo/wallpaper-composer.metainfo.xml
+%{_bindir}/le-compositeur
+%{_bindir}/le-compositeur-cli
+%{_libexecdir}/%{name}/le-compositeur-bin
+%{_datadir}/icons/hicolor/512x512/apps/le-compositeur.png
+%{_datadir}/%{name}/quotes/local-quotes.md
+%{_datadir}/applications/le-compositeur.desktop
+%{_datadir}/metainfo/le-compositeur.metainfo.xml
 
 %changelog
+* Mon Mar 09 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.09-3
+- Rename Linux package output to le-compositeur and add le-compositeur binaries.
+- Keep wc-cli and wc-gui symlinks for compatibility.
+
 * Mon Mar 09 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.09-2
 - Add fixed 16:9 News size presets in GUI and enforce preset snapping.
 - Improve release artifact workflow with explicit OS-targeted package outputs.

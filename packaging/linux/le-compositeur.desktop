@@ -2,11 +2,11 @@
 Type=Application
 Name=Le Compositeur
 Comment=Dynamic desktop compositor with quotes, weather and news widgets
-Exec=wc-gui
-Icon=/usr/share/icons/hicolor/512x512/apps/wallpaper-composer.png
+Exec=le-compositeur
+Icon=le-compositeur
 Terminal=false
 Categories=Graphics;Utility;
 Keywords=wallpaper;quotes;clock;background;
 StartupNotify=true
-StartupWMClass=wc-gui
-X-GNOME-WMClass=wc-gui
+StartupWMClass=le-compositeur
+X-GNOME-WMClass=le-compositeur

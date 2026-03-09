@@ -7,8 +7,8 @@ This document tracks packaging status and next steps for distribution.
 - RPM alpha spec includes CLI+GUI install metadata: `packaging/rpm/wallpaper-composer.spec`.
 - DEB template includes alpha package metadata: `packaging/deb/control.template`.
 - Linux desktop packaging assets are present:
-  - `packaging/linux/wallpaper-composer.desktop`
-  - `packaging/linux/wallpaper-composer.metainfo.xml`
+  - `packaging/linux/le-compositeur.desktop`
+  - `packaging/linux/le-compositeur.metainfo.xml`
   - `assets/icons/wallpaper-composer.svg`
 - Alpha build scripts:
   - `scripts/build-alpha-rpm.sh`

@@ -10,7 +10,7 @@ use wc_core::{
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() -> eframe::Result<()> {
-    let mut viewport = egui::ViewportBuilder::default().with_app_id("wallpaper-composer");
+    let mut viewport = egui::ViewportBuilder::default().with_app_id("le-compositeur");
     if let Some(icon) = load_app_icon() {
         viewport = viewport.with_icon(icon);
     }
@@ -31,6 +31,9 @@ fn load_app_icon() -> Option<egui::IconData> {
         candidates.push(PathBuf::from(p));
     }
     candidates.push(PathBuf::from("assets/icons/wallpaper-composer.png"));
+    candidates.push(PathBuf::from(
+        "/usr/share/icons/hicolor/512x512/apps/le-compositeur.png",
+    ));
     candidates.push(PathBuf::from(
         "/usr/share/icons/hicolor/512x512/apps/wallpaper-composer.png",
     ));
@@ -474,7 +477,7 @@ impl WcGuiApp {
                 PathBuf::from(home)
                     .join(".config")
                     .join("autostart")
-                    .join("wallpaper-composer.desktop"),
+                    .join("le-compositeur.desktop"),
             )
         }
         #[cfg(not(target_os = "linux"))]
