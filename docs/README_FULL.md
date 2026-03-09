@@ -403,7 +403,7 @@ clock_pos_x = 1600
 clock_pos_y = 960
 rotation_use_persistent_state = true
 rotation_state_file = "~/.local/state/wallpaper-composer/rotation.state"
-output_image = "/tmp/wallpaper-composer-current.png"
+output_image = "~/.local/state/wallpaper-composer/current.png"
 refresh_seconds = 300
 time_format = "%H:%M"
 apply_wallpaper = false
@@ -728,8 +728,8 @@ output_image = "/tmp/wallpaper-composer-current.png"
 image_refresh_seconds = 300
 quote_refresh_seconds = 300
 time_format = "%H:%M"
-show_weather_layer = true
-show_news_layer = true
+show_weather_layer = false
+show_news_layer = false
 weather_pos_x = 120
 weather_pos_y = 120
 news_pos_x = 980
@@ -758,6 +758,10 @@ Bedeutung:
 - `show_weather_layer` / `show_news_layer`: Widget-Layer ein/aus
 - `weather_*`: Position, Refresh und Location-Modus fur Wetter-Widget
 - `news_*`: Quelle/URL, FPS und Audio-Flag fur News-Widget
+
+Sicherheit/Privatsphare:
+- Wetter- und News-Widget sind bei Erstinstallation standardmaßig deaktiviert.
+- Bei Aktivierung nutzen beide Widgets Netzwerkzugriffe auf externe Endpunkte.
 
 Lokale Quote-Datei (empfohlenes Block-Format):
 ```txt

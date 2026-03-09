@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use reqwest::blocking::Client;
 use serde_json::Value;
@@ -227,6 +227,12 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             weather_pos_y: cfg.weather_pos_y,
             weather_width: cfg.weather_widget_width,
             weather_height: cfg.weather_widget_height,
+            weather_font_size: cfg.weather_font_size,
+            weather_font_family: &cfg.weather_font_family,
+            weather_color: &cfg.weather_color,
+            weather_undercolor: &cfg.weather_undercolor,
+            weather_stroke_color: &cfg.weather_stroke_color,
+            weather_stroke_width: cfg.weather_stroke_width,
             news_pos_x: cfg.news_pos_x,
             news_pos_y: cfg.news_pos_y,
             news_width: cfg.news_widget_width,
@@ -269,13 +275,21 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     println!("preview_metadata: {}", render.meta_path.display());
 
     let effective_apply_wallpaper = cfg.apply_wallpaper && cfg.show_background_layer;
+    let wallpaper_target = if effective_apply_wallpaper {
+        prepare_wallpaper_apply_target(cfg, &output_path)?
+    } else {
+        output_path.clone()
+    };
     let apply_status = apply_wallpaper(
         &cfg.wallpaper_backend,
         &cfg.wallpaper_fit_mode,
         effective_apply_wallpaper,
-        &output_path,
+        &wallpaper_target,
     )
     .map_err(anyhow::Error::msg)?;
+    if effective_apply_wallpaper {
+        println!("wallpaper_target: {}", wallpaper_target.display());
+    }
     println!("wallpaper_apply: {}", apply_status);
 
     Ok(())
@@ -383,6 +397,15 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     if !(80..=1080).contains(&cfg.weather_widget_height) {
         anyhow::bail!("weather_widget_height must be between 80 and 1080");
     }
+    if !(10..=220).contains(&cfg.weather_font_size) {
+        anyhow::bail!("weather_font_size must be between 10 and 220");
+    }
+    if cfg.weather_stroke_width > 20 {
+        anyhow::bail!("weather_stroke_width must be <= 20");
+    }
+    if cfg.weather_font_family.trim().is_empty() {
+        anyhow::bail!("weather_font_family must be non-empty");
+    }
     if !(180..=1920).contains(&cfg.news_widget_width) {
         anyhow::bail!("news_widget_width must be between 180 and 1920");
     }
@@ -425,13 +448,16 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     }
     if cfg.quote_color.trim().is_empty()
         || cfg.clock_color.trim().is_empty()
+        || cfg.weather_color.trim().is_empty()
+        || cfg.weather_undercolor.trim().is_empty()
+        || cfg.weather_stroke_color.trim().is_empty()
         || cfg.text_stroke_color.trim().is_empty()
         || cfg.text_undercolor.trim().is_empty()
         || cfg.text_shadow_color.trim().is_empty()
         || cfg.font_family.trim().is_empty()
     {
         anyhow::bail!(
-            "font_family, quote_color, clock_color, text_stroke_color, text_undercolor and text_shadow_color must be non-empty"
+            "font_family, quote_color, clock_color, weather style colors, text_stroke_color, text_undercolor and text_shadow_color must be non-empty"
         );
     }
     let fit_mode = cfg.wallpaper_fit_mode.trim().to_ascii_lowercase();
@@ -628,7 +654,7 @@ fn image_pick_state_path(cfg: &AppConfig) -> Result<PathBuf> {
 }
 
 fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {
-    match cfg.quote_source.trim().to_ascii_lowercase().as_str() {
+    let raw = match cfg.quote_source.trim().to_ascii_lowercase().as_str() {
         "local" => {
             let quotes_path = expand_tilde(&cfg.quotes_path)?;
             let state_path = quote_pick_state_path(cfg)?;
@@ -656,7 +682,8 @@ fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {
         other => Err(anyhow::anyhow!(
             "unsupported quote_source={other}; supported: local, preset, url"
         )),
-    }
+    }?;
+    Ok(strip_project_line_suffix(&raw))
 }
 
 fn resolve_weather_widget(cfg: &AppConfig) -> Result<String> {
@@ -1297,6 +1324,22 @@ fn decode_numeric_entities(input: &str) -> String {
     out
 }
 
+fn strip_project_line_suffix(input: &str) -> String {
+    let mut out = Vec::<String>::new();
+    for line in input.lines() {
+        let mut cleaned = line.to_string();
+        if cleaned.trim_start().starts_with('-') {
+            cleaned = cleaned
+                .replace("(project line)", "")
+                .replace("(projectline)", "");
+            cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+            cleaned = cleaned.trim_end().to_string();
+        }
+        out.push(cleaned);
+    }
+    out.join("\n")
+}
+
 fn quote_pick_state_path(cfg: &AppConfig) -> Result<PathBuf> {
     let path = expand_tilde(&format!("{}.quote_pick", cfg.rotation_state_file))?;
     if let Some(parent) = path.parent() {
@@ -1473,6 +1516,29 @@ fn ensure_parent_dir(path: &Path) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     Ok(())
+}
+
+fn prepare_wallpaper_apply_target(cfg: &AppConfig, rendered_output: &Path) -> Result<PathBuf> {
+    if !is_temp_output_path(&cfg.output_image) {
+        return Ok(rendered_output.to_path_buf());
+    }
+    let target = expand_tilde("~/.local/state/wallpaper-composer/current.png")?;
+    ensure_parent_dir(&target)?;
+    fs::copy(rendered_output, &target).with_context(|| {
+        format!(
+            "failed to persist rendered wallpaper {} -> {}",
+            rendered_output.display(),
+            target.display()
+        )
+    })?;
+    Ok(target)
+}
+
+fn is_temp_output_path(raw: &str) -> bool {
+    let normalized = raw.trim().to_ascii_lowercase();
+    normalized.starts_with("/tmp/")
+        || normalized.starts_with("/var/tmp/")
+        || normalized == "/tmp/wallpaper-composer-current.png"
 }
 
 fn backup_path_for(config_path: &Path) -> PathBuf {

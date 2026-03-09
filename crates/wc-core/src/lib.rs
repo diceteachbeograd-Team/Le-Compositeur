@@ -78,6 +78,12 @@ pub struct AppConfig {
     pub weather_pos_y: i32,
     pub weather_widget_width: u32,
     pub weather_widget_height: u32,
+    pub weather_font_size: u32,
+    pub weather_font_family: String,
+    pub weather_color: String,
+    pub weather_undercolor: String,
+    pub weather_stroke_color: String,
+    pub weather_stroke_width: u32,
     pub news_pos_x: i32,
     pub news_pos_y: i32,
     pub news_widget_width: u32,
@@ -132,7 +138,7 @@ text_box_width_pct = 50
 text_box_height_pct = 50
 rotation_use_persistent_state = true
 rotation_state_file = "~/.local/state/wallpaper-composer/rotation.state"
-output_image = "/tmp/wallpaper-composer-current.png"
+output_image = "~/.local/state/wallpaper-composer/current.png"
 refresh_seconds = 300
 image_refresh_seconds = 300
 quote_refresh_seconds = 300
@@ -143,12 +149,18 @@ wallpaper_fit_mode = "zoom"
 show_background_layer = true
 show_quote_layer = true
 show_clock_layer = true
-show_weather_layer = true
-show_news_layer = true
+show_weather_layer = false
+show_news_layer = false
 weather_pos_x = 120
 weather_pos_y = 120
 weather_widget_width = 640
 weather_widget_height = 180
+weather_font_size = 30
+weather_font_family = "DejaVu-Sans"
+weather_color = "#00F5FF"
+weather_undercolor = "#0B0014B3"
+weather_stroke_color = "#001A22"
+weather_stroke_width = 1
 news_pos_x = 980
 news_pos_y = 180
 news_widget_width = 760
@@ -168,7 +180,7 @@ boot_screen_integration = false
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\nshow_background_layer = {}\nshow_quote_layer = {}\nshow_clock_layer = {}\nshow_weather_layer = {}\nshow_news_layer = {}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_widget_width = {}\nweather_widget_height = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_widget_width = {}\nnews_widget_height = {}\nweather_refresh_seconds = {}\nweather_use_system_location = {}\nweather_location_override = {:?}\nnews_source = {:?}\nnews_custom_url = {:?}\nnews_fps = {}\nnews_audio_enabled = {}\nlogin_screen_integration = {}\nboot_screen_integration = {}\n",
+        "# Wallpaper Composer config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\nshow_background_layer = {}\nshow_quote_layer = {}\nshow_clock_layer = {}\nshow_weather_layer = {}\nshow_news_layer = {}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_widget_width = {}\nweather_widget_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_widget_width = {}\nnews_widget_height = {}\nweather_refresh_seconds = {}\nweather_use_system_location = {}\nweather_location_override = {:?}\nnews_source = {:?}\nnews_custom_url = {:?}\nnews_fps = {}\nnews_audio_enabled = {}\nlogin_screen_integration = {}\nboot_screen_integration = {}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -223,6 +235,12 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.weather_pos_y,
         cfg.weather_widget_width,
         cfg.weather_widget_height,
+        cfg.weather_font_size,
+        cfg.weather_font_family,
+        cfg.weather_color,
+        cfg.weather_undercolor,
+        cfg.weather_stroke_color,
+        cfg.weather_stroke_width,
         cfg.news_pos_x,
         cfg.news_pos_y,
         cfg.news_widget_width,
@@ -304,12 +322,18 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"show_background_layer","group":"wallpaper","label":"Show Background Layer","type":"bool","required":false,"default":true},
     {"key":"show_quote_layer","group":"wallpaper","label":"Show Quote Layer","type":"bool","required":false,"default":true},
     {"key":"show_clock_layer","group":"wallpaper","label":"Show Clock Layer","type":"bool","required":false,"default":true},
-    {"key":"show_weather_layer","group":"wallpaper","label":"Show Weather Layer","type":"bool","required":false,"default":true},
-    {"key":"show_news_layer","group":"wallpaper","label":"Show News Layer","type":"bool","required":false,"default":true},
+    {"key":"show_weather_layer","group":"wallpaper","label":"Show Weather Layer","type":"bool","required":false,"default":false},
+    {"key":"show_news_layer","group":"wallpaper","label":"Show News Layer","type":"bool","required":false,"default":false},
     {"key":"weather_pos_x","group":"wallpaper","label":"Weather X","type":"i32","required":false,"default":120},
     {"key":"weather_pos_y","group":"wallpaper","label":"Weather Y","type":"i32","required":false,"default":120},
     {"key":"weather_widget_width","group":"wallpaper","label":"Weather Widget Width","type":"u32","required":false,"default":640},
     {"key":"weather_widget_height","group":"wallpaper","label":"Weather Widget Height","type":"u32","required":false,"default":180},
+    {"key":"weather_font_size","group":"wallpaper","label":"Weather Font Size","type":"u32","required":false,"default":30},
+    {"key":"weather_font_family","group":"wallpaper","label":"Weather Font Family","type":"enum","required":false,"default":"DejaVu-Sans","options":["DejaVu-Sans","Noto-Sans","Liberation-Sans","Serif","Monospace"]},
+    {"key":"weather_color","group":"wallpaper","label":"Weather Color","type":"string","required":false,"default":"#00F5FF"},
+    {"key":"weather_undercolor","group":"wallpaper","label":"Weather Undercolor","type":"string","required":false,"default":"#0B0014B3"},
+    {"key":"weather_stroke_color","group":"wallpaper","label":"Weather Stroke Color","type":"string","required":false,"default":"#001A22"},
+    {"key":"weather_stroke_width","group":"wallpaper","label":"Weather Stroke Width","type":"u32","required":false,"default":1},
     {"key":"news_pos_x","group":"wallpaper","label":"News X","type":"i32","required":false,"default":980},
     {"key":"news_pos_y","group":"wallpaper","label":"News Y","type":"i32","required":false,"default":180},
     {"key":"news_widget_width","group":"wallpaper","label":"News Widget Width","type":"u32","required":false,"default":760},
@@ -393,7 +417,7 @@ pub fn settings_ui_blueprint_json() -> &'static str {
       {
         "id": "wallpaper",
         "title": "Wallpaper",
-        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode", "show_background_layer", "show_quote_layer", "show_clock_layer", "show_weather_layer", "show_news_layer", "weather_pos_x", "weather_pos_y", "weather_widget_width", "weather_widget_height", "news_pos_x", "news_pos_y", "news_widget_width", "news_widget_height", "weather_refresh_seconds", "weather_use_system_location", "weather_location_override", "news_source", "news_custom_url", "news_fps", "news_audio_enabled", "login_screen_integration", "boot_screen_integration"]
+        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode", "show_background_layer", "show_quote_layer", "show_clock_layer", "show_weather_layer", "show_news_layer", "weather_pos_x", "weather_pos_y", "weather_widget_width", "weather_widget_height", "weather_font_size", "weather_font_family", "weather_color", "weather_undercolor", "weather_stroke_color", "weather_stroke_width", "news_pos_x", "news_pos_y", "news_widget_width", "news_widget_height", "weather_refresh_seconds", "weather_use_system_location", "weather_location_override", "news_source", "news_custom_url", "news_fps", "news_audio_enabled", "login_screen_integration", "boot_screen_integration"]
       }
     ]
   },
@@ -491,6 +515,12 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut weather_pos_y = None::<i32>;
     let mut weather_widget_width = None::<u32>;
     let mut weather_widget_height = None::<u32>;
+    let mut weather_font_size = None::<u32>;
+    let mut weather_font_family = None::<String>;
+    let mut weather_color = None::<String>;
+    let mut weather_undercolor = None::<String>;
+    let mut weather_stroke_color = None::<String>;
+    let mut weather_stroke_width = None::<u32>;
     let mut news_pos_x = None::<i32>;
     let mut news_pos_y = None::<i32>;
     let mut news_widget_width = None::<u32>;
@@ -571,6 +601,12 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "weather_pos_y" => weather_pos_y = parse_i32(value),
             "weather_widget_width" => weather_widget_width = parse_u32(value),
             "weather_widget_height" => weather_widget_height = parse_u32(value),
+            "weather_font_size" => weather_font_size = parse_u32(value),
+            "weather_font_family" => weather_font_family = parse_string(value),
+            "weather_color" => weather_color = parse_string(value),
+            "weather_undercolor" => weather_undercolor = parse_string(value),
+            "weather_stroke_color" => weather_stroke_color = parse_string(value),
+            "weather_stroke_width" => weather_stroke_width = parse_u32(value),
             "news_pos_x" => news_pos_x = parse_i32(value),
             "news_pos_y" => news_pos_y = parse_i32(value),
             "news_widget_width" => news_widget_width = parse_u32(value),
@@ -627,7 +663,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         rotation_use_persistent_state: rotation_use_persistent_state.unwrap_or(true),
         rotation_state_file: rotation_state_file
             .unwrap_or_else(|| "~/.local/state/wallpaper-composer/rotation.state".to_string()),
-        output_image: output_image.ok_or_else(|| anyhow::anyhow!("missing key: output_image"))?,
+        output_image: normalize_output_image_path(output_image),
         refresh_seconds: refresh_seconds
             .ok_or_else(|| anyhow::anyhow!("missing/invalid key: refresh_seconds"))?
             .max(1),
@@ -644,12 +680,18 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         show_background_layer: show_background_layer.unwrap_or(true),
         show_quote_layer: show_quote_layer.unwrap_or(true),
         show_clock_layer: show_clock_layer.unwrap_or(true),
-        show_weather_layer: show_weather_layer.unwrap_or(true),
-        show_news_layer: show_news_layer.unwrap_or(true),
+        show_weather_layer: show_weather_layer.unwrap_or(false),
+        show_news_layer: show_news_layer.unwrap_or(false),
         weather_pos_x: weather_pos_x.unwrap_or(120),
         weather_pos_y: weather_pos_y.unwrap_or(120),
         weather_widget_width: weather_widget_width.unwrap_or(640).clamp(120, 1920),
         weather_widget_height: weather_widget_height.unwrap_or(180).clamp(80, 1080),
+        weather_font_size: weather_font_size.unwrap_or(30).clamp(10, 200),
+        weather_font_family: weather_font_family.unwrap_or_else(|| "DejaVu-Sans".to_string()),
+        weather_color: weather_color.unwrap_or_else(|| "#00F5FF".to_string()),
+        weather_undercolor: weather_undercolor.unwrap_or_else(|| "#0B0014B3".to_string()),
+        weather_stroke_color: weather_stroke_color.unwrap_or_else(|| "#001A22".to_string()),
+        weather_stroke_width: weather_stroke_width.unwrap_or(1).min(20),
         news_pos_x: news_pos_x.unwrap_or(980),
         news_pos_y: news_pos_y.unwrap_or(180),
         news_widget_width: news_widget_width.unwrap_or(760).clamp(180, 1920),
@@ -675,6 +717,22 @@ fn sanitize_optional_string(value: Option<String>) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
+}
+
+fn normalize_output_image_path(value: Option<String>) -> String {
+    let default_path = "~/.local/state/wallpaper-composer/current.png";
+    let legacy_tmp = "/tmp/wallpaper-composer-current.png";
+    match value {
+        Some(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() || trimmed == legacy_tmp {
+                default_path.to_string()
+            } else {
+                trimmed.to_string()
+            }
+        }
+        None => default_path.to_string(),
+    }
 }
 
 fn parse_string(value: &str) -> Option<String> {

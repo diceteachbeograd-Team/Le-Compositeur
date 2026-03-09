@@ -22,6 +22,12 @@ When reporting, include:
 - proof-of-concept (if safe)
 - proposed mitigation (if known)
 
+## Network Access & Widgets
+- `Weather` and `News` widgets can require internet access to fetch external data.
+- On a fresh install, both widgets are disabled by default.
+- Enabling them may send requests to third-party endpoints configured in presets or custom URLs.
+- For privacy-sensitive setups, keep these widgets disabled and use local-only image/quote sources.
+
 ## Response Targets
 - Initial triage response target: within 7 days
 - Status update target after triage: within 14 days
@@ -33,4 +39,3 @@ When reporting, include:
 3. Fix is developed and tested.
 4. Security release/changelog entry is published.
 5. Public disclosure follows after a fix is available.
-

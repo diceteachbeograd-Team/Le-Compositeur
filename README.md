@@ -21,8 +21,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.08-5
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.08-5-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.09-1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/wallpaper-composer-2026.03.09-1-1*.rpm
 wc-gui
 ```
 
@@ -30,8 +30,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.08-5
-sudo apt install ./dist/wallpaper-composer_2026.03.08-5_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.09-1
+sudo apt install ./dist/wallpaper-composer_2026.03.09-1_amd64.deb
 wc-gui
 ```
 
@@ -43,9 +43,8 @@ cargo run -p wc-gui
 ## GUI structure (current)
 - `Ordering`: 16:9 layout frame with draggable neon boxes and layer on/off toggles (`Background`, `Quote`, `Clock`, `Weather`, `News`)
 - `Images`: background source + wallpaper apply/backend
-- `Quotes`: quote source/order
-- `Style`: text stroke/undercolor/shadow
-- `Weather`: Widget 1 settings (system location/manual location, refresh interval, current weather preview)
+- `Quotes`: quote source/order + quote style (font, stroke, undercolor, shadow)
+- `Weather`: Widget 1 settings (system location/manual location, refresh interval, current weather preview, font and color settings)
 - `News`: Widget 2 settings (free channel presets, custom URL, FPS, audio toggle)
 - `System`: runtime, startup behavior, autostart checkbox, and integration toggles
 
@@ -59,9 +58,15 @@ cargo run -p wc-gui
 - Weather and News widgets now have configurable `W`/`H` (width/height in pixels).
 - You can change size in `Ordering` (select Weather/News), `Weather`, and `News`.
 
+### Widget defaults and network note
+- On first install, `Weather` and `News` widgets are disabled by default.
+- Both widgets may require internet access when enabled (preset endpoints or custom URLs).
+- Security/privacy note is documented in `SECURITY.md`.
+
 ### Startup reliability
 - Autostart now writes a delayed startup entry (`sleep 12`), runs one warmup cycle, then starts loop mode.
 - This reduces bad wallpaper state right after login/reboot on slower desktop startup sequences.
+- Default output image path is now persistent: `~/.local/state/wallpaper-composer/current.png` (instead of `/tmp`), so GNOME does not fall back to orange background after reboot.
 
 ## Documentation
 Detailed documentation moved to:

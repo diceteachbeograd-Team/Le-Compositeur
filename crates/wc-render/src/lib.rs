@@ -24,6 +24,12 @@ pub struct PreviewText<'a> {
     pub weather_pos_y: i32,
     pub weather_width: u32,
     pub weather_height: u32,
+    pub weather_font_size: u32,
+    pub weather_font_family: &'a str,
+    pub weather_color: &'a str,
+    pub weather_undercolor: &'a str,
+    pub weather_stroke_color: &'a str,
+    pub weather_stroke_width: u32,
     pub news_pos_x: i32,
     pub news_pos_y: i32,
     pub news_width: u32,
@@ -70,7 +76,7 @@ pub fn render_preview_to_file(
 
     let meta_path = metadata_path_for(output_image);
     let metadata = format!(
-        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nweather = {:?}\nnews = {:?}\nnews_image = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_width = {}\nweather_height = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_width = {}\nnews_height = {}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
+        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nweather = {:?}\nnews = {:?}\nnews_image = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_width = {}\nweather_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_width = {}\nnews_height = {}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
         render_mode,
         text.quote,
         text.clock,
@@ -94,6 +100,12 @@ pub fn render_preview_to_file(
         text.weather_pos_y,
         text.weather_width,
         text.weather_height,
+        text.weather_font_size,
+        text.weather_font_family,
+        text.weather_color,
+        text.weather_undercolor,
+        text.weather_stroke_color,
+        text.weather_stroke_width,
         text.news_pos_x,
         text.news_pos_y,
         text.news_width,
@@ -336,7 +348,7 @@ fn render_with_imagemagick(
     args.push("none".to_string());
 
     if !text.weather.trim().is_empty() {
-        let weather_size = (text.clock_font_size.saturating_mul(7) / 10).max(18);
+        let weather_size = text.weather_font_size.clamp(10, 220);
         args.push("(".to_string());
         args.push("-background".to_string());
         args.push("none".to_string());
@@ -347,17 +359,17 @@ fn render_with_imagemagick(
             text.weather_height.clamp(80, canvas_h.max(80))
         ));
         args.push("-fill".to_string());
-        args.push("#00F5FF".to_string());
+        args.push(text.weather_color.to_string());
         args.push("-stroke".to_string());
-        args.push("#001A22".to_string());
+        args.push(text.weather_stroke_color.to_string());
         args.push("-strokewidth".to_string());
-        args.push("1".to_string());
+        args.push(text.weather_stroke_width.min(20).to_string());
         args.push("-undercolor".to_string());
-        args.push("#0B0014B3".to_string());
+        args.push(text.weather_undercolor.to_string());
         args.push("-gravity".to_string());
         args.push("West".to_string());
         args.push("-font".to_string());
-        args.push(text.font_family.to_string());
+        args.push(text.weather_font_family.to_string());
         args.push("-pointsize".to_string());
         args.push(weather_size.to_string());
         args.push(format!("caption:{}", text.weather));
@@ -907,6 +919,12 @@ mod tests {
                 weather_pos_y: 40,
                 weather_width: 640,
                 weather_height: 180,
+                weather_font_size: 30,
+                weather_font_family: "DejaVu-Sans",
+                weather_color: "#00F5FF",
+                weather_undercolor: "#0B0014B3",
+                weather_stroke_color: "#001A22",
+                weather_stroke_width: 1,
                 news_pos_x: 40,
                 news_pos_y: 90,
                 news_width: 760,
@@ -969,6 +987,12 @@ mod tests {
                 weather_pos_y: 40,
                 weather_width: 640,
                 weather_height: 180,
+                weather_font_size: 30,
+                weather_font_family: "DejaVu-Sans",
+                weather_color: "#00F5FF",
+                weather_undercolor: "#0B0014B3",
+                weather_stroke_color: "#001A22",
+                weather_stroke_width: 1,
                 news_pos_x: 2,
                 news_pos_y: 58,
                 news_width: 760,

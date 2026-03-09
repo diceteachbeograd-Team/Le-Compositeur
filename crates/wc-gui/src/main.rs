@@ -67,7 +67,6 @@ enum GuiTab {
     Ordering,
     Images,
     Quotes,
-    Style,
     Weather,
     News,
     System,
@@ -845,6 +844,7 @@ impl WcGuiApp {
     }
 
     fn render_quotes_tab(&mut self, ui: &mut egui::Ui) {
+        let color_help = self.hover_text("color_format").to_string();
         ui.heading("Quote Source");
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.cfg.quote_source, "local".to_string(), "Local")
@@ -927,6 +927,80 @@ impl WcGuiApp {
                     );
                 });
             ui.checkbox(&mut self.cfg.quote_avoid_repeat, "Avoid repeat");
+        });
+
+        ui.separator();
+        ui.heading("Quote Style");
+        ui.label("Style options previously in Style tab are now here.");
+        ui.horizontal(|ui| {
+            ui.label("Font family");
+            egui::ComboBox::from_id_salt("font_family_quotes_tab")
+                .selected_text(&self.cfg.font_family)
+                .show_ui(ui, |ui| {
+                    for family in [
+                        "DejaVu-Sans",
+                        "Noto-Sans",
+                        "Liberation-Sans",
+                        "Serif",
+                        "Monospace",
+                    ] {
+                        ui.selectable_value(&mut self.cfg.font_family, family.to_string(), family);
+                    }
+                });
+            ui.label("Quote size");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.quote_font_size)
+                    .speed(1)
+                    .range(8..=220),
+            );
+            ui.checkbox(&mut self.cfg.quote_auto_fit, "Auto fit");
+            ui.label("Min");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.quote_min_font_size)
+                    .speed(1)
+                    .range(8..=220),
+            );
+        });
+        ui.horizontal(|ui| {
+            edit_color_field(
+                ui,
+                "Quote color",
+                &mut self.cfg.quote_color,
+                false,
+                &color_help,
+            );
+            edit_color_field(
+                ui,
+                "Stroke color",
+                &mut self.cfg.text_stroke_color,
+                false,
+                &color_help,
+            );
+            ui.label("Stroke width");
+            ui.add(egui::DragValue::new(&mut self.cfg.text_stroke_width).speed(1));
+        });
+        ui.horizontal(|ui| {
+            edit_color_field(
+                ui,
+                "Undercolor",
+                &mut self.cfg.text_undercolor,
+                true,
+                &color_help,
+            );
+        });
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.cfg.text_shadow_enabled, "Shadow");
+            edit_color_field(
+                ui,
+                "Shadow color",
+                &mut self.cfg.text_shadow_color,
+                true,
+                &color_help,
+            );
+            ui.label("dx");
+            ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_x).speed(1));
+            ui.label("dy");
+            ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_y).speed(1));
         });
     }
 
@@ -1316,6 +1390,55 @@ impl WcGuiApp {
                     .on_hover_text(self.hover_text("widget_size"));
                 });
                 ui.horizontal(|ui| {
+                    ui.label("Font");
+                    egui::ComboBox::from_id_salt("weather_font_family_ordering")
+                        .selected_text(&self.cfg.weather_font_family)
+                        .show_ui(ui, |ui| {
+                            for family in [
+                                "DejaVu-Sans",
+                                "Noto-Sans",
+                                "Liberation-Sans",
+                                "Serif",
+                                "Monospace",
+                            ] {
+                                ui.selectable_value(
+                                    &mut self.cfg.weather_font_family,
+                                    family.to_string(),
+                                    family,
+                                );
+                            }
+                        });
+                    ui.label("Size");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.weather_font_size)
+                            .speed(1)
+                            .range(10..=220),
+                    );
+                    ui.label("Stroke");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.weather_stroke_width)
+                            .speed(1)
+                            .range(0..=20),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    edit_color_field(ui, "Text", &mut self.cfg.weather_color, false, &color_help);
+                    edit_color_field(
+                        ui,
+                        "Undercolor",
+                        &mut self.cfg.weather_undercolor,
+                        true,
+                        &color_help,
+                    );
+                    edit_color_field(
+                        ui,
+                        "Stroke color",
+                        &mut self.cfg.weather_stroke_color,
+                        false,
+                        &color_help,
+                    );
+                });
+                ui.horizontal(|ui| {
                     ui.label("Refresh sec");
                     ui.add(
                         egui::DragValue::new(&mut self.cfg.weather_refresh_seconds)
@@ -1413,48 +1536,8 @@ impl WcGuiApp {
         ui.label("Click a neon box to edit it. Drag inside the frame to place selected element.");
     }
 
-    fn render_style_tab(&mut self, ui: &mut egui::Ui) {
-        let color_help = self.hover_text("color_format").to_string();
-        ui.heading("Style");
-        ui.label("Primary element styling is edited in Ordering when Quote is selected.");
-        ui.separator();
-        ui.horizontal(|ui| {
-            edit_color_field(
-                ui,
-                "Stroke color",
-                &mut self.cfg.text_stroke_color,
-                false,
-                &color_help,
-            );
-            ui.label("Stroke width");
-            ui.add(egui::DragValue::new(&mut self.cfg.text_stroke_width).speed(1));
-        });
-        ui.horizontal(|ui| {
-            edit_color_field(
-                ui,
-                "Undercolor",
-                &mut self.cfg.text_undercolor,
-                true,
-                &color_help,
-            );
-        });
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut self.cfg.text_shadow_enabled, "Shadow");
-            edit_color_field(
-                ui,
-                "Shadow color",
-                &mut self.cfg.text_shadow_color,
-                true,
-                &color_help,
-            );
-            ui.label("dx");
-            ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_x).speed(1));
-            ui.label("dy");
-            ui.add(egui::DragValue::new(&mut self.cfg.text_shadow_offset_y).speed(1));
-        });
-    }
-
     fn render_weather_tab(&mut self, ui: &mut egui::Ui) {
+        let color_help = self.hover_text("color_format").to_string();
         ui.heading("Weather");
         ui.label("Widget 1: weather data for your desktop location");
         ui.separator();
@@ -1501,6 +1584,61 @@ impl WcGuiApp {
                 egui::DragValue::new(&mut self.cfg.weather_widget_height)
                     .speed(2)
                     .range(80..=1080),
+            );
+        });
+        ui.horizontal(|ui| {
+            ui.label("Font family");
+            egui::ComboBox::from_id_salt("weather_font_family_tab")
+                .selected_text(&self.cfg.weather_font_family)
+                .show_ui(ui, |ui| {
+                    for family in [
+                        "DejaVu-Sans",
+                        "Noto-Sans",
+                        "Liberation-Sans",
+                        "Serif",
+                        "Monospace",
+                    ] {
+                        ui.selectable_value(
+                            &mut self.cfg.weather_font_family,
+                            family.to_string(),
+                            family,
+                        );
+                    }
+                });
+            ui.label("Text size");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.weather_font_size)
+                    .speed(1)
+                    .range(10..=220),
+            );
+            ui.label("Stroke");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.weather_stroke_width)
+                    .speed(1)
+                    .range(0..=20),
+            );
+        });
+        ui.horizontal(|ui| {
+            edit_color_field(
+                ui,
+                "Text color",
+                &mut self.cfg.weather_color,
+                false,
+                &color_help,
+            );
+            edit_color_field(
+                ui,
+                "Undercolor",
+                &mut self.cfg.weather_undercolor,
+                true,
+                &color_help,
+            );
+            edit_color_field(
+                ui,
+                "Stroke color",
+                &mut self.cfg.weather_stroke_color,
+                false,
+                &color_help,
             );
         });
         ui.separator();
@@ -2210,7 +2348,6 @@ impl eframe::App for WcGuiApp {
                 ui.selectable_value(&mut self.active_tab, GuiTab::Ordering, "Ordering");
                 ui.selectable_value(&mut self.active_tab, GuiTab::Images, "Images");
                 ui.selectable_value(&mut self.active_tab, GuiTab::Quotes, "Quotes");
-                ui.selectable_value(&mut self.active_tab, GuiTab::Style, "Style");
                 ui.selectable_value(&mut self.active_tab, GuiTab::Weather, "Weather");
                 ui.selectable_value(&mut self.active_tab, GuiTab::News, "News");
                 ui.selectable_value(&mut self.active_tab, GuiTab::System, "System");
@@ -2254,7 +2391,6 @@ impl eframe::App for WcGuiApp {
                 GuiTab::Ordering => self.render_ordering_tab(ui),
                 GuiTab::Images => self.render_images_tab(ui, ctx),
                 GuiTab::Quotes => self.render_quotes_tab(ui),
-                GuiTab::Style => self.render_style_tab(ui),
                 GuiTab::Weather => self.render_weather_tab(ui),
                 GuiTab::News => self.render_news_tab(ui),
                 GuiTab::System => self.render_system_tab(ui),
@@ -2353,7 +2489,7 @@ fn default_cfg() -> AppConfig {
         text_box_height_pct: 50,
         rotation_use_persistent_state: true,
         rotation_state_file: "~/.local/state/wallpaper-composer/rotation.state".to_string(),
-        output_image: "/tmp/wallpaper-composer-current.png".to_string(),
+        output_image: "~/.local/state/wallpaper-composer/current.png".to_string(),
         refresh_seconds: 300,
         image_refresh_seconds: 300,
         quote_refresh_seconds: 300,
@@ -2364,12 +2500,18 @@ fn default_cfg() -> AppConfig {
         show_background_layer: true,
         show_quote_layer: true,
         show_clock_layer: true,
-        show_weather_layer: true,
-        show_news_layer: true,
+        show_weather_layer: false,
+        show_news_layer: false,
         weather_pos_x: 120,
         weather_pos_y: 120,
         weather_widget_width: 640,
         weather_widget_height: 180,
+        weather_font_size: 30,
+        weather_font_family: "DejaVu-Sans".to_string(),
+        weather_color: "#00F5FF".to_string(),
+        weather_undercolor: "#0B0014B3".to_string(),
+        weather_stroke_color: "#001A22".to_string(),
+        weather_stroke_width: 1,
         news_pos_x: 980,
         news_pos_y: 180,
         news_widget_width: 760,
