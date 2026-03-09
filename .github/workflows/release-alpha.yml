@@ -42,6 +42,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ruby ruby-dev build-essential
           sudo gem install --no-document fpm
+          chmod +x packaging/linux/autostart-cleanup.sh
 
           TAG="${GITHUB_REF_NAME#v}"
           if [[ "$TAG" == *-* ]]; then
@@ -88,6 +89,7 @@ jobs:
             --license "GPL-3.0-or-later" \
             --description "Le Compositeur desktop GUI" \
             --url "https://github.com/${GITHUB_REPOSITORY}" \
+            --after-remove packaging/linux/autostart-cleanup.sh \
             -C dist/linux-root \
             usr
 
@@ -99,6 +101,7 @@ jobs:
             --license "GPL-3.0-or-later" \
             --description "Le Compositeur desktop GUI" \
             --url "https://github.com/${GITHUB_REPOSITORY}" \
+            --after-remove packaging/linux/autostart-cleanup.sh \
             -C dist/linux-root \
             usr
 
@@ -213,5 +216,6 @@ jobs:
           name: Le Compositeur ${{ github.ref_name }}
           body_path: RELEASE_BODY.md
           generate_release_notes: false
+          draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-pre') }}
           files: release-assets/*

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-2026.03.09-4}"
+VERSION="${1:-2026.03.10-1}"
 PKG_DIR="${ROOT_DIR}/dist/deb-root"
 
 need_cmd() {
@@ -55,6 +55,19 @@ Maintainer: Le Compositeur Contributors <opensource@example.com>
 Description: Le Compositeur dynamic desktop GUI (Rust)
  Includes wc-cli and wc-gui alpha binaries.
 CONTROL
+
+cat > "$PKG_DIR/DEBIAN/postrm" <<'POSTRM'
+#!/bin/sh
+set -e
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+  for d in /home/*; do
+    [ -d "$d/.config/autostart" ] || continue
+    rm -f "$d/.config/autostart/le-compositeur.desktop" "$d/.config/autostart/wallpaper-composer.desktop" || true
+  done
+fi
+exit 0
+POSTRM
+chmod 0755 "$PKG_DIR/DEBIAN/postrm"
 
 install -m0755 target/release/wc-cli "$PKG_DIR/usr/bin/le-compositeur-cli"
 install -m0755 target/release/wc-gui "$PKG_DIR/usr/libexec/le-compositeur/le-compositeur-bin"

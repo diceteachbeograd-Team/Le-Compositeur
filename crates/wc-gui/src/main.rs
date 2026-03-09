@@ -388,24 +388,24 @@ impl WcGuiApp {
 
     fn start_runner(&mut self) {
         if self.runner.is_some() {
-            self.status = "Runner already active".to_string();
-            return;
+            self.stop_runner();
         }
         if let Err(e) = self.save_to_path_inner() {
             self.status = format!("Cannot start runner before save: {e}");
             return;
         }
+        let replaced_external = self.kill_external_runner_processes();
 
         let path = self.config_path.clone();
         let spawn_direct = self
-            .build_wc_cli_direct(&["run"], &path)
+            .build_wc_cli_direct(&["run", "--replace-existing"], &path)
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn();
         let child = match spawn_direct {
             Ok(child) => child,
             Err(_) => match self
-                .build_wc_cli_cargo(&["run"], &path)
+                .build_wc_cli_cargo(&["run", "--replace-existing"], &path)
                 .stdout(Stdio::null())
                 .stderr(Stdio::piped())
                 .spawn()
@@ -419,7 +419,11 @@ impl WcGuiApp {
         };
 
         self.runner = Some(child);
-        self.status = "Runner started (continuous updates active)".to_string();
+        self.status = if replaced_external {
+            "Runner started (replaced previous background runner)".to_string()
+        } else {
+            "Runner started (continuous updates active)".to_string()
+        };
     }
 
     fn start_detached_runner(&mut self) {
@@ -427,17 +431,18 @@ impl WcGuiApp {
             self.status = format!("Cannot start detached runner before save: {e}");
             return;
         }
+        let replaced_external = self.kill_external_runner_processes();
 
         let path = self.config_path.clone();
         let spawn_direct = self
-            .build_wc_cli_direct(&["run"], &path)
+            .build_wc_cli_direct(&["run", "--replace-existing"], &path)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn();
         let result = match spawn_direct {
             Ok(_child) => Ok(()),
             Err(_) => self
-                .build_wc_cli_cargo(&["run"], &path)
+                .build_wc_cli_cargo(&["run", "--replace-existing"], &path)
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()
@@ -446,33 +451,55 @@ impl WcGuiApp {
 
         match result {
             Ok(()) => {
-                self.status =
+                self.status = if replaced_external {
+                    "Detached runner started (replaced previous background runner).".to_string()
+                } else {
                     "Detached runner started (GUI can be closed; reopen GUI manually).".to_string()
+                }
             }
             Err(e) => self.status = format!("Detached runner start failed: {e}"),
         }
     }
 
     fn stop_runner(&mut self) {
-        let Some(mut child) = self.runner.take() else {
-            self.status = "Runner is not active".to_string();
-            return;
+        let mut stopped_any = false;
+        if let Some(mut child) = self.runner.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+            stopped_any = true;
+        }
+        if self.kill_external_runner_processes() {
+            stopped_any = true;
+        }
+        self.status = if stopped_any {
+            "Runner stopped".to_string()
+        } else {
+            "Runner is not active".to_string()
         };
-        let _ = child.kill();
-        let _ = child.wait();
-        self.status = "Runner stopped".to_string();
     }
 
-    fn autostart_path() -> Option<PathBuf> {
+    fn autostart_paths() -> Vec<PathBuf> {
         #[cfg(target_os = "linux")]
         {
-            let home = std::env::var_os("HOME")?;
-            Some(
-                PathBuf::from(home)
-                    .join(".config")
-                    .join("autostart")
-                    .join("le-compositeur.desktop"),
-            )
+            let Some(home) = std::env::var_os("HOME") else {
+                return Vec::new();
+            };
+            let base = PathBuf::from(home).join(".config").join("autostart");
+            return vec![
+                base.join("le-compositeur.desktop"),
+                base.join("wallpaper-composer.desktop"),
+            ];
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            Vec::new()
+        }
+    }
+
+    fn autostart_primary_path() -> Option<PathBuf> {
+        #[cfg(target_os = "linux")]
+        {
+            Self::autostart_paths().into_iter().next()
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -481,11 +508,11 @@ impl WcGuiApp {
     }
 
     fn autostart_enabled() -> bool {
-        Self::autostart_path().is_some_and(|p| p.exists())
+        Self::autostart_paths().iter().any(|p| p.exists())
     }
 
     fn install_autostart(&mut self) {
-        let Some(path) = Self::autostart_path() else {
+        let Some(path) = Self::autostart_primary_path() else {
             self.status = "Autostart install is currently supported on Linux only.".to_string();
             return;
         };
@@ -498,8 +525,13 @@ impl WcGuiApp {
             return;
         }
 
+        for old in Self::autostart_paths() {
+            if old != path {
+                let _ = std::fs::remove_file(old);
+            }
+        }
         let content = format!(
-            "[Desktop Entry]\nType=Application\nName=Le Compositeur Runner\nComment=Start Le Compositeur background runner on login\nTryExec=/usr/bin/wc-cli\nExec=/usr/bin/bash -lc \"sleep 12; /usr/bin/wc-cli run --once --config {0}; /usr/bin/wc-cli run --config {0}\"\nTerminal=false\nX-GNOME-Autostart-enabled=true\nX-GNOME-Autostart-Delay=12\n",
+            "[Desktop Entry]\nType=Application\nName=Le Compositeur Runner\nComment=Start Le Compositeur background runner on login\nTryExec=/usr/bin/wc-cli\nExec=/usr/bin/bash -lc \"sleep 12; /usr/bin/pkill -f 'wc-cli run --config' >/dev/null 2>&1 || true; /usr/bin/wc-cli run --once --config {0}; /usr/bin/wc-cli run --replace-existing --config {0}\"\nTerminal=false\nX-GNOME-Autostart-enabled=true\nX-GNOME-Autostart-Delay=12\n",
             config
         );
         match std::fs::write(&path, content) {
@@ -512,21 +544,22 @@ impl WcGuiApp {
     }
 
     fn remove_autostart(&mut self) {
-        let Some(path) = Self::autostart_path() else {
+        if Self::autostart_paths().is_empty() {
             self.status = "Autostart remove is currently supported on Linux only.".to_string();
             return;
-        };
-        if !path.exists() {
+        }
+        let mut removed = 0usize;
+        for path in Self::autostart_paths() {
+            if path.exists() && std::fs::remove_file(&path).is_ok() {
+                removed += 1;
+            }
+        }
+        if removed == 0 {
             self.status = "Autostart file not present.".to_string();
             return;
         }
-        match std::fs::remove_file(&path) {
-            Ok(()) => {
-                self.autostart_toggle = false;
-                self.status = format!("Autostart removed: {}", path.display());
-            }
-            Err(e) => self.status = format!("Autostart remove failed: {e}"),
-        }
+        self.autostart_toggle = false;
+        self.status = format!("Autostart removed ({} file(s)).", removed);
     }
 
     fn sync_autostart_toggle(&mut self) {
@@ -552,6 +585,30 @@ impl WcGuiApp {
                 self.status = format!("Runner state check failed: {e}");
                 self.runner = None;
             }
+        }
+    }
+
+    fn kill_external_runner_processes(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            let mut killed = false;
+            for pattern in ["wc-cli run --config", "le-compositeur-cli run --config"] {
+                if Command::new("pkill")
+                    .args(["-f", pattern])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false)
+                {
+                    killed = true;
+                }
+            }
+            killed
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
         }
     }
 

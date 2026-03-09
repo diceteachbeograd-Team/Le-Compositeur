@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026.03.10-1 - 2026-03-10
+- Added single-instance lock for `wc-cli run` so duplicate loop processes cannot run in parallel.
+- Added `--replace-existing` runner mode and wired GUI loop start actions to replace old runners safely.
+- Hardened GUI autostart install/remove logic:
+  - deduplicates legacy/current autostart entries
+  - autostart command replaces old loop instance before starting
+- Added uninstall autostart cleanup hooks for DEB/RPM package remove.
+- Updated release workflow to enforce non-draft publish mode and apply autostart cleanup hooks in Linux package artifacts.
+
 ## 2026.03.09-2 - 2026-03-09
 - Added fixed 16:9 News widget size presets in GUI (dropdown, no free W/H typing).
 - Enforced News widget 16:9 rendering in preview output for consistent video framing.

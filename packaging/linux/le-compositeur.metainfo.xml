@@ -18,6 +18,6 @@
     <binary>le-compositeur-cli</binary>
   </provides>
   <releases>
-    <release version="2026.03.09-4" date="2026-03-09"/>
+    <release version="2026.03.10-1" date="2026-03-10"/>
   </releases>
 </component>

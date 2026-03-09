@@ -1,5 +1,5 @@
 Name:           le-compositeur
-Version:        %{?version}%{!?version:2026.03.09}
+Version:        %{?version}%{!?version:2026.03.10}
 Release:        %{?release}%{!?release:1}%{?dist}
 Summary:        Le Compositeur dynamic desktop GUI (Rust)
 
@@ -35,6 +35,14 @@ install -Dpm0644 assets/quotes/local/local-quotes.md %{buildroot}%{_datadir}/%{n
 install -Dpm0644 packaging/linux/le-compositeur.desktop %{buildroot}%{_datadir}/applications/le-compositeur.desktop
 install -Dpm0644 packaging/linux/le-compositeur.metainfo.xml %{buildroot}%{_datadir}/metainfo/le-compositeur.metainfo.xml
 
+%preun
+if [ "$1" -eq 0 ]; then
+  for d in /home/*; do
+    [ -d "$d/.config/autostart" ] || continue
+    rm -f "$d/.config/autostart/le-compositeur.desktop" "$d/.config/autostart/wallpaper-composer.desktop" || true
+  done
+fi
+
 %files
 %license %{_licensedir}/%{name}/LICENSE
 %doc %{_docdir}/%{name}/README.md
@@ -49,9 +57,11 @@ install -Dpm0644 packaging/linux/le-compositeur.metainfo.xml %{buildroot}%{_data
 %{_datadir}/metainfo/le-compositeur.metainfo.xml
 
 %changelog
-* Mon Mar 09 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.09-4
-- Finalize le-compositeur package naming and icon asset paths.
-- Align release/docs install commands with RPM release index format.
+* Tue Mar 10 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.10-1
+- Add single-instance protections for wc-cli run loop and GUI start actions.
+- Deduplicate autostart entries and remove legacy wallpaper-composer desktop entry.
+- Add uninstall autostart cleanup hook for package remove.
+- Update release workflow to set non-draft releases explicitly.
 
 * Mon Mar 09 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.09-3
 - Rename Linux package output to le-compositeur and add le-compositeur binaries.

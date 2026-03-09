@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use fs2::FileExt;
 use reqwest::blocking::Client;
 use serde_json::Value;
 use std::fs;
+use std::fs::OpenOptions;
 use std::hash::{Hash, Hasher};
+use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
@@ -66,6 +69,9 @@ enum Commands {
         /// Run exactly one cycle and exit.
         #[arg(long, default_value_t = false)]
         once: bool,
+        /// Replace an already running loop process for the same config path.
+        #[arg(long, default_value_t = false)]
+        replace_existing: bool,
     },
     /// Show built-in public source presets for future GUI/settings integration.
     Presets,
@@ -125,8 +131,17 @@ fn main() -> Result<()> {
             validate_config(&cfg)?;
             println!("config_valid: {}", config_path.display());
         }
-        Commands::Run { config, once } => {
+        Commands::Run {
+            config,
+            once,
+            replace_existing,
+        } => {
             let config_path = resolve_config_path(config)?;
+            let _run_lock = if once {
+                None
+            } else {
+                Some(acquire_run_lock(&config_path, replace_existing)?)
+            };
             loop {
                 let tick_started = Instant::now();
                 let cfg = load_config(&config_path)?;
@@ -1821,6 +1836,70 @@ fn backup_path_for(config_path: &Path) -> PathBuf {
         .and_then(|n| n.to_str())
         .unwrap_or("config.toml");
     config_path.with_file_name(format!("{name}.bak-{ts}"))
+}
+
+struct RunLockGuard {
+    _file: fs::File,
+}
+
+fn acquire_run_lock(config_path: &Path, replace_existing: bool) -> Result<RunLockGuard> {
+    let lock_path = run_lock_path(config_path);
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut lock_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(&lock_path)
+        .with_context(|| format!("failed to open lock file {}", lock_path.display()))?;
+
+    if lock_file.try_lock_exclusive().is_err() {
+        if !replace_existing {
+            anyhow::bail!(
+                "another le-compositeur loop is already running (lock: {}). Use --replace-existing to restart it.",
+                lock_path.display()
+            );
+        }
+        if let Some(old_pid) = read_lock_pid(&lock_path)
+            && old_pid > 1
+            && old_pid != std::process::id()
+        {
+            let _ = Command::new("kill")
+                .arg("-TERM")
+                .arg(old_pid.to_string())
+                .status();
+            thread::sleep(Duration::from_millis(500));
+        }
+
+        lock_file.try_lock_exclusive().with_context(|| {
+            format!(
+                "failed to acquire loop lock {} after replace attempt",
+                lock_path.display()
+            )
+        })?;
+    }
+
+    lock_file.set_len(0)?;
+    lock_file.seek(SeekFrom::Start(0))?;
+    writeln!(lock_file, "{}", std::process::id())?;
+    lock_file.flush()?;
+
+    Ok(RunLockGuard { _file: lock_file })
+}
+
+fn run_lock_path(config_path: &Path) -> PathBuf {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    config_path.display().to_string().hash(&mut hasher);
+    let cfg_hash = format!("{:016x}", hasher.finish());
+    let base = expand_tilde("~/.local/state/wallpaper-composer")
+        .unwrap_or_else(|_| std::env::temp_dir().join("wallpaper-composer"));
+    base.join(format!("wc-cli-{}.lock", cfg_hash))
+}
+
+fn read_lock_pid(path: &Path) -> Option<u32> {
+    let raw = fs::read_to_string(path).ok()?;
+    raw.trim().parse::<u32>().ok()
 }
 
 fn loop_tick_seconds(cfg: &AppConfig) -> u64 {
