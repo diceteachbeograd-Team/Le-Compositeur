@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use wc_core::{
     AppConfig, builtin_image_presets, builtin_quote_presets, default_config_path, expand_tilde,
@@ -8,6 +9,42 @@ use wc_core::{
 };
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+fn app_version_label() -> &'static str {
+    static LABEL: OnceLock<String> = OnceLock::new();
+    LABEL
+        .get_or_init(|| {
+            if let Some(pkg) = installed_package_version() {
+                format!("Version: v{APP_VERSION} (pkg {pkg})")
+            } else {
+                format!("Version: v{APP_VERSION}")
+            }
+        })
+        .as_str()
+}
+
+#[cfg(target_os = "linux")]
+fn installed_package_version() -> Option<String> {
+    let output = Command::new("rpm")
+        .args(["-q", "--qf", "%{VERSION}-%{RELEASE}", "le-compositeur"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn installed_package_version() -> Option<String> {
+    None
+}
 
 fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default().with_app_id("le-compositeur");
@@ -2663,7 +2700,7 @@ impl eframe::App for WcGuiApp {
                 ui.separator();
                 ui.label(format!("Language: {}", ui_lang_label(self.ui_lang)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(format!("Version: v{APP_VERSION}"));
+                    ui.label(app_version_label());
                 });
             });
 
