@@ -105,8 +105,15 @@ jobs:
             -C dist/linux-root \
             usr
 
-          cp dist/*.deb dist/le-compositeur-linux-x86_64.deb
-          cp dist/*.rpm dist/le-compositeur-linux-x86_64.rpm
+          DEB_PKG="$(find . -maxdepth 2 -type f -name 'le-compositeur*.deb' | head -n1)"
+          RPM_PKG="$(find . -maxdepth 2 -type f -name 'le-compositeur*.rpm' | head -n1)"
+          if [[ -z "${DEB_PKG}" || -z "${RPM_PKG}" ]]; then
+            echo "Expected .deb/.rpm not found after fpm build"
+            find . -maxdepth 2 -type f | sort
+            exit 1
+          fi
+          cp "${DEB_PKG}" dist/le-compositeur-linux-x86_64.deb
+          cp "${RPM_PKG}" dist/le-compositeur-linux-x86_64.rpm
 
       - name: Build Windows bundles (.zip + .exe)
         if: matrix.name == 'windows-x86_64'
