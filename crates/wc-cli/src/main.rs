@@ -1851,6 +1851,7 @@ fn acquire_run_lock(config_path: &Path, replace_existing: bool) -> Result<RunLoc
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(&lock_path)
         .with_context(|| format!("failed to open lock file {}", lock_path.display()))?;
 
