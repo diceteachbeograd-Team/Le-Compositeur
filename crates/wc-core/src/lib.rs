@@ -74,6 +74,7 @@ pub struct AppConfig {
     pub show_clock_layer: bool,
     pub show_weather_layer: bool,
     pub show_news_layer: bool,
+    pub show_cams_layer: bool,
     pub weather_pos_x: i32,
     pub weather_pos_y: i32,
     pub weather_widget_width: u32,
@@ -95,6 +96,14 @@ pub struct AppConfig {
     pub news_custom_url: String,
     pub news_fps: f32,
     pub news_audio_enabled: bool,
+    pub cams_pos_x: i32,
+    pub cams_pos_y: i32,
+    pub cams_widget_width: u32,
+    pub cams_widget_height: u32,
+    pub cams_source: String,
+    pub cams_custom_urls: String,
+    pub cams_count: u32,
+    pub cams_columns: u32,
     pub login_screen_integration: bool,
     pub boot_screen_integration: bool,
 }
@@ -151,6 +160,7 @@ show_quote_layer = true
 show_clock_layer = true
 show_weather_layer = false
 show_news_layer = false
+show_cams_layer = false
 weather_pos_x = 120
 weather_pos_y = 120
 weather_widget_width = 640
@@ -172,6 +182,14 @@ news_source = "euronews"
 news_custom_url = ""
 news_fps = 1.0
 news_audio_enabled = false
+cams_pos_x = 980
+cams_pos_y = 640
+cams_widget_width = 760
+cams_widget_height = 428
+cams_source = "auto_local"
+cams_custom_urls = ""
+cams_count = 2
+cams_columns = 2
 login_screen_integration = false
 boot_screen_integration = false
 "##
@@ -180,7 +198,7 @@ boot_screen_integration = false
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Le Compositeur config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\nshow_background_layer = {}\nshow_quote_layer = {}\nshow_clock_layer = {}\nshow_weather_layer = {}\nshow_news_layer = {}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_widget_width = {}\nweather_widget_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_widget_width = {}\nnews_widget_height = {}\nweather_refresh_seconds = {}\nweather_use_system_location = {}\nweather_location_override = {:?}\nnews_source = {:?}\nnews_custom_url = {:?}\nnews_fps = {}\nnews_audio_enabled = {}\nlogin_screen_integration = {}\nboot_screen_integration = {}\n",
+        "# Le Compositeur config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\nshow_background_layer = {}\nshow_quote_layer = {}\nshow_clock_layer = {}\nshow_weather_layer = {}\nshow_news_layer = {}\nshow_cams_layer = {}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_widget_width = {}\nweather_widget_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_widget_width = {}\nnews_widget_height = {}\nweather_refresh_seconds = {}\nweather_use_system_location = {}\nweather_location_override = {:?}\nnews_source = {:?}\nnews_custom_url = {:?}\nnews_fps = {}\nnews_audio_enabled = {}\ncams_pos_x = {}\ncams_pos_y = {}\ncams_widget_width = {}\ncams_widget_height = {}\ncams_source = {:?}\ncams_custom_urls = {:?}\ncams_count = {}\ncams_columns = {}\nlogin_screen_integration = {}\nboot_screen_integration = {}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -231,6 +249,7 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.show_clock_layer,
         cfg.show_weather_layer,
         cfg.show_news_layer,
+        cfg.show_cams_layer,
         cfg.weather_pos_x,
         cfg.weather_pos_y,
         cfg.weather_widget_width,
@@ -252,6 +271,14 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.news_custom_url,
         cfg.news_fps,
         cfg.news_audio_enabled,
+        cfg.cams_pos_x,
+        cfg.cams_pos_y,
+        cfg.cams_widget_width,
+        cfg.cams_widget_height,
+        cfg.cams_source,
+        cfg.cams_custom_urls,
+        cfg.cams_count,
+        cfg.cams_columns,
         cfg.login_screen_integration,
         cfg.boot_screen_integration
     )
@@ -324,6 +351,7 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"show_clock_layer","group":"wallpaper","label":"Show Clock Layer","type":"bool","required":false,"default":true},
     {"key":"show_weather_layer","group":"wallpaper","label":"Show Weather Layer","type":"bool","required":false,"default":false},
     {"key":"show_news_layer","group":"wallpaper","label":"Show News Layer","type":"bool","required":false,"default":false},
+    {"key":"show_cams_layer","group":"wallpaper","label":"Show Cams Layer","type":"bool","required":false,"default":false},
     {"key":"weather_pos_x","group":"wallpaper","label":"Weather X","type":"i32","required":false,"default":120},
     {"key":"weather_pos_y","group":"wallpaper","label":"Weather Y","type":"i32","required":false,"default":120},
     {"key":"weather_widget_width","group":"wallpaper","label":"Weather Widget Width","type":"u32","required":false,"default":640},
@@ -345,6 +373,14 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"news_custom_url","group":"wallpaper","label":"News Custom URL","type":"string","required":false,"default":"","visible_when":{"field":"news_source","equals":"custom"},"enabled_when":{"field":"news_source","equals":"custom"}},
     {"key":"news_fps","group":"wallpaper","label":"News FPS","type":"f32","required":false,"default":1.0},
     {"key":"news_audio_enabled","group":"wallpaper","label":"News Audio Enabled","type":"bool","required":false,"default":false},
+    {"key":"cams_pos_x","group":"wallpaper","label":"Cams X","type":"i32","required":false,"default":980},
+    {"key":"cams_pos_y","group":"wallpaper","label":"Cams Y","type":"i32","required":false,"default":640},
+    {"key":"cams_widget_width","group":"wallpaper","label":"Cams Widget Width","type":"u32","required":false,"default":760},
+    {"key":"cams_widget_height","group":"wallpaper","label":"Cams Widget Height","type":"u32","required":false,"default":428},
+    {"key":"cams_source","group":"wallpaper","label":"Cams Source","type":"enum","required":false,"default":"auto_local","options":["auto_local","city_public","custom"]},
+    {"key":"cams_custom_urls","group":"wallpaper","label":"Cams Custom URLs","type":"string","required":false,"default":"","visible_when":{"field":"cams_source","equals":"custom"},"enabled_when":{"field":"cams_source","equals":"custom"}},
+    {"key":"cams_count","group":"wallpaper","label":"Cams Count","type":"u32","required":false,"default":2,"min":1,"max":9},
+    {"key":"cams_columns","group":"wallpaper","label":"Cams Columns","type":"u32","required":false,"default":2,"min":1,"max":4},
     {"key":"login_screen_integration","group":"wallpaper","label":"Login Screen Integration","type":"bool","required":false,"default":false},
     {"key":"boot_screen_integration","group":"wallpaper","label":"Boot Screen Integration","type":"bool","required":false,"default":false}
   ]
@@ -417,7 +453,7 @@ pub fn settings_ui_blueprint_json() -> &'static str {
       {
         "id": "wallpaper",
         "title": "Wallpaper",
-        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode", "show_background_layer", "show_quote_layer", "show_clock_layer", "show_weather_layer", "show_news_layer", "weather_pos_x", "weather_pos_y", "weather_widget_width", "weather_widget_height", "weather_font_size", "weather_font_family", "weather_color", "weather_undercolor", "weather_stroke_color", "weather_stroke_width", "news_pos_x", "news_pos_y", "news_widget_width", "news_widget_height", "weather_refresh_seconds", "weather_use_system_location", "weather_location_override", "news_source", "news_custom_url", "news_fps", "news_audio_enabled", "login_screen_integration", "boot_screen_integration"]
+        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode", "show_background_layer", "show_quote_layer", "show_clock_layer", "show_weather_layer", "show_news_layer", "show_cams_layer", "weather_pos_x", "weather_pos_y", "weather_widget_width", "weather_widget_height", "weather_font_size", "weather_font_family", "weather_color", "weather_undercolor", "weather_stroke_color", "weather_stroke_width", "news_pos_x", "news_pos_y", "news_widget_width", "news_widget_height", "weather_refresh_seconds", "weather_use_system_location", "weather_location_override", "news_source", "news_custom_url", "news_fps", "news_audio_enabled", "cams_pos_x", "cams_pos_y", "cams_widget_width", "cams_widget_height", "cams_source", "cams_custom_urls", "cams_count", "cams_columns", "login_screen_integration", "boot_screen_integration"]
       }
     ]
   },
@@ -439,8 +475,10 @@ pub fn settings_ui_blueprint_json() -> &'static str {
     {"field":"show_clock_layer"},
     {"field":"show_weather_layer"},
     {"field":"show_news_layer"},
+    {"field":"show_cams_layer"},
     {"field":"weather_location_override","visible_when":{"field":"weather_use_system_location","equals":false},"enabled_when":{"field":"weather_use_system_location","equals":false}},
     {"field":"news_custom_url","visible_when":{"field":"news_source","equals":"custom"},"enabled_when":{"field":"news_source","equals":"custom"}},
+    {"field":"cams_custom_urls","visible_when":{"field":"cams_source","equals":"custom"},"enabled_when":{"field":"cams_source","equals":"custom"}},
     {"field":"login_screen_integration"},
     {"field":"boot_screen_integration"}
   ]
@@ -511,6 +549,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut show_clock_layer = None::<bool>;
     let mut show_weather_layer = None::<bool>;
     let mut show_news_layer = None::<bool>;
+    let mut show_cams_layer = None::<bool>;
     let mut weather_pos_x = None::<i32>;
     let mut weather_pos_y = None::<i32>;
     let mut weather_widget_width = None::<u32>;
@@ -532,6 +571,14 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut news_custom_url = None::<String>;
     let mut news_fps = None::<f32>;
     let mut news_audio_enabled = None::<bool>;
+    let mut cams_pos_x = None::<i32>;
+    let mut cams_pos_y = None::<i32>;
+    let mut cams_widget_width = None::<u32>;
+    let mut cams_widget_height = None::<u32>;
+    let mut cams_source = None::<String>;
+    let mut cams_custom_urls = None::<String>;
+    let mut cams_count = None::<u32>;
+    let mut cams_columns = None::<u32>;
     let mut login_screen_integration = None::<bool>;
     let mut boot_screen_integration = None::<bool>;
 
@@ -597,6 +644,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "show_clock_layer" => show_clock_layer = parse_bool(value),
             "show_weather_layer" => show_weather_layer = parse_bool(value),
             "show_news_layer" => show_news_layer = parse_bool(value),
+            "show_cams_layer" => show_cams_layer = parse_bool(value),
             "weather_pos_x" => weather_pos_x = parse_i32(value),
             "weather_pos_y" => weather_pos_y = parse_i32(value),
             "weather_widget_width" => weather_widget_width = parse_u32(value),
@@ -618,6 +666,14 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "news_custom_url" => news_custom_url = parse_string(value),
             "news_fps" => news_fps = value.parse::<f32>().ok(),
             "news_audio_enabled" => news_audio_enabled = parse_bool(value),
+            "cams_pos_x" => cams_pos_x = parse_i32(value),
+            "cams_pos_y" => cams_pos_y = parse_i32(value),
+            "cams_widget_width" => cams_widget_width = parse_u32(value),
+            "cams_widget_height" => cams_widget_height = parse_u32(value),
+            "cams_source" => cams_source = parse_string(value),
+            "cams_custom_urls" => cams_custom_urls = parse_string(value),
+            "cams_count" => cams_count = parse_u32(value),
+            "cams_columns" => cams_columns = parse_u32(value),
             "login_screen_integration" => login_screen_integration = parse_bool(value),
             "boot_screen_integration" => boot_screen_integration = parse_bool(value),
             _ => {}
@@ -682,6 +738,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         show_clock_layer: show_clock_layer.unwrap_or(true),
         show_weather_layer: show_weather_layer.unwrap_or(false),
         show_news_layer: show_news_layer.unwrap_or(false),
+        show_cams_layer: show_cams_layer.unwrap_or(false),
         weather_pos_x: weather_pos_x.unwrap_or(120),
         weather_pos_y: weather_pos_y.unwrap_or(120),
         weather_widget_width: weather_widget_width.unwrap_or(640).clamp(120, 1920),
@@ -703,6 +760,14 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         news_custom_url: news_custom_url.unwrap_or_default(),
         news_fps: news_fps.unwrap_or(1.0).clamp(0.05, 30.0),
         news_audio_enabled: news_audio_enabled.unwrap_or(false),
+        cams_pos_x: cams_pos_x.unwrap_or(980),
+        cams_pos_y: cams_pos_y.unwrap_or(640),
+        cams_widget_width: cams_widget_width.unwrap_or(760).clamp(180, 1920),
+        cams_widget_height: cams_widget_height.unwrap_or(428).clamp(120, 1080),
+        cams_source: cams_source.unwrap_or_else(|| "auto_local".to_string()),
+        cams_custom_urls: cams_custom_urls.unwrap_or_default(),
+        cams_count: cams_count.unwrap_or(2).clamp(1, 9),
+        cams_columns: cams_columns.unwrap_or(2).clamp(1, 4),
         login_screen_integration: login_screen_integration.unwrap_or(false),
         boot_screen_integration: boot_screen_integration.unwrap_or(false),
     })

@@ -66,6 +66,7 @@ enum GuiTab {
     Quotes,
     Weather,
     News,
+    Cams,
     System,
 }
 
@@ -83,6 +84,7 @@ enum LayoutElement {
     Clock,
     Weather,
     News,
+    Cams,
 }
 
 struct WcGuiApp {
@@ -101,6 +103,7 @@ struct WcGuiApp {
     weather_last_refresh: Option<Instant>,
     autostart_toggle: bool,
     ordering_bg_texture: Option<egui::TextureHandle>,
+    cams_public_choice: String,
 }
 
 impl WcGuiApp {
@@ -128,6 +131,7 @@ impl WcGuiApp {
             weather_last_refresh: None,
             autostart_toggle: Self::autostart_enabled(),
             ordering_bg_texture: None,
+            cams_public_choice: "belgrade_center".to_string(),
         }
     }
 
@@ -1075,6 +1079,7 @@ impl WcGuiApp {
             ui.checkbox(&mut self.cfg.show_clock_layer, "Clock");
             ui.checkbox(&mut self.cfg.show_weather_layer, "Weather");
             ui.checkbox(&mut self.cfg.show_news_layer, "News");
+            ui.checkbox(&mut self.cfg.show_cams_layer, "Cams");
         });
 
         ui.horizontal(|ui| {
@@ -1085,6 +1090,7 @@ impl WcGuiApp {
                     LayoutElement::Clock => "Clock",
                     LayoutElement::Weather => "Weather",
                     LayoutElement::News => "News",
+                    LayoutElement::Cams => "Cams",
                 })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
@@ -1099,6 +1105,7 @@ impl WcGuiApp {
                         "Weather",
                     );
                     ui.selectable_value(&mut self.selected_element, LayoutElement::News, "News");
+                    ui.selectable_value(&mut self.selected_element, LayoutElement::Cams, "Cams");
                 });
         });
 
@@ -1170,6 +1177,17 @@ impl WcGuiApp {
             ),
             news_size,
         );
+        let cams_size = egui::vec2(
+            self.cfg.cams_widget_width as f32 * sx.max(0.2),
+            self.cfg.cams_widget_height as f32 * sy.max(0.2),
+        );
+        let mut cams_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                rect.left() + self.cfg.cams_pos_x as f32 * sx,
+                rect.top() + self.cfg.cams_pos_y as f32 * sy,
+            ),
+            cams_size,
+        );
 
         if response.clicked()
             && let Some(pos) = response.interact_pointer_pos()
@@ -1182,6 +1200,8 @@ impl WcGuiApp {
                 self.selected_element = LayoutElement::Weather;
             } else if news_rect.contains(pos) {
                 self.selected_element = LayoutElement::News;
+            } else if cams_rect.contains(pos) {
+                self.selected_element = LayoutElement::Cams;
             }
         }
         if response.dragged()
@@ -1207,6 +1227,10 @@ impl WcGuiApp {
                 LayoutElement::News => {
                     self.cfg.news_pos_x = world_x;
                     self.cfg.news_pos_y = world_y;
+                }
+                LayoutElement::Cams => {
+                    self.cfg.cams_pos_x = world_x;
+                    self.cfg.cams_pos_y = world_y;
                 }
             }
             quote_rect = egui::Rect::from_min_size(
@@ -1236,6 +1260,13 @@ impl WcGuiApp {
                     rect.top() + self.cfg.news_pos_y as f32 * sy,
                 ),
                 news_size,
+            );
+            cams_rect = egui::Rect::from_min_size(
+                egui::pos2(
+                    rect.left() + self.cfg.cams_pos_x as f32 * sx,
+                    rect.top() + self.cfg.cams_pos_y as f32 * sy,
+                ),
+                cams_size,
             );
         }
 
@@ -1319,6 +1350,27 @@ impl WcGuiApp {
                 news_rect.left_top() + egui::vec2(6.0, 6.0),
                 egui::Align2::LEFT_TOP,
                 "News",
+                egui::FontId::proportional(12.0),
+                egui::Color32::WHITE,
+            );
+        }
+        if self.cfg.show_cams_layer {
+            let neon = if self.selected_element == LayoutElement::Cams {
+                egui::Color32::from_rgb(0, 255, 140)
+            } else {
+                egui::Color32::from_rgb(35, 140, 92)
+            };
+            painter.rect_filled(cams_rect, 4.0, neon.linear_multiply(0.15));
+            painter.rect_stroke(
+                cams_rect,
+                4.0,
+                egui::Stroke::new(2.0, neon),
+                egui::StrokeKind::Middle,
+            );
+            painter.text(
+                cams_rect.left_top() + egui::vec2(6.0, 6.0),
+                egui::Align2::LEFT_TOP,
+                "Cams",
                 egui::FontId::proportional(12.0),
                 egui::Color32::WHITE,
             );
@@ -1600,6 +1652,74 @@ impl WcGuiApp {
                         .on_hover_text(self.hover_text("news_audio_enabled"));
                 });
             }
+            LayoutElement::Cams => {
+                ui.heading("Cams Widget Settings");
+                ui.checkbox(&mut self.cfg.show_cams_layer, "Enabled");
+                ui.horizontal(|ui| {
+                    ui.label("X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.cams_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.cams_pos_y).speed(1));
+                    ui.label("W");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_widget_width)
+                            .speed(2)
+                            .range(240..=1920),
+                    )
+                    .on_hover_text(self.hover_text("widget_size"));
+                    ui.label("H");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_widget_height)
+                            .speed(2)
+                            .range(140..=1080),
+                    )
+                    .on_hover_text(self.hover_text("widget_size"));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Source");
+                    egui::ComboBox::from_id_salt("cams_source_ordering")
+                        .selected_text(match self.cfg.cams_source.as_str() {
+                            "city_public" => "City public",
+                            "custom" => "Custom URLs",
+                            _ => "Auto local/public",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.cfg.cams_source,
+                                "auto_local".to_string(),
+                                "Auto local/public",
+                            );
+                            ui.selectable_value(
+                                &mut self.cfg.cams_source,
+                                "city_public".to_string(),
+                                "City public",
+                            );
+                            ui.selectable_value(
+                                &mut self.cfg.cams_source,
+                                "custom".to_string(),
+                                "Custom URLs",
+                            );
+                        });
+                    ui.label("Count");
+                    if ui.button("-").clicked() {
+                        self.cfg.cams_count = self.cfg.cams_count.saturating_sub(1).max(1);
+                    }
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_count)
+                            .speed(1)
+                            .range(1..=5),
+                    );
+                    if ui.button("+").clicked() {
+                        self.cfg.cams_count = self.cfg.cams_count.saturating_add(1).clamp(1, 5);
+                    }
+                    ui.label("Columns");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_columns)
+                            .speed(1)
+                            .range(1..=4),
+                    );
+                });
+            }
         }
 
         ui.separator();
@@ -1791,6 +1911,116 @@ impl WcGuiApp {
             &self.cfg.news_source,
             &self.cfg.news_custom_url,
         ));
+    }
+
+    fn render_cams_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Cams");
+        ui.label("Widget: public/private camera feeds (2-5) with optional custom URLs.");
+        ui.separator();
+        ui.checkbox(&mut self.cfg.show_cams_layer, "Enable cams widget");
+        ui.horizontal(|ui| {
+            ui.label("Source mode");
+            egui::ComboBox::from_id_salt("cams_source_tab")
+                .selected_text(match self.cfg.cams_source.as_str() {
+                    "city_public" => "City public",
+                    "custom" => "Custom URLs",
+                    _ => "Auto local/public",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut self.cfg.cams_source,
+                        "auto_local".to_string(),
+                        "Auto local/public",
+                    );
+                    ui.selectable_value(
+                        &mut self.cfg.cams_source,
+                        "city_public".to_string(),
+                        "City public",
+                    );
+                    ui.selectable_value(
+                        &mut self.cfg.cams_source,
+                        "custom".to_string(),
+                        "Custom URLs",
+                    );
+                });
+        });
+        ui.horizontal(|ui| {
+            ui.label("Public preset");
+            egui::ComboBox::from_id_salt("cams_public_choice_tab")
+                .selected_text(match self.cams_public_choice.as_str() {
+                    "belgrade_center" => "Belgrade center mix",
+                    "europe_mix" => "Europe city mix",
+                    "world_mix" => "World live mix",
+                    _ => "Belgrade center mix",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut self.cams_public_choice,
+                        "belgrade_center".to_string(),
+                        "Belgrade center mix",
+                    );
+                    ui.selectable_value(
+                        &mut self.cams_public_choice,
+                        "europe_mix".to_string(),
+                        "Europe city mix",
+                    );
+                    ui.selectable_value(
+                        &mut self.cams_public_choice,
+                        "world_mix".to_string(),
+                        "World live mix",
+                    );
+                });
+            if ui.button("Apply preset URLs").clicked() {
+                self.cfg.cams_source = "custom".to_string();
+                self.cfg.cams_custom_urls = cams_public_preset_urls(&self.cams_public_choice);
+            }
+        });
+        if self.cfg.cams_source == "custom" {
+            ui.label("Custom cam URLs (one per line, supports http(s)/rtsp)");
+            ui.add(
+                egui::TextEdit::multiline(&mut self.cfg.cams_custom_urls)
+                    .desired_rows(6)
+                    .desired_width(f32::INFINITY),
+            );
+        }
+        ui.horizontal(|ui| {
+            ui.label("Cams shown");
+            if ui.button("-").clicked() {
+                self.cfg.cams_count = self.cfg.cams_count.saturating_sub(1).max(1);
+            }
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.cams_count)
+                    .speed(1)
+                    .range(1..=5),
+            );
+            if ui.button("+").clicked() {
+                self.cfg.cams_count = self.cfg.cams_count.saturating_add(1).clamp(1, 5);
+            }
+            ui.label("Columns");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.cams_columns)
+                    .speed(1)
+                    .range(1..=4),
+            );
+        });
+        ui.horizontal(|ui| {
+            ui.label("Position X");
+            ui.add(egui::DragValue::new(&mut self.cfg.cams_pos_x).speed(1));
+            ui.label("Y");
+            ui.add(egui::DragValue::new(&mut self.cfg.cams_pos_y).speed(1));
+            ui.label("W");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.cams_widget_width)
+                    .speed(2)
+                    .range(240..=1920),
+            );
+            ui.label("H");
+            ui.add(
+                egui::DragValue::new(&mut self.cfg.cams_widget_height)
+                    .speed(2)
+                    .range(140..=1080),
+            );
+        });
     }
 
     fn render_system_tab(&mut self, ui: &mut egui::Ui) {
@@ -2478,11 +2708,12 @@ impl eframe::App for WcGuiApp {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.active_tab, GuiTab::Ordering, "Ordering");
                 ui.selectable_value(&mut self.active_tab, GuiTab::Images, "Images");
-                ui.selectable_value(&mut self.active_tab, GuiTab::Quotes, "Quotes");
-                ui.selectable_value(&mut self.active_tab, GuiTab::Weather, "Weather");
-                ui.selectable_value(&mut self.active_tab, GuiTab::News, "News");
-                ui.selectable_value(&mut self.active_tab, GuiTab::System, "System");
-            });
+            ui.selectable_value(&mut self.active_tab, GuiTab::Quotes, "Quotes");
+            ui.selectable_value(&mut self.active_tab, GuiTab::Weather, "Weather");
+            ui.selectable_value(&mut self.active_tab, GuiTab::News, "News");
+            ui.selectable_value(&mut self.active_tab, GuiTab::Cams, "Cams");
+            ui.selectable_value(&mut self.active_tab, GuiTab::System, "System");
+        });
         });
 
         egui::SidePanel::right("thumbs")
@@ -2524,6 +2755,7 @@ impl eframe::App for WcGuiApp {
                 GuiTab::Quotes => self.render_quotes_tab(ui),
                 GuiTab::Weather => self.render_weather_tab(ui),
                 GuiTab::News => self.render_news_tab(ui),
+                GuiTab::Cams => self.render_cams_tab(ui),
                 GuiTab::System => self.render_system_tab(ui),
             });
         });
@@ -2633,6 +2865,7 @@ fn default_cfg() -> AppConfig {
         show_clock_layer: true,
         show_weather_layer: false,
         show_news_layer: false,
+        show_cams_layer: false,
         weather_pos_x: 120,
         weather_pos_y: 120,
         weather_widget_width: 640,
@@ -2654,9 +2887,39 @@ fn default_cfg() -> AppConfig {
         news_custom_url: String::new(),
         news_fps: 1.0,
         news_audio_enabled: false,
+        cams_pos_x: 980,
+        cams_pos_y: 640,
+        cams_widget_width: 760,
+        cams_widget_height: 428,
+        cams_source: "auto_local".to_string(),
+        cams_custom_urls: String::new(),
+        cams_count: 2,
+        cams_columns: 2,
         login_screen_integration: false,
         boot_screen_integration: false,
     }
+}
+
+fn cams_public_preset_urls(id: &str) -> String {
+    let urls: &[&str] = match id {
+        "europe_mix" => &[
+            "https://www.youtube.com/watch?v=wccRif2DaGs",
+            "https://www.youtube.com/watch?v=GE_SfNVNyqk",
+            "https://www.youtube.com/watch?v=l8PMl7tUDIE",
+        ],
+        "world_mix" => &[
+            "https://www.youtube.com/watch?v=1-iS7LArMPA",
+            "https://www.youtube.com/watch?v=AdUw5RdyZxI",
+            "https://www.youtube.com/watch?v=21X5lGlDOfg",
+            "https://www.youtube.com/watch?v=pykpO5kQJ98",
+        ],
+        _ => &[
+            "https://www.youtube.com/watch?v=wccRif2DaGs",
+            "https://www.youtube.com/watch?v=GE_SfNVNyqk",
+            "https://www.youtube.com/watch?v=1-iS7LArMPA",
+        ],
+    };
+    urls.join("\n")
 }
 
 fn quote_box_px(

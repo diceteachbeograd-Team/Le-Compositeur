@@ -5,6 +5,22 @@
 - [ ] Create a cleaner information hierarchy for advanced features (weather/news widgets, autostart, integrations).
 - [ ] Define a consistent visual system (spacing, typography, accent colors, iconography) for a stronger cyber-ops look.
 - [ ] Reduce control duplication between tabs and keep "quick actions" visible without clutter.
+- [ ] Plan and prototype scalable tab layout for upcoming widget families (cams/news/info) without overloading the top nav.
+
+## Upcoming Widget Tabs (planned)
+- [ ] Add `Cams` tab for live camera widgets (IP cameras / custom stream URLs).
+- [ ] Add camera profile presets (indoor/outdoor/night, low-latency, low-bandwidth).
+- [ ] Add fast camera mode (higher FPS for surveillance-style feeds).
+- [ ] Add camera switching modes:
+  - [ ] Manual source select
+  - [ ] Timed auto-rotation between camera sources
+  - [ ] Event-priority source pinning (future)
+- [ ] Add multiple `News Ticker` widget instances (independent source + style + speed).
+- [ ] Add additional `Info` widgets tab (system info, custom text feeds, compact dashboards).
+- [ ] Add per-widget enable/disable and visibility rules in `Ordering`.
+- [ ] Add per-widget z-order and collision-safe placement rules.
+- [ ] Add per-widget performance caps (FPS/network refresh/CPU budget).
+- [ ] Add future plugin-style widget registry to keep new widgets modular.
 
 ## Current Status
 - MVP engine works on Fedora VM (image selection, quote selection, clock overlay, apply wallpaper).

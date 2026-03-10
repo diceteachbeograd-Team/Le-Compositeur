@@ -226,6 +226,18 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
         }
     };
     let news = news_payload.text.clone();
+    let cams_payload = if cfg.show_cams_layer {
+        resolve_cams_widget(cfg, image_cycle).unwrap_or_else(|e| CamsWidgetPayload {
+            text: format!("CAMS ◆ unavailable ({e})"),
+            preview_image: None,
+        })
+    } else {
+        CamsWidgetPayload {
+            text: String::new(),
+            preview_image: None,
+        }
+    };
+    let cams = cams_payload.text.clone();
     let (canvas_width, canvas_height) = detect_canvas_size();
     let (image_pool_size, quote_pool_size) = detect_local_pool_sizes(cfg);
 
@@ -240,6 +252,8 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             weather_map_image: weather_payload.minimap_image.as_deref(),
             news: &news,
             news_image: news_payload.preview_image.as_deref(),
+            cams: &cams,
+            cams_image: cams_payload.preview_image.as_deref(),
             quote_font_size: cfg.quote_font_size,
             quote_pos_x: cfg.quote_pos_x,
             quote_pos_y: cfg.quote_pos_y,
@@ -265,6 +279,10 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             news_pos_y: cfg.news_pos_y,
             news_width: cfg.news_widget_width,
             news_height: cfg.news_widget_height,
+            cams_pos_x: cfg.cams_pos_x,
+            cams_pos_y: cfg.cams_pos_y,
+            cams_width: cfg.cams_widget_width,
+            cams_height: cfg.cams_widget_height,
             text_stroke_color: &cfg.text_stroke_color,
             text_stroke_width: cfg.text_stroke_width,
             text_undercolor: &cfg.text_undercolor,
@@ -294,8 +312,12 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     println!("clock: {}", clock);
     println!("weather: {}", weather);
     println!("news: {}", news);
+    println!("cams: {}", cams);
     if let Some(path) = &news_payload.preview_image {
         println!("news_preview_image: {}", path.display());
+    }
+    if let Some(path) = &cams_payload.preview_image {
+        println!("cams_preview_image: {}", path.display());
     }
     println!("canvas: {}x{}", canvas_width, canvas_height);
     println!("preview_mode: {}", render.preview_mode);
@@ -817,21 +839,17 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<WeatherWidgetPayload> {
     };
     let minimap_image = resolve_weather_minimap(geo.lat, geo.lon, wind_deg)
         .or_else(|| resolve_weather_minimap_raw(geo.lat, geo.lon));
-    let loc = compact_location_label(&geo.label);
-    let text = format!(
-        "{} {}\n🌡 {:.1}{}  ◇  🤲 {:.1}{}  ◇  ☔ {:.0}%\n🧭 {} {}  ◇  🌬 {:.1} {}  ◇  🫧 {:.0}%",
+    let text = format_weather_compact(
         weather_code_icon(code),
-        loc,
         t,
-        temp_unit,
         feels,
-        temp_unit,
         rain_prob,
         wind_arrow,
         wind_dir,
         wind,
+        humidity,
+        temp_unit,
         wind_unit,
-        humidity
     );
 
     let payload = WeatherWidgetPayload {
@@ -859,13 +877,6 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
         .get("nearest_area")
         .and_then(Value::as_array)
         .and_then(|arr| arr.first());
-    let city = area
-        .and_then(|a| a.get("areaName"))
-        .and_then(Value::as_array)
-        .and_then(|arr| arr.first())
-        .and_then(|v| v.get("value"))
-        .and_then(Value::as_str)
-        .unwrap_or("Auto location");
     let country = area
         .and_then(|a| a.get("country"))
         .and_then(Value::as_array)
@@ -906,18 +917,54 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
         .and_then(Value::as_str)
         .unwrap_or("N");
     let wind_arrow = compass_arrow_for_name(wind_dir);
-    Ok(WeatherWidgetPayload {
-        text: format!(
-            "{} {}, {}\n🌡 {:.1}C  ﹒  🫧 {:.0}%  ﹒  ☔ {:.0}%\n🧭 {} {}  ﹒  🌬 {:.1} km/h",
-            compact_condition_symbol(desc),
-            city,
-            country,
+    let units = unit_system_for_country(match country {
+        "United States" | "Liberia" | "Myanmar" => Some("US"),
+        _ => None,
+    });
+    let (temp, feels, wind, temp_unit, wind_unit) = match units {
+        UnitSystem::Imperial => (
+            current
+                .get("temp_F")
+                .and_then(Value::as_str)
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(temp * 9.0 / 5.0 + 32.0),
+            current
+                .get("FeelsLikeF")
+                .and_then(Value::as_str)
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(temp * 9.0 / 5.0 + 32.0),
+            current
+                .get("windspeedMiles")
+                .and_then(Value::as_str)
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(wind / 1.609_34),
+            "F",
+            "mph",
+        ),
+        UnitSystem::Metric => (
             temp,
-            humidity,
+            current
+                .get("FeelsLikeC")
+                .and_then(Value::as_str)
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(temp),
+            wind,
+            "C",
+            "km/h",
+        ),
+    };
+    Ok(WeatherWidgetPayload {
+        text: format_weather_compact(
+            compact_condition_symbol(desc),
+            temp,
+            feels,
             rain,
             wind_arrow,
             wind_dir,
-            wind
+            wind,
+            humidity,
+            temp_unit,
+            wind_unit,
         ),
         minimap_image: None,
     })
@@ -929,10 +976,16 @@ struct NewsWidgetPayload {
     preview_image: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone)]
+struct CamsWidgetPayload {
+    text: String,
+    preview_image: Option<PathBuf>,
+}
+
 fn resolve_news_widget(cfg: &AppConfig, cycle: u64) -> Result<NewsWidgetPayload> {
     let (label, stream_url, feed_url) = news_source_profile(cfg);
     let headline = if let Some(feed) = feed_url {
-        fetch_rss_headline(feed).unwrap_or_else(|| "live feed".to_string())
+        fetch_rss_ticker(feed).unwrap_or_else(|| "live feed".to_string())
     } else {
         "live source".to_string()
     };
@@ -943,11 +996,180 @@ fn resolve_news_widget(cfg: &AppConfig, cycle: u64) -> Result<NewsWidgetPayload>
     } else {
         compact_news_line(&format!("{label} ◆ {headline} ◆ {subtitle_hint}"))
     };
-    let line = news_ticker_frame(&raw_line, ticker_cycle_for_fps(cfg.news_fps));
+    let line = news_ticker_frame(&raw_line, ticker_cycle_for_fps(cfg.news_fps.max(8.0)));
     Ok(NewsWidgetPayload {
         text: line,
         preview_image,
     })
+}
+
+fn resolve_cams_widget(cfg: &AppConfig, cycle: u64) -> Result<CamsWidgetPayload> {
+    let mut urls = cams_source_urls(cfg, cycle);
+    if urls.is_empty() {
+        anyhow::bail!("no camera URLs available");
+    }
+
+    let count = cfg.cams_count.clamp(1, 5) as usize;
+    if urls.len() > count {
+        urls.truncate(count);
+    }
+
+    let mut frames = Vec::<PathBuf>::new();
+    for url in &urls {
+        if let Some(frame) = capture_stream_preview(url, 1.0) {
+            frames.push(frame);
+        }
+    }
+    let preview_image = compose_cams_grid(&frames, cfg.cams_columns.clamp(1, 4))
+        .or_else(|| frames.first().cloned());
+
+    let short = urls
+        .iter()
+        .map(|u| summarize_source_label(u))
+        .collect::<Vec<_>>()
+        .join(" ◆ ");
+    let text = news_ticker_frame(
+        &compact_news_line(&format!("CAMS ◆ {short}")),
+        ticker_cycle_for_fps(1.2),
+    );
+
+    Ok(CamsWidgetPayload {
+        text,
+        preview_image,
+    })
+}
+
+fn cams_source_urls(cfg: &AppConfig, cycle: u64) -> Vec<String> {
+    match cfg.cams_source.trim().to_ascii_lowercase().as_str() {
+        "custom" => {
+            let mut urls = parse_endpoint_list(&cfg.cams_custom_urls);
+            urls.retain(|u| looks_like_endpoint(u));
+            if urls.is_empty() {
+                auto_local_cam_urls(cycle)
+            } else {
+                rotate_urls(urls, cycle)
+            }
+        }
+        "city_public" => city_public_cam_urls(cycle),
+        _ => auto_local_cam_urls(cycle),
+    }
+}
+
+fn auto_local_cam_urls(cycle: u64) -> Vec<String> {
+    // Public live-cam feeds (YouTube) used as default sources.
+    // We rotate candidates so users in different regions don't always see the same feed.
+    let mut base = vec![
+        "https://www.youtube.com/watch?v=1-iS7LArMPA".to_string(), // Times Square
+        "https://www.youtube.com/watch?v=AdUw5RdyZxI".to_string(), // Earth/City cam
+        "https://www.youtube.com/watch?v=wccRif2DaGs".to_string(), // City stream
+        "https://www.youtube.com/watch?v=21X5lGlDOfg".to_string(), // NASA live earth view
+        "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(), // DW live feed
+    ];
+    base = rotate_urls(base, cycle);
+    base
+}
+
+fn city_public_cam_urls(cycle: u64) -> Vec<String> {
+    let mut city_urls = vec![
+        "https://www.youtube.com/watch?v=1-iS7LArMPA".to_string(),
+        "https://www.youtube.com/watch?v=wccRif2DaGs".to_string(),
+        "https://www.youtube.com/watch?v=AdUw5RdyZxI".to_string(),
+        "https://www.youtube.com/watch?v=21X5lGlDOfg".to_string(),
+    ];
+    city_urls = rotate_urls(city_urls, cycle);
+    city_urls
+}
+
+fn rotate_urls(urls: Vec<String>, cycle: u64) -> Vec<String> {
+    if urls.is_empty() {
+        return urls;
+    }
+    let shift = (cycle as usize) % urls.len();
+    urls[shift..]
+        .iter()
+        .chain(urls[..shift].iter())
+        .cloned()
+        .collect::<Vec<_>>()
+}
+
+fn summarize_source_label(url: &str) -> String {
+    if let Some(id) = extract_youtube_video_id(url) {
+        return format!("YT:{id}");
+    }
+    let trimmed = url.trim();
+    let without_scheme = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+        .unwrap_or(trimmed);
+    without_scheme
+        .split('/')
+        .next()
+        .unwrap_or(without_scheme)
+        .to_string()
+}
+
+fn compose_cams_grid(frames: &[PathBuf], columns: u32) -> Option<PathBuf> {
+    if frames.is_empty() {
+        return None;
+    }
+    if frames.len() == 1 {
+        return Some(frames[0].clone());
+    }
+
+    let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
+    fs::create_dir_all(&cache_dir).ok()?;
+    let key = frames
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    let target = cache_dir.join(format!("cams-grid-{}.jpg", stable_hash(&key)));
+
+    let cols = columns.clamp(1, 4).min(frames.len() as u32);
+    if command_exists("magick") {
+        let mut cmd = Command::new("magick");
+        cmd.arg("montage");
+        for frame in frames {
+            cmd.arg(frame);
+        }
+        let status = cmd
+            .args([
+                "-tile",
+                &format!("{cols}x"),
+                "-geometry",
+                "640x360+2+2",
+                "-background",
+                "#01070A",
+            ])
+            .arg(&target)
+            .status()
+            .ok()?;
+        if status.success() && target.exists() {
+            return Some(target);
+        }
+    } else if command_exists("montage") {
+        let mut cmd = Command::new("montage");
+        for frame in frames {
+            cmd.arg(frame);
+        }
+        let status = cmd
+            .args([
+                "-tile",
+                &format!("{cols}x"),
+                "-geometry",
+                "640x360+2+2",
+                "-background",
+                "#01070A",
+            ])
+            .arg(&target)
+            .status()
+            .ok()?;
+        if status.success() && target.exists() {
+            return Some(target);
+        }
+    }
+
+    frames.first().cloned()
 }
 
 fn news_source_profile(cfg: &AppConfig) -> (&str, String, Option<&'static str>) {
@@ -1006,7 +1228,7 @@ fn news_source_profile(cfg: &AppConfig) -> (&str, String, Option<&'static str>) 
     }
 }
 
-fn fetch_rss_headline(url: &str) -> Option<String> {
+fn fetch_rss_ticker(url: &str) -> Option<String> {
     let client = Client::builder()
         .timeout(Duration::from_secs(6))
         .build()
@@ -1019,7 +1241,17 @@ fn fetch_rss_headline(url: &str) -> Option<String> {
         .ok()?
         .text()
         .ok()?;
-    extract_first_rss_item_title(&body).or_else(|| extract_first_xml_tag(&body, "title"))
+    let mut titles = extract_rss_item_titles(&body, 4);
+    if titles.is_empty()
+        && let Some(single) = extract_first_rss_item_title(&body).or_else(|| extract_first_xml_tag(&body, "title"))
+    {
+        titles.push(single);
+    }
+    if titles.is_empty() {
+        None
+    } else {
+        Some(compact_news_line(&titles.join(" ◆ ")))
+    }
 }
 
 fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str, cycle: u64) -> Option<PathBuf> {
@@ -1044,22 +1276,32 @@ fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str, cycle: u64) -> 
     None
 }
 
-fn compact_location_label(raw: &str) -> String {
-    let trimmed = raw.trim();
-    if trimmed.len() <= 24 {
-        return trimmed.to_string();
-    }
-    let compact = trimmed
-        .split(',')
-        .next()
-        .unwrap_or(trimmed)
-        .trim()
-        .to_string();
-    if compact.is_empty() {
-        trimmed.chars().take(24).collect()
-    } else {
-        compact
-    }
+fn format_weather_compact(
+    condition_icon: &str,
+    temp: f64,
+    feels: f64,
+    rain_prob: f64,
+    wind_arrow: &str,
+    wind_dir: &str,
+    wind_speed: f64,
+    humidity: f64,
+    temp_unit: &str,
+    wind_unit: &str,
+) -> String {
+    format!(
+        "{}  ◉ {:.1}{}  ◇  ◍ {:.1}{}  ◇  ☂ {:.0}%\n⌖ {} {}  ◇  ➤ {:.1} {}  ◇  ◒ {:.0}%",
+        condition_icon,
+        temp,
+        temp_unit,
+        feels,
+        temp_unit,
+        rain_prob,
+        wind_arrow,
+        wind_dir,
+        wind_speed,
+        wind_unit,
+        humidity
+    )
 }
 
 fn unit_system_for_country(country_code: Option<&str>) -> UnitSystem {
@@ -1156,7 +1398,7 @@ fn news_ticker_frame(input: &str, cycle: u64) -> String {
         .chain(chars[..shift].iter())
         .collect::<String>();
     let visible = ordered_full.chars().take(92).collect::<String>();
-    format!("▮ {visible}")
+    format!("▮ {visible} ▮")
 }
 
 fn extract_first_rss_item_title(raw: &str) -> Option<String> {
@@ -1166,7 +1408,18 @@ fn extract_first_rss_item_title(raw: &str) -> Option<String> {
 }
 
 fn capture_stream_preview(stream_url: &str, fps: f32) -> Option<PathBuf> {
-    let lower = stream_url.trim().to_ascii_lowercase();
+    let raw = stream_url.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if is_youtube_url(raw)
+        && let Some(resolved) = resolve_youtube_playback_url(raw)
+        && let Some(path) = capture_news_frame(&resolved, raw, fps)
+    {
+        return Some(path);
+    }
+
+    let lower = raw.to_ascii_lowercase();
     if is_camera_like_url(stream_url)
         || lower.ends_with(".m3u8")
         || lower.ends_with(".mp4")
@@ -1174,7 +1427,7 @@ fn capture_stream_preview(stream_url: &str, fps: f32) -> Option<PathBuf> {
         || lower.ends_with(".mkv")
         || lower.contains("stream")
     {
-        return capture_camera_frame(stream_url, fps);
+        return capture_news_frame(raw, raw, fps);
     }
     None
 }
@@ -1249,6 +1502,31 @@ fn news_preview_candidates(cfg: &AppConfig, stream_url: &str, cycle: u64) -> Vec
         "https://picsum.photos/seed/news-{}-{cycle}-preview/1280/720.jpg",
         cfg.news_source.replace(' ', "-"),
     ));
+    out
+}
+
+fn extract_rss_item_titles(raw: &str, max_items: usize) -> Vec<String> {
+    let mut out = Vec::<String>::new();
+    let mut cursor = 0usize;
+    while out.len() < max_items {
+        let Some(item_rel) = raw[cursor..].find("<item") else {
+            break;
+        };
+        let item_start = cursor + item_rel;
+        let item_slice = &raw[item_start..];
+        let Some(title) = extract_first_xml_tag(item_slice, "title") else {
+            cursor = item_start.saturating_add(5);
+            continue;
+        };
+        if !title.trim().is_empty() {
+            out.push(title);
+        }
+        if let Some(end_rel) = item_slice.find("</item>") {
+            cursor = item_start + end_rel + "</item>".len();
+        } else {
+            break;
+        }
+    }
     out
 }
 
@@ -1537,6 +1815,11 @@ fn is_camera_like_url(url: &str) -> bool {
         || l.contains("webcam")
 }
 
+fn is_youtube_url(url: &str) -> bool {
+    let l = url.to_ascii_lowercase();
+    l.contains("youtube.com") || l.contains("youtu.be")
+}
+
 fn command_exists(cmd: &str) -> bool {
     Command::new("sh")
         .arg("-c")
@@ -1547,17 +1830,31 @@ fn command_exists(cmd: &str) -> bool {
 }
 
 fn capture_camera_frame(url: &str, fps: f32) -> Option<PathBuf> {
+    capture_frame_with_ffmpeg(url, url, fps, true, "camera")
+}
+
+fn capture_news_frame(url: &str, cache_key: &str, fps: f32) -> Option<PathBuf> {
+    capture_frame_with_ffmpeg(url, cache_key, fps, false, "news")
+}
+
+fn capture_frame_with_ffmpeg(
+    url: &str,
+    cache_key: &str,
+    fps: f32,
+    enforce_camera_floor: bool,
+    prefix: &str,
+) -> Option<PathBuf> {
     if !command_exists("ffmpeg") {
         return None;
     }
     let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
     fs::create_dir_all(&cache_dir).ok()?;
-    let hash = stable_hash(url);
-    let target = cache_dir.join(format!("camera-{hash}.jpg"));
-    let stamp = cache_dir.join(format!("camera-{hash}.stamp"));
+    let hash = stable_hash(cache_key);
+    let target = cache_dir.join(format!("{prefix}-{hash}.jpg"));
+    let stamp = cache_dir.join(format!("{prefix}-{hash}.stamp"));
     let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
     let fps = fps.clamp(0.05, 30.0);
-    let min_interval = if is_camera_like_url(url) {
+    let min_interval = if enforce_camera_floor {
         1.0_f32.max(1.0 / fps)
     } else {
         (1.0 / fps).max(0.05)
@@ -1577,7 +1874,17 @@ fn capture_camera_frame(url: &str, fps: f32) -> Option<PathBuf> {
         cmd.args(["-rtsp_transport", "tcp"]);
     }
     let status = cmd
-        .args(["-i", url, "-frames:v", "1", "-q:v", "4"])
+        .args([
+            "-i",
+            url,
+            "-an",
+            "-sn",
+            "-dn",
+            "-frames:v",
+            "1",
+            "-q:v",
+            "4",
+        ])
         .arg(&target)
         .status()
         .ok()?;
@@ -1586,6 +1893,51 @@ fn capture_camera_frame(url: &str, fps: f32) -> Option<PathBuf> {
     }
     let _ = fs::write(stamp, format!("{now}\n"));
     Some(target)
+}
+
+fn resolve_youtube_playback_url(url: &str) -> Option<String> {
+    if !command_exists("yt-dlp") {
+        return None;
+    }
+    let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
+    fs::create_dir_all(&cache_dir).ok()?;
+    let hash = stable_hash(url);
+    let cache_file = cache_dir.join(format!("yt-dlp-{hash}.url"));
+    let ttl_secs = 10 * 60;
+
+    if let Ok(meta) = fs::metadata(&cache_file)
+        && let Ok(modified) = meta.modified()
+        && let Ok(age) = SystemTime::now().duration_since(modified)
+        && age.as_secs() < ttl_secs
+        && let Ok(cached) = fs::read_to_string(&cache_file)
+    {
+        let val = cached.trim();
+        if val.starts_with("http") {
+            return Some(val.to_string());
+        }
+    }
+
+    let output = Command::new("yt-dlp")
+        .args(["--no-warnings", "--no-playlist", "-g", url])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let mut candidates = stdout
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("http"))
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return None;
+    }
+    candidates.sort_by_key(|l| if l.contains(".m3u8") { 0 } else { 1 });
+    let picked = candidates[0].clone();
+    let _ = fs::write(&cache_file, format!("{picked}\n"));
+    Some(picked)
 }
 
 fn stable_hash(input: &str) -> String {
