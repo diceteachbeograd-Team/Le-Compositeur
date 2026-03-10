@@ -27,6 +27,7 @@ use wc_source::{ImageProvider, QuoteProvider, fetch_remote_image, fetch_remote_q
 const MAX_STORED_HISTORY: usize = 64;
 const BUNDLED_LOCAL_QUOTES: &str = include_str!("../../../assets/quotes/local/local-quotes.md");
 const WEATHER_GEO_CACHE_MAX_AGE_SECS: u64 = 7 * 24 * 60 * 60;
+const WEATHER_PAYLOAD_CACHE_MAX_AGE_SECS: u64 = 6 * 60 * 60;
 
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
@@ -152,7 +153,7 @@ fn main() -> Result<()> {
                 if once {
                     break;
                 }
-                let desired_tick = Duration::from_secs(loop_tick_seconds(&cfg));
+                let desired_tick = loop_tick_duration(&cfg);
                 let spent = tick_started.elapsed();
                 if spent < desired_tick {
                     thread::sleep(desired_tick - spent);
@@ -734,6 +735,10 @@ struct WeatherWidgetPayload {
 }
 
 fn resolve_weather_widget(cfg: &AppConfig) -> Result<WeatherWidgetPayload> {
+    if let Some(cached) = load_cached_weather_widget(cfg.weather_refresh_seconds)? {
+        return Ok(cached);
+    }
+
     let client = Client::builder().timeout(Duration::from_secs(8)).build()?;
 
     let geo = if cfg.weather_use_system_location {
@@ -810,10 +815,11 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<WeatherWidgetPayload> {
         UnitSystem::Metric => "km/h",
         UnitSystem::Imperial => "mph",
     };
-    let minimap_image = resolve_weather_minimap(geo.lat, geo.lon);
+    let minimap_image = resolve_weather_minimap(geo.lat, geo.lon, wind_deg)
+        .or_else(|| resolve_weather_minimap_raw(geo.lat, geo.lon));
     let loc = compact_location_label(&geo.label);
     let text = format!(
-        "{} {}\n🌡 {:.1}{}  ﹒  🤲 {:.1}{}  ﹒  ☔ {:.0}%\n🧭 {} {}  ﹒  🌬 {:.1} {}  ﹒  🫧 {:.0}%",
+        "{} {}\n🌡 {:.1}{}  ◇  🤲 {:.1}{}  ◇  ☔ {:.0}%\n🧭 {} {}  ◇  🌬 {:.1} {}  ◇  🫧 {:.0}%",
         weather_code_icon(code),
         loc,
         t,
@@ -828,10 +834,12 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<WeatherWidgetPayload> {
         humidity
     );
 
-    Ok(WeatherWidgetPayload {
+    let payload = WeatherWidgetPayload {
         text,
         minimap_image,
-    })
+    };
+    store_cached_weather_widget(&payload)?;
+    Ok(payload)
 }
 
 fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> {
@@ -924,13 +932,18 @@ struct NewsWidgetPayload {
 fn resolve_news_widget(cfg: &AppConfig, cycle: u64) -> Result<NewsWidgetPayload> {
     let (label, stream_url, feed_url) = news_source_profile(cfg);
     let headline = if let Some(feed) = feed_url {
-        fetch_rss_headline(feed).unwrap_or_else(|| "no headline".to_string())
+        fetch_rss_headline(feed).unwrap_or_else(|| "live feed".to_string())
     } else {
-        "live source selected".to_string()
+        "live source".to_string()
     };
-    let preview_image = resolve_news_preview_image(cfg, &stream_url);
-    let raw_line = compact_news_line(&format!("{label} ◆ {headline}"));
-    let line = news_ticker_frame(&raw_line, cycle);
+    let subtitle_hint = fetch_stream_title_hint(&stream_url).unwrap_or_default();
+    let preview_image = resolve_news_preview_image(cfg, &stream_url, cycle);
+    let raw_line = if subtitle_hint.is_empty() {
+        compact_news_line(&format!("{label} ◆ {headline}"))
+    } else {
+        compact_news_line(&format!("{label} ◆ {headline} ◆ {subtitle_hint}"))
+    };
+    let line = news_ticker_frame(&raw_line, ticker_cycle_for_fps(cfg.news_fps));
     Ok(NewsWidgetPayload {
         text: line,
         preview_image,
@@ -1009,19 +1022,19 @@ fn fetch_rss_headline(url: &str) -> Option<String> {
     extract_first_rss_item_title(&body).or_else(|| extract_first_xml_tag(&body, "title"))
 }
 
-fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str) -> Option<PathBuf> {
-    if let Some(path) = capture_stream_preview(stream_url) {
+fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str, cycle: u64) -> Option<PathBuf> {
+    if let Some(path) = capture_stream_preview(stream_url, cfg.news_fps) {
         return Some(path);
     }
 
     if cfg.news_source.eq_ignore_ascii_case("custom")
         && is_camera_like_url(stream_url)
-        && let Some(path) = capture_camera_frame(stream_url)
+        && let Some(path) = capture_camera_frame(stream_url, cfg.news_fps)
     {
         return Some(path);
     }
 
-    let mut candidates = news_preview_candidates(cfg, stream_url);
+    let mut candidates = news_preview_candidates(cfg, stream_url, cycle);
     candidates.dedup();
     for endpoint in candidates {
         if let Ok(path) = fetch_remote_image(endpoint, ImageProvider::Generic) {
@@ -1061,7 +1074,12 @@ fn unit_system_for_country(country_code: Option<&str>) -> UnitSystem {
     }
 }
 
-fn resolve_weather_minimap(lat: f64, lon: f64) -> Option<PathBuf> {
+fn resolve_weather_minimap(lat: f64, lon: f64, wind_deg: f64) -> Option<PathBuf> {
+    let raw_map = resolve_weather_minimap_raw(lat, lon)?;
+    stylize_weather_minimap(&raw_map, lat, lon, wind_deg)
+}
+
+fn resolve_weather_minimap_raw(lat: f64, lon: f64) -> Option<PathBuf> {
     let endpoint = format!(
         "https://staticmap.openstreetmap.de/staticmap.php?center={lat:.4},{lon:.4}&zoom=7&size=640x360&maptype=mapnik&markers={lat:.4},{lon:.4},lightblue1"
     );
@@ -1127,16 +1145,18 @@ fn compact_news_line(input: &str) -> String {
 
 fn news_ticker_frame(input: &str, cycle: u64) -> String {
     let clean = compact_news_line(input);
-    let chars = clean.chars().collect::<Vec<_>>();
+    let tape = format!("   {clean}   ◆   ");
+    let chars = tape.chars().collect::<Vec<_>>();
     if chars.is_empty() {
         return "LIVE ◆ no data".to_string();
     }
     let shift = (cycle as usize) % chars.len();
-    let ordered = chars[shift..]
+    let ordered_full = chars[shift..]
         .iter()
         .chain(chars[..shift].iter())
         .collect::<String>();
-    format!("LIVE ◆ {} ◆ {}", ordered, clean)
+    let visible = ordered_full.chars().take(92).collect::<String>();
+    format!("▮ {visible}")
 }
 
 fn extract_first_rss_item_title(raw: &str) -> Option<String> {
@@ -1145,7 +1165,7 @@ fn extract_first_rss_item_title(raw: &str) -> Option<String> {
     extract_first_xml_tag(sub, "title")
 }
 
-fn capture_stream_preview(stream_url: &str) -> Option<PathBuf> {
+fn capture_stream_preview(stream_url: &str, fps: f32) -> Option<PathBuf> {
     let lower = stream_url.trim().to_ascii_lowercase();
     if is_camera_like_url(stream_url)
         || lower.ends_with(".m3u8")
@@ -1154,7 +1174,7 @@ fn capture_stream_preview(stream_url: &str) -> Option<PathBuf> {
         || lower.ends_with(".mkv")
         || lower.contains("stream")
     {
-        return capture_camera_frame(stream_url);
+        return capture_camera_frame(stream_url, fps);
     }
     None
 }
@@ -1196,20 +1216,25 @@ fn compact_condition_symbol(desc: &str) -> &'static str {
     "•"
 }
 
-fn news_preview_candidates(cfg: &AppConfig, stream_url: &str) -> Vec<String> {
+fn news_preview_candidates(cfg: &AppConfig, stream_url: &str, cycle: u64) -> Vec<String> {
     let mut out = Vec::<String>::new();
+    let ts = now_epoch_seconds();
     if let Some(video_id) = extract_youtube_video_id(stream_url) {
         out.push(format!(
-            "https://img.youtube.com/vi/{video_id}/maxresdefault_live.jpg"
+            "https://img.youtube.com/vi/{video_id}/maxresdefault_live.jpg?t={}",
+            ts / 2
         ));
         out.push(format!(
-            "https://img.youtube.com/vi/{video_id}/hqdefault_live.jpg"
+            "https://img.youtube.com/vi/{video_id}/hqdefault_live.jpg?t={}",
+            ts / 2
         ));
         out.push(format!(
-            "https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+            "https://img.youtube.com/vi/{video_id}/maxresdefault.jpg?t={}",
+            ts / 8
         ));
         out.push(format!(
-            "https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+            "https://img.youtube.com/vi/{video_id}/hqdefault.jpg?t={}",
+            ts / 8
         ));
     }
     let stream_lower = stream_url.to_ascii_lowercase();
@@ -1221,8 +1246,8 @@ fn news_preview_candidates(cfg: &AppConfig, stream_url: &str) -> Vec<String> {
         out.push(stream_url.to_string());
     }
     out.push(format!(
-        "https://picsum.photos/seed/news-{}-preview/1280/720.jpg",
-        cfg.news_source.replace(' ', "-")
+        "https://picsum.photos/seed/news-{}-{cycle}-preview/1280/720.jpg",
+        cfg.news_source.replace(' ', "-"),
     ));
     out
 }
@@ -1521,7 +1546,7 @@ fn command_exists(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn capture_camera_frame(url: &str) -> Option<PathBuf> {
+fn capture_camera_frame(url: &str, fps: f32) -> Option<PathBuf> {
     if !command_exists("ffmpeg") {
         return None;
     }
@@ -1531,11 +1556,18 @@ fn capture_camera_frame(url: &str) -> Option<PathBuf> {
     let target = cache_dir.join(format!("camera-{hash}.jpg"));
     let stamp = cache_dir.join(format!("camera-{hash}.stamp"));
     let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    let fps = fps.clamp(0.05, 30.0);
+    let min_interval = if is_camera_like_url(url) {
+        1.0_f32.max(1.0 / fps)
+    } else {
+        (1.0 / fps).max(0.05)
+    };
+    let min_secs = min_interval.ceil() as u64;
     let last = fs::read_to_string(&stamp)
         .ok()
         .and_then(|v| v.trim().parse::<u64>().ok())
         .unwrap_or(0);
-    if now.saturating_sub(last) < 1 && target.exists() {
+    if now.saturating_sub(last) < min_secs && target.exists() {
         return Some(target);
     }
 
@@ -1903,19 +1935,241 @@ fn read_lock_pid(path: &Path) -> Option<u32> {
     raw.trim().parse::<u32>().ok()
 }
 
-fn loop_tick_seconds(cfg: &AppConfig) -> u64 {
-    // Image timer is the master interval; quote rotation follows this timer.
-    master_rotation_interval(cfg).min(60)
+fn loop_tick_duration(cfg: &AppConfig) -> Duration {
+    // Keep the clock fresh and allow smoother news frames when configured.
+    let mut seconds = master_rotation_interval(cfg) as f64;
+    seconds = seconds.min(1.0);
+    if cfg.show_news_layer {
+        let news_step = 1.0 / cfg.news_fps.clamp(0.05, 30.0) as f64;
+        seconds = seconds.min(news_step.max(0.033));
+    }
+    let millis = (seconds * 1000.0).round().clamp(33.0, 60_000.0) as u64;
+    Duration::from_millis(millis)
 }
 
 fn master_rotation_interval(cfg: &AppConfig) -> u64 {
     cfg.image_refresh_seconds.max(1)
 }
 
+fn ticker_cycle_for_fps(fps: f32) -> u64 {
+    let frame_ms = (1000.0 / fps.clamp(0.05, 30.0) as f64).max(33.0) as u64;
+    now_epoch_millis() / frame_ms.max(1)
+}
+
+fn now_epoch_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn weather_payload_cache_path() -> Option<PathBuf> {
+    let p = expand_tilde("~/.cache/wallpaper-composer/weather-payload.json").ok()?;
+    if let Some(parent) = p.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    Some(p)
+}
+
+fn load_cached_weather_widget(refresh_seconds: u64) -> Result<Option<WeatherWidgetPayload>> {
+    let Some(path) = weather_payload_cache_path() else {
+        return Ok(None);
+    };
+    let max_age = refresh_seconds
+        .clamp(60, WEATHER_PAYLOAD_CACHE_MAX_AGE_SECS)
+        .max(60);
+    let modified = match fs::metadata(&path).and_then(|m| m.modified()) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let age = SystemTime::now()
+        .duration_since(modified)
+        .ok()
+        .map(|d| d.as_secs())
+        .unwrap_or(max_age.saturating_add(1));
+    if age > max_age {
+        return Ok(None);
+    }
+
+    let raw = fs::read_to_string(path)?;
+    let payload = serde_json::from_str::<Value>(&raw)?;
+    let text = payload
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    let minimap_image = payload
+        .get("minimap_image")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .filter(|p| p.exists());
+    Ok(Some(WeatherWidgetPayload {
+        text,
+        minimap_image,
+    }))
+}
+
+fn store_cached_weather_widget(payload: &WeatherWidgetPayload) -> Result<()> {
+    let Some(path) = weather_payload_cache_path() else {
+        return Ok(());
+    };
+    let json = serde_json::json!({
+        "text": payload.text,
+        "minimap_image": payload.minimap_image.as_ref().map(|p| p.display().to_string()),
+        "updated_unix": now_epoch_seconds(),
+    });
+    fs::write(path, json.to_string())?;
+    Ok(())
+}
+
+fn stylize_weather_minimap(input: &Path, lat: f64, lon: f64, wind_deg: f64) -> Option<PathBuf> {
+    let (cmd, use_magick_subcommand) = if command_exists("magick") {
+        ("magick", true)
+    } else if command_exists("convert") {
+        ("convert", false)
+    } else {
+        return Some(input.to_path_buf());
+    };
+
+    let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
+    fs::create_dir_all(&cache_dir).ok()?;
+    let hash = stable_hash(&format!(
+        "{}-{lat:.3}-{lon:.3}-{}",
+        input.display(),
+        (wind_deg / 5.0).round() as i32
+    ));
+    let output = cache_dir.join(format!("weather-map-{hash}.png"));
+    if output.exists() {
+        return Some(output);
+    }
+
+    let center_x = 320.0_f64;
+    let center_y = 180.0_f64;
+    let radius = 82.0_f64;
+    let rad = wind_deg.to_radians();
+    let dx = rad.sin();
+    let dy = -rad.cos();
+    let ex = center_x + dx * radius;
+    let ey = center_y + dy * radius;
+    let left_x = ex - (dx * 10.0) - (dy * 8.0);
+    let left_y = ey - (dy * 10.0) + (dx * 8.0);
+    let right_x = ex - (dx * 10.0) + (dy * 8.0);
+    let right_y = ey - (dy * 10.0) - (dx * 8.0);
+
+    let mut args = Vec::<String>::new();
+    if use_magick_subcommand {
+        args.push("convert".to_string());
+    }
+    args.extend([
+        input.display().to_string(),
+        "-auto-orient".to_string(),
+        "-resize".to_string(),
+        "640x360^".to_string(),
+        "-gravity".to_string(),
+        "Center".to_string(),
+        "-extent".to_string(),
+        "640x360".to_string(),
+        "-colorspace".to_string(),
+        "Gray".to_string(),
+        "-fill".to_string(),
+        "#00111A66".to_string(),
+        "-colorize".to_string(),
+        "22".to_string(),
+        "-stroke".to_string(),
+        "#007C8A88".to_string(),
+        "-strokewidth".to_string(),
+        "2".to_string(),
+        "-fill".to_string(),
+        "none".to_string(),
+        "-draw".to_string(),
+        format!(
+            "circle {center_x:.1},{center_y:.1} {center_x:.1},{:.1}",
+            center_y - 92.0
+        ),
+        "-stroke".to_string(),
+        "#00E7FFDD".to_string(),
+        "-strokewidth".to_string(),
+        "4".to_string(),
+        "-draw".to_string(),
+        format!("line {center_x:.1},{center_y:.1} {ex:.1},{ey:.1}"),
+        "-fill".to_string(),
+        "#00F5FFEE".to_string(),
+        "-stroke".to_string(),
+        "#003640".to_string(),
+        "-strokewidth".to_string(),
+        "1".to_string(),
+        "-draw".to_string(),
+        format!("polygon {ex:.1},{ey:.1} {left_x:.1},{left_y:.1} {right_x:.1},{right_y:.1}"),
+        "-fill".to_string(),
+        "#00F5FF".to_string(),
+        "-stroke".to_string(),
+        "none".to_string(),
+        "-draw".to_string(),
+        format!(
+            "circle {center_x:.1},{center_y:.1} {center_x:.1},{:.1}",
+            center_y - 4.0
+        ),
+        output.display().to_string(),
+    ]);
+
+    let ok = Command::new(cmd)
+        .args(args)
+        .status()
+        .ok()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if ok && output.exists() {
+        Some(output)
+    } else {
+        Some(input.to_path_buf())
+    }
+}
+
+fn fetch_stream_title_hint(url: &str) -> Option<String> {
+    let url = url.trim();
+    if url.is_empty() {
+        return None;
+    }
+    let client = Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .ok()?;
+    if url.contains("youtube.com") || url.contains("youtu.be") {
+        let escaped = url.replace(' ', "%20");
+        let oembed = format!("https://www.youtube.com/oembed?url={escaped}&format=json");
+        if let Ok(v) = client
+            .get(oembed)
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json::<Value>())
+            && let Some(t) = v.get("title").and_then(Value::as_str)
+        {
+            let cleaned = compact_news_line(t);
+            if !cleaned.is_empty() {
+                return Some(cleaned);
+            }
+        }
+    }
+
+    let body = client
+        .get(url)
+        .send()
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .text()
+        .ok()?;
+    extract_first_xml_tag(&body, "title").map(|t| compact_news_line(&t))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{determine_cycle, loop_tick_seconds, read_recent_indices, write_recent_indices};
+    use super::{determine_cycle, loop_tick_duration, read_recent_indices, write_recent_indices};
     use std::fs;
+    use std::time::Duration;
     use wc_core::{default_config_toml, load_config};
 
     #[test]
@@ -1924,10 +2178,14 @@ mod tests {
         fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
         let mut cfg = load_config(&cfg_path).expect("default config should parse");
         cfg.image_refresh_seconds = 300;
-        assert_eq!(loop_tick_seconds(&cfg), 60);
+        assert_eq!(loop_tick_duration(&cfg), Duration::from_secs(1));
 
         cfg.image_refresh_seconds = 15;
-        assert_eq!(loop_tick_seconds(&cfg), 15);
+        assert_eq!(loop_tick_duration(&cfg), Duration::from_secs(1));
+
+        cfg.show_news_layer = true;
+        cfg.news_fps = 10.0;
+        assert!(loop_tick_duration(&cfg) <= Duration::from_millis(100));
     }
 
     #[test]

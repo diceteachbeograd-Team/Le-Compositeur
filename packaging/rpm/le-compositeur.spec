@@ -57,7 +57,7 @@ fi
 %{_datadir}/metainfo/le-compositeur.metainfo.xml
 
 %changelog
-* Tue Mar 10 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.10-1
+* Tue Mar 10 2026 Le Compositeur Contributors <opensource@example.com> - 2026.03.10-4
 - Add single-instance protections for wc-cli run loop and GUI start actions.
 - Deduplicate autostart entries and remove legacy wallpaper-composer desktop entry.
 - Add uninstall autostart cleanup hook for package remove.

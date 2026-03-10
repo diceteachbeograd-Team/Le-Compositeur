@@ -19,8 +19,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.10-1
-sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.10-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.10-4
+sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.10-4*.rpm
 le-compositeur
 ```
 
@@ -28,8 +28,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.10-1
-sudo apt install ./dist/le-compositeur_2026.03.10-1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.10-4
+sudo apt install ./dist/le-compositeur_2026.03.10-4_amd64.deb
 le-compositeur
 ```
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026.03.10-1 - 2026-03-10
+## 2026.03.10-4 - 2026-03-10
 - Added single-instance lock for `wc-cli run` so duplicate loop processes cannot run in parallel.
 - Added `--replace-existing` runner mode and wired GUI loop start actions to replace old runners safely.
 - Hardened GUI autostart install/remove logic:
