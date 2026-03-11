@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.03.11-5 - 2026-03-11
+- Added curated capital-oriented CAM presets on top of the `2026.03.11-4` runtime/UI hotfix baseline.
+- Extended CAM custom source parsing:
+  - supports labeled entries in `Label => URL` format
+  - carries labels into CAM ticker output for meaningful camera names
+- Updated GUI CAM preset text/options to reflect capital-oriented mixes and labeled custom format.
+- Synced docs/scripts version references and TODO snapshot after publishing `2026.03.11-4`.
+
 ## 2026.03.11-4 - 2026-03-11
 - Fixed central GUI workspace scrolling ergonomics for compact screens:
   - switched tab content viewport to two-axis scroll with disabled auto-shrink
@@ -18,7 +26,6 @@
 - Improved camera source usability:
   - expanded/defaulted camera source rotation set and human-readable source labels
   - YouTube sources now have thumbnail fallback when `yt-dlp` is unavailable
-  - custom cam lists now support labeled entries using `Label => URL` (used in CAM ticker labels)
   - custom camera endpoint validator now accepts `rtsp://`, `rtmp://`, `mms://`
 - Increased cams FPS upper limit from `10` to `30` in core config and GUI controls.
 
