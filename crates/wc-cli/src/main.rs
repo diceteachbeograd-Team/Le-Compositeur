@@ -12,7 +12,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -43,6 +43,8 @@ const TICKER_MIN_SHIFT_MS: f64 = 120.0;
 const TICKER_MAX_SHIFT_MS: f64 = 650.0;
 const WEATHER_MAP_TILE_SIZE: u32 = 256;
 const WEATHER_MAP_ZOOM: u32 = 6;
+const STREAM_CAPTURE_TIMEOUT_SECS: u64 = 4;
+const YOUTUBE_PAGE_TIMEOUT_SECS: u64 = 4;
 
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
@@ -423,23 +425,31 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     if cfg.news_refresh_seconds < 10 {
         anyhow::bail!("news_refresh_seconds must be >= 10");
     }
-    if cfg.news_source.trim().eq_ignore_ascii_case("custom")
+    if news_widget_enabled(cfg)
+        && cfg.news_source.trim().eq_ignore_ascii_case("custom")
         && cfg.news_custom_url.trim().is_empty()
     {
         anyhow::bail!("news_custom_url is required when news_source=custom");
     }
-    if cfg
-        .news_ticker2_source
-        .trim()
-        .eq_ignore_ascii_case("custom")
+    if news_ticker2_enabled(cfg)
+        && cfg
+            .news_ticker2_source
+            .trim()
+            .eq_ignore_ascii_case("custom")
         && cfg.news_ticker2_custom_url.trim().is_empty()
     {
         anyhow::bail!("news_ticker2_custom_url is required when news_ticker2_source=custom");
     }
-    if is_camera_like_url(cfg.news_custom_url.trim()) && cfg.news_fps > 1.0 {
+    if news_widget_enabled(cfg)
+        && is_camera_like_url(cfg.news_custom_url.trim())
+        && cfg.news_fps > 1.0
+    {
         anyhow::bail!("camera-like custom news URLs are limited to max 1.0 FPS");
     }
-    if is_camera_like_url(cfg.news_ticker2_custom_url.trim()) && cfg.news_ticker2_fps > 1.0 {
+    if news_ticker2_enabled(cfg)
+        && is_camera_like_url(cfg.news_ticker2_custom_url.trim())
+        && cfg.news_ticker2_fps > 1.0
+    {
         anyhow::bail!("camera-like custom news ticker2 URLs are limited to max 1.0 FPS");
     }
     if !(220..=1920).contains(&cfg.news_ticker2_width) {
@@ -1161,7 +1171,7 @@ fn resolve_widgets_legacy(
             minimap_image: None,
         }
     };
-    let news = if cfg.show_news_layer {
+    let news = if news_widget_enabled(cfg) {
         resolve_news_widget(cfg, image_cycle).unwrap_or_else(news_unavailable_payload)
     } else {
         NewsWidgetPayload {
@@ -1169,7 +1179,7 @@ fn resolve_widgets_legacy(
             preview_image: None,
         }
     };
-    let news_ticker2 = if cfg.show_news_ticker2 {
+    let news_ticker2 = if news_ticker2_enabled(cfg) {
         resolve_secondary_news_ticker(cfg)
     } else {
         String::new()
@@ -1318,7 +1328,7 @@ fn widget_instance_from_config(cfg: &AppConfig, widget_type: &str) -> Result<Wid
         }
         "news" => {
             let mut instance = WidgetInstanceConfig::new("news", "news_main");
-            instance.enabled = cfg.show_news_layer;
+            instance.enabled = news_widget_enabled(cfg);
             instance.layer_z = cfg.layer_z_news;
             instance.pos_x = cfg.news_pos_x;
             instance.pos_y = cfg.news_pos_y;
@@ -1330,7 +1340,7 @@ fn widget_instance_from_config(cfg: &AppConfig, widget_type: &str) -> Result<Wid
         }
         "news_ticker2" => {
             let mut instance = WidgetInstanceConfig::new("news_ticker2", "news_ticker2_main");
-            instance.enabled = cfg.show_news_ticker2;
+            instance.enabled = news_ticker2_enabled(cfg);
             instance.layer_z = cfg.layer_z_news;
             instance.pos_x = cfg.news_ticker2_pos_x;
             instance.pos_y = cfg.news_ticker2_pos_y;
@@ -2723,6 +2733,14 @@ fn is_youtube_url(url: &str) -> bool {
     l.contains("youtube.com") || l.contains("youtu.be")
 }
 
+fn news_widget_enabled(cfg: &AppConfig) -> bool {
+    cfg.show_news_layer
+}
+
+fn news_ticker2_enabled(cfg: &AppConfig) -> bool {
+    cfg.show_news_layer && cfg.show_news_ticker2
+}
+
 fn command_exists(cmd: &str) -> bool {
     Command::new("sh")
         .arg("-c")
@@ -2773,10 +2791,12 @@ fn capture_frame_with_ffmpeg(
 
     let mut cmd = Command::new("ffmpeg");
     cmd.args(["-y", "-loglevel", "error", "-nostdin"]);
+    cmd.stdout(Stdio::null());
+    cmd.stderr(Stdio::null());
     if url.to_ascii_lowercase().starts_with("rtsp://") {
         cmd.args(["-rtsp_transport", "tcp"]);
     }
-    let status = cmd
+    let mut child = cmd
         .args([
             "-i",
             url,
@@ -2789,9 +2809,26 @@ fn capture_frame_with_ffmpeg(
             "4",
         ])
         .arg(&target)
-        .status()
+        .spawn()
         .ok()?;
-    if !status.success() || !target.exists() {
+    let started = Instant::now();
+    let status = loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            break Some(status);
+        }
+        if started.elapsed() >= Duration::from_secs(STREAM_CAPTURE_TIMEOUT_SECS) {
+            let _ = child.kill();
+            let _ = child.wait();
+            break None;
+        }
+        thread::sleep(Duration::from_millis(100));
+    };
+    if status.is_none() {
+        let _ = fs::remove_file(&target);
+        return None;
+    }
+    if !status.is_some_and(|s| s.success()) || !target.exists() {
+        let _ = fs::remove_file(&target);
         return None;
     }
     let _ = fs::write(stamp, format!("{now_ms}\n"));
@@ -2850,7 +2887,7 @@ fn resolve_youtube_playback_url(url: &str) -> Option<String> {
     }
 
     let client = Client::builder()
-        .timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(YOUTUBE_PAGE_TIMEOUT_SECS))
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
         .build()
         .ok()?;
@@ -3388,11 +3425,11 @@ fn effective_video_fps(requested_fps: f32) -> f32 {
 fn loop_tick_duration(cfg: &AppConfig) -> Duration {
     // Base loop from user-selected background interval, but keep clock updates within one minute.
     let mut seconds = master_rotation_interval(cfg).min(60) as f64;
-    if cfg.show_news_layer {
+    if news_widget_enabled(cfg) {
         let news_step = 1.0 / effective_video_fps(cfg.news_fps) as f64;
         seconds = seconds.min(news_step.max(0.033));
     }
-    if cfg.show_news_ticker2 {
+    if news_ticker2_enabled(cfg) {
         let ticker_step = ticker_shift_millis_for_len(64) as f64 / 1000.0;
         seconds = seconds.min(ticker_step.max(0.033));
     }
@@ -3909,7 +3946,7 @@ mod tests {
         cfg.show_news_layer = false;
         cfg.show_news_ticker2 = true;
         cfg.news_ticker2_fps = 12.0;
-        assert!(loop_tick_duration(&cfg) <= Duration::from_millis(250));
+        assert_eq!(loop_tick_duration(&cfg), Duration::from_secs(15));
 
         cfg.show_news_ticker2 = false;
         cfg.show_cams_layer = true;
@@ -4003,6 +4040,12 @@ mod tests {
         let news = widget_instance_from_config(&cfg, "news").expect("news instance");
         assert_eq!(news.refresh_seconds, 123);
         assert!((news.fps_cap - 7.5).abs() < f32::EPSILON);
+
+        cfg.show_news_layer = false;
+        cfg.show_news_ticker2 = true;
+        let ticker2 =
+            widget_instance_from_config(&cfg, "news_ticker2").expect("news ticker2 instance");
+        assert!(!ticker2.enabled);
 
         let cams = widget_instance_from_config(&cfg, "cams").expect("cams instance");
         assert_eq!(cams.refresh_seconds, 75);

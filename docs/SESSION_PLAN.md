@@ -10,10 +10,10 @@ Use it together with `docs/TODO.md`.
 ## Current Workstream
 
 Active focus:
-1. Validate hotfix tag `2026.03.11-7` on VM installs after publishing (runtime + update flow + widget visibility).
-2. Validate quote recovery and bundled quote seed presence for package and archive installs.
-3. Keep compact GUI behavior usable on smaller windows (compact defaults + optional preview panel).
-4. Continue plugin-style widget registry rollout in guarded mode (Stage-B opt-in only).
+1. Reproduce packaged Fedora VM freeze after GUI actions (`Render Preview`, `Validate`, `Run Once`) and remove the blocking path.
+2. Reproduce packaged self-update hang after password/auth prompt and make completion/failure deterministic.
+3. Ensure disabled widgets in `Ordering` stop all related background fetching/render activity.
+4. Validate quote recovery and bundled quote seed presence for package and archive installs.
 5. Remove the temporary `README.md` warning only after explicit functionality approval for `Weather` / `News` / `Cams`.
 
 ## Ground Truth Commands
@@ -51,14 +51,16 @@ cargo run -p wc-cli -- run --once
 ## Expected Behavior Targets (current phase)
 
 Validation target:
-- Verify packaged GUI action buttons (`Validate`, `Run Once`, `Start Loop`) run via installed CLI, without Cargo workspace assumptions.
+- Verify packaged GUI action buttons (`Validate`, `Render Preview`, `Run Once`, `Start Loop`) run via installed CLI, without Cargo workspace assumptions or UI deadlock.
 - Verify quote recovery and updater behavior on Fedora (`rpm`) and Ubuntu (`deb`) package installs.
-- Capture any privilege/escalation edge-cases from `pkexec` update path.
+- Capture any privilege/escalation edge-cases from `pkexec` / package-manager update path and ensure completion state is visible in GUI.
+- Local code fix is in place for async GUI actions and release-asset-based self-update; remaining gap is packaged Fedora VM verification.
 
 Widget target:
 - Keep the two independently configurable ticker instances stable in GUI + CLI + renderer path.
 - Ordering now has persistent layer Z + grid snap + overlap-safe dragging.
 - Per-widget caps are wired (`news/news_ticker2/cams` refresh + FPS); keep validating defaults on low-end devices.
+- Disabled widgets must become true runtime-off states, not just hidden overlays.
 
 Layout target:
 - Preserve deterministic widget layer order and avoid unreadable overlaps.

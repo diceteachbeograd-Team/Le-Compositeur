@@ -1,5 +1,5 @@
 use eframe::egui;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
@@ -116,6 +116,21 @@ struct ThumbnailItem {
 struct ReleaseInfo {
     tag: String,
     html_url: String,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    assets: Vec<ReleaseAsset>,
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[derive(Debug, Clone)]
+struct ReleaseAsset {
+    name: String,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    download_url: String,
+}
+
+struct CliCommandResult {
+    message: Result<String, String>,
+    restore_apply_wallpaper: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,6 +200,7 @@ struct WcGuiApp {
     update_release: Option<ReleaseInfo>,
     update_check_rx: Option<Receiver<Result<Option<ReleaseInfo>, String>>>,
     self_update_rx: Option<Receiver<Result<String, String>>>,
+    cli_command_rx: Option<Receiver<CliCommandResult>>,
     ui_compact_mode: bool,
     show_preview_panel: bool,
     ui_style_compact_applied: Option<bool>,
@@ -222,6 +238,7 @@ impl WcGuiApp {
             update_release: None,
             update_check_rx: None,
             self_update_rx: None,
+            cli_command_rx: None,
             ui_compact_mode: true,
             show_preview_panel: false,
             ui_style_compact_applied: None,
@@ -789,6 +806,52 @@ impl WcGuiApp {
         }
     }
 
+    fn poll_cli_command(&mut self) {
+        let Some(rx) = self.cli_command_rx.take() else {
+            return;
+        };
+
+        match rx.try_recv() {
+            Ok(result) => {
+                let mut restore_note = None::<String>;
+                if let Some(original_apply_wallpaper) = result.restore_apply_wallpaper {
+                    self.cfg.apply_wallpaper = original_apply_wallpaper;
+                    if let Err(err) = self.save_to_path_inner() {
+                        self.status =
+                            format!("Command finished, but apply_wallpaper restore failed: {err}");
+                        return;
+                    }
+                    restore_note = Some(format!(
+                        "Temporary apply_wallpaper override restored to {}.",
+                        original_apply_wallpaper
+                    ));
+                }
+                match result.message {
+                    Ok(msg) => {
+                        self.status = if let Some(note) = restore_note {
+                            format!("{msg}\n{note}")
+                        } else {
+                            msg
+                        }
+                    }
+                    Err(err) => {
+                        self.status = if let Some(note) = restore_note {
+                            format!("{err}\n{note}")
+                        } else {
+                            err
+                        }
+                    }
+                }
+            }
+            Err(TryRecvError::Empty) => {
+                self.cli_command_rx = Some(rx);
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.status = "GUI action failed: worker disconnected".to_string();
+            }
+        }
+    }
+
     fn start_self_update(&mut self) {
         if self.self_update_rx.is_some() {
             self.status = "Self-update already running. Wait for completion.".to_string();
@@ -797,81 +860,28 @@ impl WcGuiApp {
 
         #[cfg(target_os = "linux")]
         {
-            let mut launch_errors = Vec::<String>::new();
-            if command_exists("pkexec") {
-                for (backend, manager, args) in [
-                    ("dnf", "dnf", vec!["dnf", "-y", "upgrade", "le-compositeur"]),
-                    (
-                        "apt-get",
-                        "apt-get",
-                        vec![
-                            "apt-get",
-                            "-y",
-                            "install",
-                            "--only-upgrade",
-                            "le-compositeur",
-                        ],
-                    ),
-                    (
-                        "zypper",
-                        "zypper",
-                        vec!["zypper", "--non-interactive", "update", "le-compositeur"],
-                    ),
-                ] {
-                    if !command_exists(manager) {
-                        continue;
-                    }
-                    match Command::new("pkexec")
-                        .args(args)
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::piped())
-                        .spawn()
-                    {
-                        Ok(child) => {
-                            let (tx, rx) = mpsc::channel::<Result<String, String>>();
-                            self.self_update_rx = Some(rx);
-                            self.status = format!(
-                                "Self-update started via {backend} (authorization dialog may appear)."
-                            );
-                            self.update_status = format!(
-                                "Self-update running via {backend} (waiting for completion)..."
-                            );
-                            std::thread::spawn(move || {
-                                let _ = tx.send(wait_self_update_result(child, backend));
-                            });
-                            return;
-                        }
-                        Err(err) => launch_errors.push(format!("{backend}: {err}")),
-                    }
-                }
-            } else {
-                launch_errors.push("pkexec not found in PATH".to_string());
-            }
-
-            let release_url = self
-                .update_release
-                .as_ref()
-                .map(|r| r.html_url.clone())
-                .unwrap_or_else(|| {
-                    "https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest"
-                        .to_string()
-                });
-            let detail = if launch_errors.is_empty() {
-                "No compatible package manager command found (dnf/apt-get/zypper).".to_string()
-            } else {
-                format!(
-                    "Failed to start automatic update command: {}",
-                    launch_errors.join(" | ")
-                )
-            };
-            if open_url(&release_url) {
+            let Some(release) = self.update_release.clone() else {
                 self.status =
-                    format!("{detail} Opened release page for manual update: {release_url}");
-            } else {
-                self.status = format!("{detail} Open manually: {release_url}");
-            }
-            self.update_status =
-                "Self-update fallback active: download and install package manually.".to_string();
+                    "No release metadata available. Click Check Updates first.".to_string();
+                self.update_status =
+                    "Self-update unavailable: release metadata missing.".to_string();
+                return;
+            };
+
+            let (tx, rx) = mpsc::channel::<Result<String, String>>();
+            self.self_update_rx = Some(rx);
+            self.status = format!(
+                "Self-update preparing {} (download + install, authorization dialog may appear).",
+                release.tag
+            );
+            self.update_status = format!(
+                "Self-update preparing {} (downloading matching package asset)...",
+                release.tag
+            );
+            std::thread::spawn(move || {
+                let _ = tx.send(run_linux_self_update(&release));
+            });
+            return;
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -935,65 +945,55 @@ impl WcGuiApp {
     }
 
     fn run_wc_cli(&mut self, args: &[&str]) {
-        self.status = format!("Running: wc-cli {}", args.join(" "));
+        self.run_wc_cli_background(args, None);
+    }
+
+    fn run_wc_cli_background(&mut self, args: &[&str], restore_apply_wallpaper: Option<bool>) {
+        if self.cli_command_rx.is_some() {
+            self.status = "Another GUI action is already running. Wait for completion.".to_string();
+            return;
+        }
+
+        self.status = format!("Running in background: wc-cli {}", args.join(" "));
         if let Err(e) = self.save_to_path_inner() {
             self.status = format!("Cannot run command before save: {e}");
             return;
         }
 
         let path = self.config_path.clone();
-        let mut launch_errors = Vec::<String>::new();
-        let mut output = None;
-        for bin in self.wc_cli_command_candidates() {
-            match self
-                .build_wc_cli_direct_with_bin(&bin, args, &path)
-                .output()
-            {
-                Ok(out) => {
-                    output = Some((out, format!("bin:{bin}")));
-                    break;
-                }
-                Err(e) => launch_errors.push(format!("{bin}: {e}")),
-            }
-        }
-        if output.is_none() && self.allow_cargo_fallback() {
-            match self.build_wc_cli_cargo(args, &path).output() {
-                Ok(out) => output = Some((out, "cargo".to_string())),
-                Err(e) => launch_errors.push(format!("cargo: {e}")),
-            }
-        }
-
-        let Some((output, runner_name)) = output else {
-            self.status = format!(
-                "Command start failed.\n{}\nHint: install `le-compositeur-cli`/`wc-cli`, or set WC_CLI_BIN to full path.",
-                launch_errors.join("\n")
-            );
-            return;
-        };
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if output.status.success() {
-            self.status = format!("{} OK ({runner_name})\n{stdout}", args.join(" "));
-        } else {
-            self.status = format!(
-                "{} failed ({runner_name})\n{stderr}\n{stdout}",
-                args.join(" ")
-            );
-        }
+        let bins = self.wc_cli_command_candidates();
+        let allow_cargo = self.allow_cargo_fallback();
+        let args_vec = args
+            .iter()
+            .map(|arg| (*arg).to_string())
+            .collect::<Vec<_>>();
+        let (tx, rx) = mpsc::channel::<CliCommandResult>();
+        self.cli_command_rx = Some(rx);
+        std::thread::spawn(move || {
+            let message = run_wc_cli_command_task(&bins, allow_cargo, &args_vec, &path);
+            let _ = tx.send(CliCommandResult {
+                message,
+                restore_apply_wallpaper,
+            });
+        });
     }
 
     fn apply_now(&mut self) {
+        if self.cli_command_rx.is_some() {
+            self.status = "Another GUI action is already running. Wait for completion.".to_string();
+            return;
+        }
         let was_enabled = self.cfg.apply_wallpaper;
         if !self.cfg.apply_wallpaper {
             self.cfg.apply_wallpaper = true;
         }
-        self.run_wc_cli(&["run", "--once"]);
-        if !was_enabled {
+        self.run_wc_cli_background(
+            &["run", "--once"],
+            if was_enabled { None } else { Some(false) },
+        );
+        if !was_enabled && self.cli_command_rx.is_none() {
             self.cfg.apply_wallpaper = false;
             let _ = self.save_to_path_inner();
-            self.status
-                .push_str("\nApply Now used temporary apply_wallpaper=true.");
         }
     }
 
@@ -3130,6 +3130,203 @@ fn shell_quote_single(input: &str) -> String {
     format!("'{}'", input.replace('\'', "'\"'\"'"))
 }
 
+fn run_wc_cli_command_task(
+    bins: &[String],
+    allow_cargo_fallback: bool,
+    args: &[String],
+    path: &str,
+) -> Result<String, String> {
+    let mut launch_errors = Vec::<String>::new();
+    let label = args.join(" ");
+    let mut output = None;
+
+    for bin in bins {
+        let mut cmd = Command::new(bin);
+        cmd.args(args).args(["--config", path]);
+        match cmd.output() {
+            Ok(out) => {
+                output = Some((out, format!("bin:{bin}")));
+                break;
+            }
+            Err(err) => launch_errors.push(format!("{bin}: {err}")),
+        }
+    }
+
+    if output.is_none() && allow_cargo_fallback {
+        let mut cmd = Command::new("cargo");
+        cmd.args(["run", "-p", "wc-cli", "--"])
+            .args(args)
+            .args(["--config", path]);
+        match cmd.output() {
+            Ok(out) => output = Some((out, "cargo".to_string())),
+            Err(err) => launch_errors.push(format!("cargo: {err}")),
+        }
+    }
+
+    let Some((output, runner_name)) = output else {
+        return Err(format!(
+            "Command start failed.\n{}\nHint: install `le-compositeur-cli`/`wc-cli`, or set WC_CLI_BIN to full path.",
+            launch_errors.join("\n")
+        ));
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if output.status.success() {
+        if stdout.is_empty() {
+            Ok(format!("{label} OK ({runner_name})"))
+        } else {
+            Ok(format!("{label} OK ({runner_name})\n{stdout}"))
+        }
+    } else if stderr.is_empty() && stdout.is_empty() {
+        Err(format!(
+            "{label} failed ({runner_name})\nexit {}",
+            output.status
+        ))
+    } else if stderr.is_empty() {
+        Err(format!("{label} failed ({runner_name})\n{stdout}"))
+    } else if stdout.is_empty() {
+        Err(format!("{label} failed ({runner_name})\n{stderr}"))
+    } else {
+        Err(format!(
+            "{label} failed ({runner_name})\n{stderr}\n{stdout}"
+        ))
+    }
+}
+
+fn select_release_asset_by_suffix(
+    assets: &[ReleaseAsset],
+    suffix: &str,
+) -> Result<ReleaseAsset, String> {
+    assets
+        .iter()
+        .find(|asset| asset.name.contains("linux-x86_64") && asset.name.ends_with(suffix))
+        .or_else(|| assets.iter().find(|asset| asset.name.ends_with(suffix)))
+        .cloned()
+        .ok_or_else(|| format!("Release does not contain a Linux asset matching *{suffix}"))
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn linux_self_update_plan(release: &ReleaseInfo) -> Result<(&'static str, ReleaseAsset), String> {
+    if command_exists("dnf") {
+        return select_release_asset_by_suffix(&release.assets, ".rpm").map(|asset| ("dnf", asset));
+    }
+    if command_exists("apt-get") {
+        return select_release_asset_by_suffix(&release.assets, ".deb")
+            .map(|asset| ("apt-get", asset));
+    }
+    if command_exists("zypper") {
+        return select_release_asset_by_suffix(&release.assets, ".rpm")
+            .map(|asset| ("zypper", asset));
+    }
+    Err("No compatible package manager found (dnf/apt-get/zypper).".to_string())
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn download_release_asset(release: &ReleaseInfo, asset: &ReleaseAsset) -> Result<PathBuf, String> {
+    let base = expand_tilde("~/.cache/wallpaper-composer/updates")
+        .unwrap_or_else(|_| std::env::temp_dir().join("wallpaper-composer-updates"));
+    let release_dir = base.join(release.tag.trim());
+    std::fs::create_dir_all(&release_dir).map_err(|err| {
+        format!(
+            "Cannot create update cache dir {}: {err}",
+            release_dir.display()
+        )
+    })?;
+
+    let final_path = release_dir.join(&asset.name);
+    if final_path.exists() {
+        return Ok(final_path);
+    }
+    let tmp_path = release_dir.join(format!("{}.part", asset.name));
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(180))
+        .build()
+        .map_err(|err| format!("Update download client init failed: {err}"))?;
+    let mut response = client
+        .get(&asset.download_url)
+        .header(reqwest::header::USER_AGENT, "le-compositeur-gui")
+        .header(reqwest::header::ACCEPT, "application/octet-stream")
+        .send()
+        .map_err(|err| format!("Update download request failed: {err}"))?
+        .error_for_status()
+        .map_err(|err| format!("Update asset request failed: {err}"))?;
+
+    let mut file = std::fs::File::create(&tmp_path).map_err(|err| {
+        format!(
+            "Cannot create update temp file {}: {err}",
+            tmp_path.display()
+        )
+    })?;
+    response
+        .copy_to(&mut file)
+        .map_err(|err| format!("Update asset download failed: {err}"))?;
+    file.flush().map_err(|err| {
+        format!(
+            "Cannot flush update temp file {}: {err}",
+            tmp_path.display()
+        )
+    })?;
+    std::fs::rename(&tmp_path, &final_path).map_err(|err| {
+        format!(
+            "Cannot finalize downloaded update asset {}: {err}",
+            final_path.display()
+        )
+    })?;
+    Ok(final_path)
+}
+
+fn install_args_for_backend(backend: &str, package_path: &Path) -> Vec<String> {
+    let pkg = package_path.display().to_string();
+    match backend {
+        "dnf" => vec![
+            "dnf".to_string(),
+            "-y".to_string(),
+            "install".to_string(),
+            "--nogpgcheck".to_string(),
+            pkg,
+        ],
+        "apt-get" => vec![
+            "apt-get".to_string(),
+            "-y".to_string(),
+            "install".to_string(),
+            pkg,
+        ],
+        "zypper" => vec![
+            "zypper".to_string(),
+            "--non-interactive".to_string(),
+            "install".to_string(),
+            "--allow-unsigned-rpm".to_string(),
+            pkg,
+        ],
+        _ => vec![pkg],
+    }
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn run_linux_self_update(release: &ReleaseInfo) -> Result<String, String> {
+    if !command_exists("pkexec") {
+        return Err(format!(
+            "Automatic update requires pkexec on Linux. Open manually: {}",
+            release.html_url
+        ));
+    }
+    let (backend, asset) = linux_self_update_plan(release)
+        .map_err(|err| format!("{err} Open manually: {}", release.html_url))?;
+    let package_path = download_release_asset(release, &asset)
+        .map_err(|err| format!("{err} Open manually: {}", release.html_url))?;
+    let install_args = install_args_for_backend(backend, &package_path);
+    let child = Command::new("pkexec")
+        .args(&install_args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("Failed to start self-update via {backend}: {err}"))?;
+    wait_self_update_result(child, backend)
+        .map(|msg| format!("{msg}\nInstalled asset: {}", package_path.display()))
+}
+
 fn fetch_latest_release_info() -> Result<ReleaseInfo, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(6))
@@ -3160,7 +3357,36 @@ fn fetch_latest_release_info() -> Result<ReleaseInfo, String> {
         .and_then(|v| v.as_str())
         .unwrap_or("https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest")
         .to_string();
-    Ok(ReleaseInfo { tag, html_url })
+    let assets = payload
+        .get("assets")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let name = item
+                        .get("name")
+                        .and_then(|v| v.as_str())?
+                        .trim()
+                        .to_string();
+                    let download_url = item
+                        .get("browser_download_url")
+                        .and_then(|v| v.as_str())?
+                        .trim()
+                        .to_string();
+                    if name.is_empty() || download_url.is_empty() {
+                        return None;
+                    }
+                    Some(ReleaseAsset { name, download_url })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Ok(ReleaseInfo {
+        tag,
+        html_url,
+        assets,
+    })
 }
 
 fn is_newer_release(latest: &str, current: &str) -> bool {
@@ -3202,7 +3428,7 @@ fn numeric_version_parts(raw: &str) -> Vec<u32> {
     out
 }
 
-#[cfg(target_os = "linux")]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn command_exists(name: &str) -> bool {
     let Some(path_var) = std::env::var_os("PATH") else {
         return false;
@@ -3210,7 +3436,7 @@ fn command_exists(name: &str) -> bool {
     std::env::split_paths(&path_var).any(|dir| dir.join(name).is_file())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn summarize_process_output(raw: &[u8]) -> String {
     let text = String::from_utf8_lossy(raw)
         .replace('\r', "\n")
@@ -3226,7 +3452,7 @@ fn summarize_process_output(raw: &[u8]) -> String {
     format!("{}...", &text[..240])
 }
 
-#[cfg(target_os = "linux")]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn wait_self_update_result(child: Child, backend: &str) -> Result<String, String> {
     let output = child
         .wait_with_output()
@@ -3807,6 +4033,14 @@ impl eframe::App for WcGuiApp {
         self.poll_runner_state();
         self.poll_update_check();
         self.poll_self_update();
+        self.poll_cli_command();
+        if self.runner.is_some()
+            || self.update_check_rx.is_some()
+            || self.self_update_rx.is_some()
+            || self.cli_command_rx.is_some()
+        {
+            ctx.request_repaint_after(Duration::from_millis(150));
+        }
         if self.cfg.quote_min_font_size > self.cfg.quote_font_size {
             self.cfg.quote_min_font_size = self.cfg.quote_font_size;
         }
@@ -3852,6 +4086,7 @@ impl eframe::App for WcGuiApp {
             ui.add_space(6.0);
             ui.group(|ui| {
                 ui.horizontal_wrapped(|ui| {
+                    let cli_busy = self.cli_command_rx.is_some();
                     ui.strong("Actions");
                     ui.separator();
                     ui.label(if self.runner.is_some() {
@@ -3859,19 +4094,34 @@ impl eframe::App for WcGuiApp {
                     } else {
                         "Runner: STOPPED"
                     });
-                    if ui.button("Validate").clicked() {
+                    if ui
+                        .add_enabled(!cli_busy, egui::Button::new("Validate"))
+                        .clicked()
+                    {
                         self.run_wc_cli(&["validate"]);
                     }
-                    if ui.button("Render Preview").clicked() {
+                    if ui
+                        .add_enabled(!cli_busy, egui::Button::new("Render Preview"))
+                        .clicked()
+                    {
                         self.run_wc_cli(&["render-preview"]);
                     }
-                    if ui.button("Run Once").clicked() {
+                    if ui
+                        .add_enabled(!cli_busy, egui::Button::new("Run Once"))
+                        .clicked()
+                    {
                         self.run_wc_cli(&["run", "--once"]);
                     }
-                    if ui.button("Apply Now").clicked() {
+                    if ui
+                        .add_enabled(!cli_busy, egui::Button::new("Apply Now"))
+                        .clicked()
+                    {
                         self.apply_now();
                     }
-                    if ui.button("Migrate").clicked() {
+                    if ui
+                        .add_enabled(!cli_busy, egui::Button::new("Migrate"))
+                        .clicked()
+                    {
                         self.run_wc_cli(&["migrate"]);
                     }
                     if ui.button("Start Loop").clicked() {
@@ -4348,7 +4598,11 @@ fn parse_rgb_triplet(raw: &str) -> Option<egui::Color32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_newer_release, numeric_version_parts};
+    use super::{
+        ReleaseAsset, install_args_for_backend, is_newer_release, numeric_version_parts,
+        select_release_asset_by_suffix,
+    };
+    use std::path::Path;
 
     #[test]
     fn numeric_version_parts_parses_common_formats() {
@@ -4367,5 +4621,31 @@ mod tests {
     fn is_newer_release_detects_no_upgrade() {
         assert!(!is_newer_release("2026.03.10-7", "2026.03.10-7"));
         assert!(!is_newer_release("2026.03.10-6", "2026.03.10-7"));
+    }
+
+    #[test]
+    fn release_asset_selection_prefers_matching_suffix() {
+        let assets = vec![
+            ReleaseAsset {
+                name: "le-compositeur-linux-x86_64.deb".to_string(),
+                download_url: "https://example.invalid/a.deb".to_string(),
+            },
+            ReleaseAsset {
+                name: "le-compositeur-linux-x86_64.rpm".to_string(),
+                download_url: "https://example.invalid/a.rpm".to_string(),
+            },
+        ];
+
+        let rpm = select_release_asset_by_suffix(&assets, ".rpm").expect("rpm asset");
+        let deb = select_release_asset_by_suffix(&assets, ".deb").expect("deb asset");
+        assert_eq!(rpm.name, "le-compositeur-linux-x86_64.rpm");
+        assert_eq!(deb.name, "le-compositeur-linux-x86_64.deb");
+    }
+
+    #[test]
+    fn install_args_include_local_package_path() {
+        let args = install_args_for_backend("dnf", Path::new("/tmp/le-compositeur.rpm"));
+        assert!(args.iter().any(|arg| arg == "/tmp/le-compositeur.rpm"));
+        assert!(args.iter().any(|arg| arg == "--nogpgcheck"));
     }
 }

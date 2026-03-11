@@ -11,12 +11,27 @@ Last updated: 2026-03-11
 ## Current Snapshot
 - Repo branch: `main`
 - Latest published tag: `2026.03.11-7`
-- Next hotfix target tag: `TBD (after VM validation of 2026.03.11-7)`
+- Next hotfix target tag: `TBD (after VM fix validation for updater + packaged GUI responsiveness)`
 - Local tests: passing (`cargo test --all`)
 - GUI tabs implemented: `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline
 
 ## Now (Active Sprint)
+
+- [ ] `P0` Reproduce and fix packaged GUI freeze after `Render Preview` / action buttons on Fedora VM installs.
+  Status: synchronous GUI action calls were moved to background workers with periodic repaint polling; Fedora package/VM validation is still pending.
+  Done when: packaged GUI remains clickable during and after `Validate` / `Render Preview` / `Run Once`, and no hard VM reset is required to recover.
+
+- [ ] `P0` Rework GUI self-update flow for packaged Fedora installs.
+  Status: updater now targets GitHub release package assets for local package installation instead of relying on `dnf upgrade le-compositeur`; Fedora VM verification is still pending.
+  Done when: `Check Updates` + `Update Now` either complete the package upgrade end-to-end or surface a deterministic success/failure state instead of hanging after password/auth prompts.
+
+- [ ] `P0` Disable widget runtime work when widget is disabled in `Ordering`.
+  Status: `News` ordering now also suppresses secondary ticker timing/fetch/validation paths; explicit runtime verification for packaged Fedora installs is still pending.
+  Done when: disabled `Weather` / `News` / `Cams` widgets do not keep fetching network data, spawning stream capture, or rendering hidden overlays.
+
+- [ ] `P1` Add packaged-install regression coverage for GUI actions and updater flow.
+  Done when: there is a reproducible VM/package test path documenting `Validate`, `Render Preview`, `Run Once`, and updater behavior on Fedora package installs.
 
 - [x] `P0` Local quote file auto-recovery in runtime (CLI + GUI).
   Done when: if `quote_source=local` and `quotes_path` is missing, app auto-creates/rebinds to valid quotes and continues without manual fix.
@@ -90,6 +105,9 @@ Last updated: 2026-03-11
 
 ## Done Recently
 
+- [x] Moved GUI one-shot CLI actions (`Validate`, `Render Preview`, `Run Once`, `Migrate`, `Apply Now`) off the UI thread and added repaint polling so long renders no longer freeze the settings window.
+- [x] Reworked Linux self-update logic to download the matching GitHub release package asset (`.rpm` / `.deb`) before invoking privileged local installation.
+- [x] Bound secondary news ticker runtime enablement to the main `News` ordering toggle so disabled news no longer keeps ticker timing/fetch activity alive.
 - [x] Added single-instance run locking and `--replace-existing`.
 - [x] Hardened autostart install/remove behavior and legacy cleanup.
 - [x] Added weather/news rendering improvements and cams controls.
