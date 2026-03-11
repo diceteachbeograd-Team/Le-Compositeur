@@ -184,6 +184,7 @@ struct WcGuiApp {
     update_status: String,
     update_release: Option<ReleaseInfo>,
     update_check_rx: Option<Receiver<Result<Option<ReleaseInfo>, String>>>,
+    self_update_rx: Option<Receiver<Result<String, String>>>,
     ui_compact_mode: bool,
     show_preview_panel: bool,
     ui_style_compact_applied: Option<bool>,
@@ -220,6 +221,7 @@ impl WcGuiApp {
             update_status: "Update check: pending".to_string(),
             update_release: None,
             update_check_rx: None,
+            self_update_rx: None,
             ui_compact_mode: true,
             show_preview_panel: false,
             ui_style_compact_applied: None,
@@ -639,16 +641,16 @@ impl WcGuiApp {
                 "作用: News 小组件的视频来源。方法: 从列表选择或使用自定义 URL。建议: 先用 Euronews。"
             ),
             "news_custom_url" => self.t(
-                "What: custom stream/snapshot URL for News widget. How: use direct image URL, YouTube link, or camera stream URL. Recommended: for IP camera streams keep FPS at max 1.0.",
-                "Was: eigene Stream-/Snapshot-URL für das News-Widget. Wie: direkte Bild-URL, YouTube-Link oder Kamera-Stream-URL nutzen. Empfehlung: bei IP-Kamera-Streams FPS maximal auf 1,0 setzen.",
-                "Sta: prilagođeni stream/snapshot URL za News widget. Kako: koristi direktan URL slike, YouTube link ili URL kamere. Preporuka: za IP kameru drži FPS najviše 1,0.",
-                "作用: News 小组件的自定义流/快照 URL。方法: 可用图片直链、YouTube 链接或摄像头流 URL。建议: IP 摄像头流请将 FPS 设为最多 1.0。"
+                "What: custom stream/snapshot URL for News widget. How: use direct image URL, YouTube link, or camera stream URL. Recommended: camera/video streams are auto-kept smooth (minimum 15 FPS).",
+                "Was: eigene Stream-/Snapshot-URL für das News-Widget. Wie: direkte Bild-URL, YouTube-Link oder Kamera-Stream-URL nutzen. Empfehlung: Kamera-/Videostreams werden automatisch flüssig gehalten (mindestens 15 FPS).",
+                "Sta: prilagođeni stream/snapshot URL za News widget. Kako: koristi direktan URL slike, YouTube link ili URL kamere. Preporuka: video/kamera strim se automatski drži glatkim (minimum 15 FPS).",
+                "作用: News 小组件的自定义流/快照 URL。方法: 可用图片直链、YouTube 链接或摄像头流 URL。建议: 摄像头/视频流会自动保持流畅（至少 15 FPS）。"
             ),
             "news_fps" => self.t(
-                "What: playback frame rate target for stream widget. How: choose 0.05-30 FPS. Recommended: 1-5 FPS; custom camera URLs are capped to 1.0 FPS.",
-                "Was: Ziel-Bildrate für das Stream-Widget. Wie: zwischen 0,05 und 30 FPS wählen. Empfehlung: 1-5 FPS; eigene Kamera-URLs werden auf 1,0 FPS begrenzt.",
-                "Sta: ciljna brzina kadrova za stream widget. Kako: izaberi 0,05-30 FPS. Preporuka: 1-5 FPS; custom kamera URL je ograničen na 1,0 FPS.",
-                "作用: 流媒体组件目标帧率。方法: 设置 0.05-30 FPS。建议: 1-5 FPS；自定义摄像头 URL 会限制为 1.0 FPS。"
+                "What: playback frame rate target for stream widget. How: choose 0.05-30 FPS. Recommended: 15-24 FPS for smooth motion; runtime enforces a minimum 15 FPS for video/camera streams.",
+                "Was: Ziel-Bildrate für das Stream-Widget. Wie: zwischen 0,05 und 30 FPS wählen. Empfehlung: 15-24 FPS für flüssige Bewegung; Laufzeit erzwingt mindestens 15 FPS für Video-/Kamerastreams.",
+                "Sta: ciljna brzina kadrova za stream widget. Kako: izaberi 0,05-30 FPS. Preporuka: 15-24 FPS za glatko kretanje; runtime nameće minimum 15 FPS za video/kamera stream.",
+                "作用: 流媒体组件目标帧率。方法: 设置 0.05-30 FPS。建议: 15-24 FPS 更流畅；运行时会对视频/摄像头流强制至少 15 FPS。"
             ),
             "widget_size" => self.t(
                 "What: widget width/height in pixels. How: change W/H to resize weather/news boxes on wallpaper and in Ordering preview. Recommended: start with defaults, then fit your resolution.",
@@ -760,48 +762,90 @@ impl WcGuiApp {
         }
     }
 
+    fn poll_self_update(&mut self) {
+        let Some(rx) = self.self_update_rx.take() else {
+            return;
+        };
+
+        match rx.try_recv() {
+            Ok(Ok(msg)) => {
+                self.status = msg;
+                self.update_status =
+                    "Self-update finished. Click Check Updates to verify package version."
+                        .to_string();
+                self.update_release = None;
+            }
+            Ok(Err(err)) => {
+                self.status = err.clone();
+                self.update_status = format!("Self-update failed: {err}");
+            }
+            Err(TryRecvError::Empty) => {
+                self.self_update_rx = Some(rx);
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.status = "Self-update failed: worker disconnected".to_string();
+                self.update_status = "Self-update failed: worker disconnected".to_string();
+            }
+        }
+    }
+
     fn start_self_update(&mut self) {
+        if self.self_update_rx.is_some() {
+            self.status = "Self-update already running. Wait for completion.".to_string();
+            return;
+        }
+
         #[cfg(target_os = "linux")]
         {
+            let mut launch_errors = Vec::<String>::new();
             if command_exists("pkexec") {
-                if command_exists("dnf")
-                    && Command::new("pkexec")
-                        .args(["dnf", "-y", "upgrade", "le-compositeur"])
-                        .spawn()
-                        .is_ok()
-                {
-                    self.status = "Self-update started via dnf (authorization dialog may appear)."
-                        .to_string();
-                    return;
-                }
-                if command_exists("apt-get")
-                    && Command::new("pkexec")
-                        .args([
+                for (backend, manager, args) in [
+                    ("dnf", "dnf", vec!["dnf", "-y", "upgrade", "le-compositeur"]),
+                    (
+                        "apt-get",
+                        "apt-get",
+                        vec![
                             "apt-get",
                             "-y",
                             "install",
                             "--only-upgrade",
                             "le-compositeur",
-                        ])
+                        ],
+                    ),
+                    (
+                        "zypper",
+                        "zypper",
+                        vec!["zypper", "--non-interactive", "update", "le-compositeur"],
+                    ),
+                ] {
+                    if !command_exists(manager) {
+                        continue;
+                    }
+                    match Command::new("pkexec")
+                        .args(args)
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
                         .spawn()
-                        .is_ok()
-                {
-                    self.status =
-                        "Self-update started via apt-get (authorization dialog may appear)."
-                            .to_string();
-                    return;
+                    {
+                        Ok(child) => {
+                            let (tx, rx) = mpsc::channel::<Result<String, String>>();
+                            self.self_update_rx = Some(rx);
+                            self.status = format!(
+                                "Self-update started via {backend} (authorization dialog may appear)."
+                            );
+                            self.update_status = format!(
+                                "Self-update running via {backend} (waiting for completion)..."
+                            );
+                            std::thread::spawn(move || {
+                                let _ = tx.send(wait_self_update_result(child, backend));
+                            });
+                            return;
+                        }
+                        Err(err) => launch_errors.push(format!("{backend}: {err}")),
+                    }
                 }
-                if command_exists("zypper")
-                    && Command::new("pkexec")
-                        .args(["zypper", "--non-interactive", "update", "le-compositeur"])
-                        .spawn()
-                        .is_ok()
-                {
-                    self.status =
-                        "Self-update started via zypper (authorization dialog may appear)."
-                            .to_string();
-                    return;
-                }
+            } else {
+                launch_errors.push("pkexec not found in PATH".to_string());
             }
 
             let release_url = self
@@ -812,14 +856,22 @@ impl WcGuiApp {
                     "https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest"
                         .to_string()
                 });
-            if open_url(&release_url) {
-                self.status = format!(
-                    "Automatic package update command unavailable; opened release page: {release_url}"
-                );
+            let detail = if launch_errors.is_empty() {
+                "No compatible package manager command found (dnf/apt-get/zypper).".to_string()
             } else {
+                format!(
+                    "Failed to start automatic update command: {}",
+                    launch_errors.join(" | ")
+                )
+            };
+            if open_url(&release_url) {
                 self.status =
-                    format!("Automatic package update unavailable. Open manually: {release_url}");
+                    format!("{detail} Opened release page for manual update: {release_url}");
+            } else {
+                self.status = format!("{detail} Open manually: {release_url}");
             }
+            self.update_status =
+                "Self-update fallback active: download and install package manually.".to_string();
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -836,6 +888,7 @@ impl WcGuiApp {
             } else {
                 self.status = format!("Open manually: {release_url}");
             }
+            self.update_status = "Automatic package update is only available on Linux.".to_string();
         }
     }
 
@@ -2275,11 +2328,11 @@ impl WcGuiApp {
                         ui.text_edit_singleline(&mut self.cfg.news_custom_url)
                             .on_hover_text(self.hover_text("news_custom_url"));
                     });
-                    if is_camera_like_url(&self.cfg.news_custom_url) && self.cfg.news_fps > 1.0 {
-                        self.cfg.news_fps = 1.0;
+                    if is_camera_like_url(&self.cfg.news_custom_url) && self.cfg.news_fps < 15.0 {
+                        self.cfg.news_fps = 15.0;
                         ui.colored_label(
                             egui::Color32::from_rgb(255, 180, 100),
-                            "Camera source detected: FPS capped to 1.0",
+                            "Camera source detected: minimum FPS raised to 15.0",
                         );
                     }
                 }
@@ -2336,18 +2389,14 @@ impl WcGuiApp {
                             .on_hover_text(self.hover_text("news_custom_url"));
                     });
                     if is_camera_like_url(&self.cfg.news_ticker2_custom_url)
-                        && self.cfg.news_ticker2_fps > 1.0
+                        && self.cfg.news_ticker2_fps < 15.0
                     {
-                        self.cfg.news_ticker2_fps = 1.0;
+                        self.cfg.news_ticker2_fps = 15.0;
                     }
                 }
                 ui.horizontal(|ui| {
-                    ui.label("Ticker FPS");
-                    ui.add(
-                        egui::DragValue::new(&mut self.cfg.news_ticker2_fps)
-                            .speed(0.1)
-                            .range(0.05..=30.0),
-                    );
+                    ui.label("Ticker speed");
+                    ui.monospace("Auto (reading-speed)");
                     ui.label("Ticker refresh sec");
                     ui.add(
                         egui::DragValue::new(&mut self.cfg.news_ticker2_refresh_seconds)
@@ -2604,11 +2653,11 @@ impl WcGuiApp {
                         ui.text_edit_singleline(&mut self.cfg.news_custom_url)
                             .on_hover_text(self.hover_text("news_custom_url"));
                     });
-                    if is_camera_like_url(&self.cfg.news_custom_url) && self.cfg.news_fps > 1.0 {
-                        self.cfg.news_fps = 1.0;
+                    if is_camera_like_url(&self.cfg.news_custom_url) && self.cfg.news_fps < 15.0 {
+                        self.cfg.news_fps = 15.0;
                         ui.colored_label(
                             egui::Color32::from_rgb(255, 180, 100),
-                            "Camera source detected: FPS capped to 1.0",
+                            "Camera source detected: minimum FPS raised to 15.0",
                         );
                     }
                 }
@@ -2695,22 +2744,18 @@ impl WcGuiApp {
                             .on_hover_text(self.hover_text("news_custom_url"));
                     });
                     if is_camera_like_url(&self.cfg.news_ticker2_custom_url)
-                        && self.cfg.news_ticker2_fps > 1.0
+                        && self.cfg.news_ticker2_fps < 15.0
                     {
-                        self.cfg.news_ticker2_fps = 1.0;
+                        self.cfg.news_ticker2_fps = 15.0;
                         ui.colored_label(
                             egui::Color32::from_rgb(255, 180, 100),
-                            "Camera source detected: ticker FPS capped to 1.0",
+                            "Camera source detected: ticker minimum FPS raised to 15.0",
                         );
                     }
                 }
                 ui.horizontal(|ui| {
-                    ui.label("Ticker FPS");
-                    ui.add(
-                        egui::DragValue::new(&mut self.cfg.news_ticker2_fps)
-                            .speed(0.1)
-                            .range(0.05..=30.0),
-                    );
+                    ui.label("Ticker speed");
+                    ui.monospace("Auto (reading-speed)");
                     ui.label("Ticker refresh sec");
                     ui.add(
                         egui::DragValue::new(&mut self.cfg.news_ticker2_refresh_seconds)
@@ -2900,13 +2945,18 @@ impl WcGuiApp {
                 });
                 ui.horizontal(|ui| {
                     let checking = self.update_check_rx.is_some();
+                    let self_updating = self.self_update_rx.is_some();
                     if ui
                         .add_enabled(!checking, egui::Button::new("Check Updates"))
                         .clicked()
                     {
                         self.start_update_check();
                     }
-                    if self.update_release.is_some() && ui.button("Update Now").clicked() {
+                    if self.update_release.is_some()
+                        && ui
+                            .add_enabled(!self_updating, egui::Button::new("Update Now"))
+                            .clicked()
+                    {
                         self.start_self_update();
                     }
                     if let Some(release) = self.update_release.clone() {
@@ -3158,6 +3208,45 @@ fn command_exists(name: &str) -> bool {
         return false;
     };
     std::env::split_paths(&path_var).any(|dir| dir.join(name).is_file())
+}
+
+#[cfg(target_os = "linux")]
+fn summarize_process_output(raw: &[u8]) -> String {
+    let text = String::from_utf8_lossy(raw)
+        .replace('\r', "\n")
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(6)
+        .collect::<Vec<_>>()
+        .join(" | ");
+    if text.len() <= 240 {
+        return text;
+    }
+    format!("{}...", &text[..240])
+}
+
+#[cfg(target_os = "linux")]
+fn wait_self_update_result(child: Child, backend: &str) -> Result<String, String> {
+    let output = child
+        .wait_with_output()
+        .map_err(|err| format!("Self-update process failed to wait ({backend}): {err}"))?;
+    if output.status.success() {
+        return Ok(format!(
+            "Self-update finished via {backend}. Restart the app to load the new package."
+        ));
+    }
+    let details = summarize_process_output(&output.stderr);
+    if details.is_empty() {
+        return Err(format!(
+            "Self-update failed via {backend} (exit {}).",
+            output.status
+        ));
+    }
+    Err(format!(
+        "Self-update failed via {backend} (exit {}): {details}",
+        output.status
+    ))
 }
 
 fn open_url(url: &str) -> bool {
@@ -3717,6 +3806,7 @@ impl eframe::App for WcGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_runner_state();
         self.poll_update_check();
+        self.poll_self_update();
         if self.cfg.quote_min_font_size > self.cfg.quote_font_size {
             self.cfg.quote_min_font_size = self.cfg.quote_font_size;
         }
@@ -3852,13 +3942,18 @@ impl eframe::App for WcGuiApp {
                     ui.strong("Updates");
                     ui.separator();
                     let checking = self.update_check_rx.is_some();
+                    let self_updating = self.self_update_rx.is_some();
                     if ui
                         .add_enabled(!checking, egui::Button::new("Check Updates"))
                         .clicked()
                     {
                         self.start_update_check();
                     }
-                    if self.update_release.is_some() && ui.button("Update Now").clicked() {
+                    if self.update_release.is_some()
+                        && ui
+                            .add_enabled(!self_updating, egui::Button::new("Update Now"))
+                            .clicked()
+                    {
                         self.start_self_update();
                     }
                     if let Some(release) = self.update_release.clone() {

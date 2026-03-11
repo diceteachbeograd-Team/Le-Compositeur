@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026.03.11-6 - 2026-03-11
+- Fixed GUI self-update reliability:
+  - `Update Now` now tracks package-manager process completion asynchronously instead of fire-and-forget spawn only
+  - clear success/error feedback is surfaced in GUI status and update status fields
+  - automatic fallback now reports why command launch failed and opens release page for manual install
+- Fixed rotation cadence regression for background/quotes under fast widget refresh:
+  - local image/quote picks are now cycle-sticky, so they do not change repeatedly inside one `image_refresh_seconds` window
+  - loop wake interval now follows `min(image_refresh_seconds, 60)` baseline, then tightens only when animated widgets need it
+- Improved animation timing policy:
+  - video/camera stream preview capture now enforces smooth effective floor (`>=15 FPS`)
+  - ticker motion now auto-scales by text length and reading speed (no fixed FPS dependency)
+  - GUI ticker-speed controls now show `Auto (reading-speed)` to match runtime behavior
+
 ## 2026.03.11-5 - 2026-03-11
 - Added curated capital-oriented CAM presets on top of the `2026.03.11-4` runtime/UI hotfix baseline.
 - Extended CAM custom source parsing:

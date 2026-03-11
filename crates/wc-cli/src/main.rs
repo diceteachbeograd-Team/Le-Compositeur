@@ -33,6 +33,12 @@ const WEATHER_PAYLOAD_CACHE_MAX_AGE_SECS: u64 = 6 * 60 * 60;
 const NEWS_WIDGET_CACHE_MAX_AGE_SECS: u64 = 24 * 60 * 60;
 const CAMS_WIDGET_CACHE_MAX_AGE_SECS: u64 = 24 * 60 * 60;
 const WIDGET_REGISTRY_STAGE_B_ENV: &str = "WC_WIDGET_REGISTRY_STAGE_B";
+const MIN_SMOOTH_VIDEO_FPS: f32 = 15.0;
+const TICKER_MIN_PASS_SECS: f64 = 8.0;
+const TICKER_MAX_PASS_SECS: f64 = 28.0;
+const TICKER_READING_CHARS_PER_SEC: f64 = 14.0;
+const TICKER_MIN_SHIFT_MS: f64 = 70.0;
+const TICKER_MAX_SHIFT_MS: f64 = 450.0;
 
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
@@ -674,6 +680,16 @@ fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {
         "local" => {
             let image_dir = expand_tilde(&cfg.image_dir)?;
             let state_path = image_pick_state_path(cfg)?;
+            let candidates = list_background_images(&image_dir)?;
+            if candidates.is_empty() {
+                anyhow::bail!("no images available in {}", image_dir.display());
+            }
+            if let Some((last_cycle, last_idx)) = read_cycle_pick_state(&state_path)
+                && last_cycle == cycle
+                && last_idx < candidates.len()
+            {
+                return Ok(candidates[last_idx].clone());
+            }
             let recent_indices = read_recent_indices(&state_path);
             let (picked, picked_idx) = pick_background_image_with_mode(
                 &image_dir,
@@ -683,6 +699,7 @@ fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {
                 &recent_indices,
             )?;
             write_recent_indices(&state_path, &recent_indices, picked_idx)?;
+            write_cycle_pick_state(&state_path, cycle, picked_idx)?;
             Ok(picked)
         }
         "preset" | "remote_preset" => {
@@ -720,6 +737,13 @@ fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {
         "local" => {
             let quotes_path = expand_tilde(&cfg.quotes_path)?;
             let state_path = quote_pick_state_path(cfg)?;
+            let quotes = load_quotes(&quotes_path)?;
+            if let Some((last_cycle, last_idx)) = read_cycle_pick_state(&state_path)
+                && last_cycle == cycle
+                && last_idx < quotes.len()
+            {
+                return Ok(strip_project_line_suffix(&quotes[last_idx]));
+            }
             let recent_indices = read_recent_indices(&state_path);
             let (picked, picked_idx) = pick_quote_with_mode(
                 &quotes_path,
@@ -729,6 +753,7 @@ fn resolve_quote(cfg: &AppConfig, cycle: u64) -> Result<String> {
                 &recent_indices,
             )?;
             write_recent_indices(&state_path, &recent_indices, picked_idx)?;
+            write_cycle_pick_state(&state_path, cycle, picked_idx)?;
             Ok(picked)
         }
         "preset" | "remote_preset" => {
@@ -1551,10 +1576,7 @@ fn resolve_news_widget(cfg: &AppConfig, cycle: u64) -> Result<NewsWidgetPayload>
             }
         }
     };
-    let line = news_ticker_frame(
-        &payload.raw_line,
-        ticker_cycle_for_fps(cfg.news_fps.max(8.0)),
-    );
+    let line = news_ticker_frame(&payload.raw_line);
     Ok(NewsWidgetPayload {
         text: line,
         preview_image: payload.preview_image,
@@ -1594,10 +1616,7 @@ fn resolve_secondary_news_ticker(cfg: &AppConfig) -> String {
             preview_image: None,
         });
 
-    news_ticker_frame(
-        &payload.raw_line,
-        ticker_cycle_for_fps(cfg.news_ticker2_fps.max(8.0)),
-    )
+    news_ticker_frame(&payload.raw_line)
 }
 
 fn resolve_cams_widget(cfg: &AppConfig) -> Result<CamsWidgetPayload> {
@@ -1636,7 +1655,9 @@ fn resolve_cams_widget(cfg: &AppConfig) -> Result<CamsWidgetPayload> {
     } else {
         let mut frames = Vec::<PathBuf>::new();
         for source in &sources {
-            if let Some(frame) = capture_stream_preview(&source.url, cfg.cams_fps) {
+            if let Some(frame) =
+                capture_stream_preview(&source.url, effective_video_fps(cfg.cams_fps))
+            {
                 frames.push(frame);
             }
         }
@@ -1662,10 +1683,7 @@ fn resolve_cams_widget(cfg: &AppConfig) -> Result<CamsWidgetPayload> {
             built
         }
     };
-    let text = news_ticker_frame(
-        &payload.base_line,
-        ticker_cycle_for_fps(cfg.cams_fps.max(8.0)),
-    );
+    let text = news_ticker_frame(&payload.base_line);
 
     Ok(CamsWidgetPayload {
         text,
@@ -1981,13 +1999,14 @@ fn fetch_rss_ticker(url: &str) -> Option<String> {
 }
 
 fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str, cycle: u64) -> Option<PathBuf> {
-    if let Some(path) = capture_stream_preview(stream_url, cfg.news_fps) {
+    let effective_fps = effective_video_fps(cfg.news_fps);
+    if let Some(path) = capture_stream_preview(stream_url, effective_fps) {
         return Some(path);
     }
 
     if cfg.news_source.eq_ignore_ascii_case("custom")
         && is_camera_like_url(stream_url)
-        && let Some(path) = capture_camera_frame(stream_url, cfg.news_fps)
+        && let Some(path) = capture_camera_frame(stream_url, effective_fps)
     {
         return Some(path);
     }
@@ -2141,13 +2160,24 @@ fn compact_news_line(input: &str) -> String {
     out
 }
 
-fn news_ticker_frame(input: &str, cycle: u64) -> String {
+fn ticker_shift_millis_for_len(char_count: usize) -> u64 {
+    let chars = char_count.max(1) as f64;
+    let pass_seconds =
+        (chars / TICKER_READING_CHARS_PER_SEC).clamp(TICKER_MIN_PASS_SECS, TICKER_MAX_PASS_SECS);
+    ((pass_seconds * 1000.0) / chars)
+        .clamp(TICKER_MIN_SHIFT_MS, TICKER_MAX_SHIFT_MS)
+        .round() as u64
+}
+
+fn news_ticker_frame(input: &str) -> String {
     let clean = compact_news_line(input);
     let tape = format!("   {clean}   ◆   ");
     let chars = tape.chars().collect::<Vec<_>>();
     if chars.is_empty() {
         return "LIVE ◆ no data".to_string();
     }
+    let shift_ms = ticker_shift_millis_for_len(chars.len());
+    let cycle = now_epoch_millis() / shift_ms.max(1);
     let shift = (cycle as usize) % chars.len();
     let ordered_full = chars[shift..]
         .iter()
@@ -2829,6 +2859,25 @@ fn write_recent_indices(path: &Path, previous: &[usize], next_idx: usize) -> Res
     Ok(())
 }
 
+fn cycle_pick_state_path(path: &Path) -> PathBuf {
+    let mut raw = path.as_os_str().to_os_string();
+    raw.push(".cycle");
+    PathBuf::from(raw)
+}
+
+fn read_cycle_pick_state(path: &Path) -> Option<(u64, usize)> {
+    let raw = fs::read_to_string(cycle_pick_state_path(path)).ok()?;
+    let (cycle_raw, idx_raw) = raw.trim().split_once(',')?;
+    let cycle = cycle_raw.trim().parse::<u64>().ok()?;
+    let idx = idx_raw.trim().parse::<usize>().ok()?;
+    Some((cycle, idx))
+}
+
+fn write_cycle_pick_state(path: &Path, cycle: u64, idx: usize) -> Result<()> {
+    fs::write(cycle_pick_state_path(path), format!("{cycle},{idx}\n"))?;
+    Ok(())
+}
+
 fn resolve_image_endpoint_from_preset(cfg: &AppConfig) -> Result<(String, ImageProvider)> {
     let id = cfg.image_source_preset.as_deref().ok_or_else(|| {
         anyhow::anyhow!("image_source_preset is required for image_source=preset")
@@ -3151,20 +3200,23 @@ fn read_lock_pid(path: &Path) -> Option<u32> {
     raw.trim().parse::<u32>().ok()
 }
 
+fn effective_video_fps(requested_fps: f32) -> f32 {
+    requested_fps.clamp(0.05, 30.0).max(MIN_SMOOTH_VIDEO_FPS)
+}
+
 fn loop_tick_duration(cfg: &AppConfig) -> Duration {
-    // Keep the clock fresh and allow smoother news frames when configured.
-    let mut seconds = master_rotation_interval(cfg) as f64;
-    seconds = seconds.min(1.0);
+    // Base loop from user-selected background interval, but keep clock updates within one minute.
+    let mut seconds = master_rotation_interval(cfg).min(60) as f64;
     if cfg.show_news_layer {
-        let news_step = 1.0 / cfg.news_fps.clamp(0.05, 30.0) as f64;
+        let news_step = 1.0 / effective_video_fps(cfg.news_fps) as f64;
         seconds = seconds.min(news_step.max(0.033));
     }
     if cfg.show_news_ticker2 {
-        let ticker_step = 1.0 / cfg.news_ticker2_fps.clamp(0.05, 30.0) as f64;
+        let ticker_step = ticker_shift_millis_for_len(64) as f64 / 1000.0;
         seconds = seconds.min(ticker_step.max(0.033));
     }
     if cfg.show_cams_layer {
-        let cams_step = 1.0 / cfg.cams_fps.clamp(0.05, 30.0) as f64;
+        let cams_step = 1.0 / effective_video_fps(cfg.cams_fps) as f64;
         seconds = seconds.min(cams_step.max(0.033));
     }
     let millis = (seconds * 1000.0).round().clamp(33.0, 60_000.0) as u64;
@@ -3173,11 +3225,6 @@ fn loop_tick_duration(cfg: &AppConfig) -> Duration {
 
 fn master_rotation_interval(cfg: &AppConfig) -> u64 {
     cfg.image_refresh_seconds.max(1)
-}
-
-fn ticker_cycle_for_fps(fps: f32) -> u64 {
-    let frame_ms = (1000.0 / fps.clamp(0.05, 30.0) as f64).max(33.0) as u64;
-    now_epoch_millis() / frame_ms.max(1)
 }
 
 fn now_epoch_millis() -> u64 {
@@ -3639,23 +3686,24 @@ fn fetch_stream_title_hint(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_builtin_widget_registry, determine_cycle, loop_tick_duration, read_recent_indices,
-        widget_instance_from_config, write_recent_indices,
+        build_builtin_widget_registry, cycle_pick_state_path, determine_cycle, loop_tick_duration,
+        read_cycle_pick_state, read_recent_indices, ticker_shift_millis_for_len,
+        widget_instance_from_config, write_cycle_pick_state, write_recent_indices,
     };
     use std::fs;
     use std::time::Duration;
     use wc_core::{BUILTIN_WIDGET_TYPE_IDS, default_config_toml, load_config};
 
     #[test]
-    fn loop_tick_is_capped_to_keep_clock_current() {
+    fn loop_tick_follows_master_interval_and_animation_caps() {
         let cfg_path = std::env::temp_dir().join("wc-cli-loop-tick-test.toml");
         fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
         let mut cfg = load_config(&cfg_path).expect("default config should parse");
         cfg.image_refresh_seconds = 300;
-        assert_eq!(loop_tick_duration(&cfg), Duration::from_secs(1));
+        assert_eq!(loop_tick_duration(&cfg), Duration::from_secs(60));
 
         cfg.image_refresh_seconds = 15;
-        assert_eq!(loop_tick_duration(&cfg), Duration::from_secs(1));
+        assert_eq!(loop_tick_duration(&cfg), Duration::from_secs(15));
 
         cfg.show_news_layer = true;
         cfg.news_fps = 10.0;
@@ -3664,7 +3712,7 @@ mod tests {
         cfg.show_news_layer = false;
         cfg.show_news_ticker2 = true;
         cfg.news_ticker2_fps = 12.0;
-        assert!(loop_tick_duration(&cfg) <= Duration::from_millis(90));
+        assert!(loop_tick_duration(&cfg) <= Duration::from_millis(130));
 
         cfg.show_news_ticker2 = false;
         cfg.show_cams_layer = true;
@@ -3704,6 +3752,28 @@ mod tests {
         let got = read_recent_indices(&state_path);
         assert_eq!(got, vec![2, 7, 5]);
         let _ = fs::remove_file(state_path);
+    }
+
+    #[test]
+    fn cycle_pick_state_roundtrip() {
+        let state_path = std::env::temp_dir().join("wc-cli-cycle-pick.state");
+        let _ = fs::remove_file(&state_path);
+        let _ = fs::remove_file(cycle_pick_state_path(&state_path));
+
+        write_cycle_pick_state(&state_path, 42, 7).expect("cycle pick should write");
+        assert_eq!(read_cycle_pick_state(&state_path), Some((42, 7)));
+
+        let _ = fs::remove_file(cycle_pick_state_path(&state_path));
+        let _ = fs::remove_file(state_path);
+    }
+
+    #[test]
+    fn ticker_shift_scales_with_text_length() {
+        let short_ms = ticker_shift_millis_for_len(24);
+        let long_ms = ticker_shift_millis_for_len(96);
+        assert!(short_ms > long_ms);
+        assert!(short_ms >= 120);
+        assert!(long_ms <= 120);
     }
 
     #[test]

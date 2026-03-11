@@ -11,7 +11,7 @@ Last updated: 2026-03-11
 ## Current Snapshot
 - Repo branch: `main`
 - Latest published tag: `2026.03.11-5`
-- Next hotfix target tag: `TBD (post-2026.03.11-5 VM feedback)`
+- Next hotfix target tag: `2026.03.11-6`
 - Local tests: passing (`cargo test --all`)
 - GUI tabs implemented: `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline
@@ -44,6 +44,15 @@ Last updated: 2026-03-11
 
 - [x] `P0` Restore compact-screen reachability and runtime smoothness in tabs/widgets.
   Done when: all workspace tabs remain reachable in compact GUI mode, stream/ticker updates are not forced to 1 FPS, and image-tab BG cadence is respected again.
+
+- [x] `P0` Harden GUI one-click self-update execution and completion reporting.
+  Done when: update button launches a tracked package-manager process, reports completion/failure in GUI status, and falls back to release page with actionable reason.
+
+- [x] `P0` Stabilize image/quote rotation cadence under high-frequency widget rendering.
+  Done when: background/quote selection remains stable within a cycle even when loop tick is driven by video/ticker refresh.
+
+- [x] `P1` Decouple ticker/video timing from user image clock settings.
+  Done when: ticker shift uses auto reading-speed logic, video/camera streams enforce smooth playback floor, and loop wake interval follows `min(image_refresh_seconds, 60)` unless animation needs faster ticks.
 
 ## Next (After Active Sprint)
 
@@ -104,6 +113,10 @@ Last updated: 2026-03-11
 - [x] Redesigned weather minimap wind overlay (red arrow + red speed) with generated fallback map.
 - [x] Improved cams source fallback: YouTube thumbnail fallback without `yt-dlp` and richer source labels.
 - [x] Added capital-oriented cam presets with labeled custom-entry format (`Label => URL`) for meaningful CAM ticker names.
+- [x] Added async self-update process tracking in GUI (no more fire-and-forget update hang state).
+- [x] Added cycle-sticky image/quote picks to keep BG/QTE stable inside one rotation window.
+- [x] Switched ticker motion to reading-speed/text-length auto-shift and removed dependence on manual ticker FPS.
+- [x] Enforced smooth video/camera preview floor (`>=15 FPS`) in runtime capture path.
 
 ## Restart Checklist (Operator)
 
