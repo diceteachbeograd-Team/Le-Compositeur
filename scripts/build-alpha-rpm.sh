@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RELEASE_TAG="${1:-2026.03.11-7}"
+RELEASE_TAG="${1:-2026.03.11-8}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PKG_NAME="le-compositeur"
 RPM_VERSION="${RELEASE_TAG%-*}"

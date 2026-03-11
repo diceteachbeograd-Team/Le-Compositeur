@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026.03.11-8 - 2026-03-11
+- Fixed packaged GUI responsiveness on Fedora/Linux installs:
+  - moved one-shot GUI actions (`Validate`, `Render Preview`, `Run Once`, `Migrate`, `Apply Now`) off the UI thread
+  - added repaint polling while background CLI work is active so status/progress remains visible
+  - preserved config rollback when temporary `Apply Now` launch setup fails
+- Fixed stream-capture hangs in CLI/runtime preview paths:
+  - `ffmpeg` frame capture now has a hard timeout and cleans partial outputs on timeout/failure
+  - stream-based preview/render paths now fail fast instead of stalling packaged runs indefinitely
+- Fixed runtime gating for disabled News widgets:
+  - secondary ticker activity now respects the main `News` ordering toggle in validation, timing, and widget resolution
+  - disabling `News` stops hidden ticker background work instead of only hiding the overlay
+- Reworked Linux self-update to install real release packages:
+  - updater now resolves matching GitHub release assets and installs the downloaded local package instead of relying on repo-based `dnf upgrade`
+  - Fedora VM package-install path was validated against a locally built RPM ahead of the official release
+- Updated release prep/docs for `2026.03.11-8` and kept the temporary README warning that `Weather`, `News`, and `Cams` are still under active rework until explicit functionality approval.
+
 ## 2026.03.11-7 - 2026-03-11
 - Improved runtime timing separation and preview refresh behavior:
   - remote background sources now stay stable within one configured image cycle instead of being re-fetched every fast animation tick

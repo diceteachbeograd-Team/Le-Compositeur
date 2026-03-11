@@ -9,9 +9,9 @@ Last updated: 2026-03-11
 - If session context is lost, resume from `docs/SESSION_PLAN.md`.
 
 ## Current Snapshot
-- Repo branch: `main`
+- Repo branch: `codex/fedora-vm-fixes` (pending merge to `main` for `2026.03.11-8`)
 - Latest published tag: `2026.03.11-7`
-- Next hotfix target tag: `TBD (after VM fix validation for updater + packaged GUI responsiveness)`
+- Next hotfix target tag: `2026.03.11-8`
 - Local tests: passing (`cargo test --all`)
 - GUI tabs implemented: `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline
@@ -23,7 +23,7 @@ Last updated: 2026-03-11
   Done when: packaged GUI remains clickable during and after `Validate` / `Render Preview` / `Run Once`, and no hard VM reset is required to recover.
 
 - [ ] `P0` Rework GUI self-update flow for packaged Fedora installs.
-  Status: updater now targets GitHub release package assets for local package installation instead of relying on `dnf upgrade le-compositeur`; package install path was validated manually on Fedora VM with a locally built `2026.03.11-8` RPM, but the actual GUI `Update Now` click path still needs one end-to-end check against a published newer release.
+  Status: updater now targets GitHub release package assets for local package installation instead of relying on `dnf upgrade le-compositeur`; package install path was validated manually on Fedora VM with a locally built `2026.03.11-8` RPM, but the actual GUI `Update Now` click path still needs one end-to-end check against the published `2026.03.11-8` release.
   Done when: `Check Updates` + `Update Now` either complete the package upgrade end-to-end or surface a deterministic success/failure state instead of hanging after password/auth prompts.
 
 - [ ] `P0` Disable widget runtime work when widget is disabled in `Ordering`.

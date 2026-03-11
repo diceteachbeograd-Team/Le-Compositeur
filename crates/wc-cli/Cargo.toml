@@ -1,6 +1,6 @@
 [package]
 name = "wc-cli"
-version = "2026.3.11-7"
+version = "2026.3.11-8"
 edition.workspace = true
 license.workspace = true
 

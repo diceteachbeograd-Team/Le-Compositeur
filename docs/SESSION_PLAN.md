@@ -54,7 +54,7 @@ Validation target:
 - Verify packaged GUI action buttons (`Validate`, `Render Preview`, `Run Once`, `Start Loop`) run via installed CLI, without Cargo workspace assumptions or UI deadlock.
 - Verify quote recovery and updater behavior on Fedora (`rpm`) and Ubuntu (`deb`) package installs.
 - Capture any privilege/escalation edge-cases from `pkexec` / package-manager update path and ensure completion state is visible in GUI.
-- Local code fix is in place for async GUI actions and release-asset-based self-update; Fedora VM source + locally built RPM validation are done for CLI/runtime, remaining gap is direct packaged GUI click-through for `Update Now` / `Render Preview`.
+- Local code fix is in place for async GUI actions and release-asset-based self-update; Fedora VM source + locally built RPM validation are done for CLI/runtime, remaining gap is direct packaged GUI click-through for `Update Now` / `Render Preview` against official release `2026.03.11-8`.
 
 Widget target:
 - Keep the two independently configurable ticker instances stable in GUI + CLI + renderer path.
