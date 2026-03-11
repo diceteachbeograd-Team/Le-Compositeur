@@ -10,6 +10,8 @@ Source0:        %{name}-%{version}.tar.gz
 BuildRequires:  rust
 BuildRequires:  cargo
 BuildRequires:  desktop-file-utils
+Requires:       mpv
+Recommends:     yt-dlp
 
 %description
 Le Compositeur renders dynamic wallpapers using local or public image/quote sources,

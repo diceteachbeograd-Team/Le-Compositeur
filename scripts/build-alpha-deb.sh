@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-2026.03.11-8}"
+VERSION="${1:-2026.03.11-9}"
 PKG_DIR="${ROOT_DIR}/dist/deb-root"
 
 need_cmd() {
@@ -54,6 +54,8 @@ Architecture: amd64
 Maintainer: Le Compositeur Contributors <opensource@example.com>
 Description: Le Compositeur dynamic desktop GUI (Rust)
  Includes wc-cli and wc-gui alpha binaries.
+Depends: mpv
+Recommends: yt-dlp
 CONTROL
 
 cat > "$PKG_DIR/DEBIAN/postrm" <<'POSTRM'

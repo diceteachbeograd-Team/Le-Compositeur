@@ -20,11 +20,11 @@ use wc_backend::apply_wallpaper;
 use wc_core::{
     AppConfig, BUILTIN_WIDGET_TYPE_IDS, WidgetInstanceConfig, WidgetPlugin, WidgetRegistry,
     WidgetResolvedPayload, WidgetRuntimeContext, build_doctor_report, builtin_image_presets,
-    builtin_quote_presets, cycle_index, default_config_path, default_config_toml,
-    ensure_local_quotes_file, expand_tilde, image_preset_endpoint, list_background_images,
-    load_config, load_quotes, pick_background_image_with_mode, pick_quote_with_mode,
-    presets_catalog_json, quote_preset_endpoint, settings_schema_json, settings_ui_blueprint_json,
-    to_config_toml,
+    builtin_news_source, builtin_news_source_is_live_video, builtin_quote_presets, cycle_index,
+    default_config_path, default_config_toml, ensure_local_quotes_file, expand_tilde,
+    image_preset_endpoint, list_background_images, load_config, load_quotes,
+    pick_background_image_with_mode, pick_quote_with_mode, presets_catalog_json,
+    quote_preset_endpoint, settings_schema_json, settings_ui_blueprint_json, to_config_toml,
 };
 use wc_render::{PreviewText, render_preview_to_file};
 use wc_source::{ImageProvider, QuoteProvider, fetch_remote_image, fetch_remote_quote};
@@ -35,6 +35,7 @@ const WEATHER_PAYLOAD_CACHE_MAX_AGE_SECS: u64 = 6 * 60 * 60;
 const NEWS_WIDGET_CACHE_MAX_AGE_SECS: u64 = 24 * 60 * 60;
 const CAMS_WIDGET_CACHE_MAX_AGE_SECS: u64 = 24 * 60 * 60;
 const WIDGET_REGISTRY_STAGE_B_ENV: &str = "WC_WIDGET_REGISTRY_STAGE_B";
+const OVERLAY_HELPERS_DISABLED_ENV: &str = "WC_DISABLE_OVERLAY_HELPERS";
 const MIN_SMOOTH_VIDEO_FPS: f32 = 15.0;
 const TICKER_MIN_PASS_SECS: f64 = 14.0;
 const TICKER_MAX_PASS_SECS: f64 = 42.0;
@@ -42,7 +43,7 @@ const TICKER_READING_CHARS_PER_SEC: f64 = 7.5;
 const TICKER_MIN_SHIFT_MS: f64 = 120.0;
 const TICKER_MAX_SHIFT_MS: f64 = 650.0;
 const WEATHER_MAP_TILE_SIZE: u32 = 256;
-const WEATHER_MAP_ZOOM: u32 = 6;
+const WEATHER_MAP_TARGET_RADIUS_KM: f64 = 50.0;
 const STREAM_CAPTURE_TIMEOUT_SECS: u64 = 4;
 const YOUTUBE_PAGE_TIMEOUT_SECS: u64 = 4;
 
@@ -105,6 +106,12 @@ enum Commands {
         #[arg(long)]
         config: Option<PathBuf>,
     },
+    /// Stop spawned overlay helper processes for a config.
+    OverlayStop {
+        /// Config path. Defaults to ~/.config/wallpaper-composer/config.toml
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -122,7 +129,7 @@ fn main() -> Result<()> {
             let cfg = load_config_with_quote_recovery(&config_path)?;
             validate_config(&cfg)?;
             let cycle = determine_cycle(&cfg, master_rotation_interval(&cfg), "rotation")?;
-            run_cycle(&cfg, cycle, cycle)?;
+            run_cycle(&config_path, &cfg, cycle, cycle, false)?;
         }
         Commands::Init { config, force } => {
             let config_path = resolve_config_path(config)?;
@@ -171,7 +178,7 @@ fn main() -> Result<()> {
                 let cfg = load_config_with_quote_recovery(&config_path)?;
                 validate_config(&cfg)?;
                 let cycle = determine_cycle(&cfg, master_rotation_interval(&cfg), "rotation")?;
-                run_cycle(&cfg, cycle, cycle)?;
+                run_cycle(&config_path, &cfg, cycle, cycle, true)?;
 
                 if once {
                     break;
@@ -204,13 +211,29 @@ fn main() -> Result<()> {
             println!("migrated_config: {}", config_path.display());
             println!("backup_created: {}", backup_path.display());
         }
+        Commands::OverlayStop { config } => {
+            let config_path = resolve_config_path(config)?;
+            stop_overlay_runtime(&config_path)?;
+            println!("overlay_runtime: stopped");
+        }
     }
 
     Ok(())
 }
 
-fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> {
+fn run_cycle(
+    config_path: &Path,
+    cfg: &AppConfig,
+    image_cycle: u64,
+    quote_cycle: u64,
+    sync_overlay: bool,
+) -> Result<()> {
     let output_path = expand_tilde(&cfg.output_image)?;
+    let overlay_status = if sync_overlay {
+        sync_overlay_runtime(config_path, cfg, image_cycle)?
+    } else {
+        "preview-disabled".to_string()
+    };
     let source_image = resolve_source_image(cfg, image_cycle)?;
     let widget_bundle = resolve_widgets_for_cycle(cfg, image_cycle, quote_cycle)?;
     let quote = widget_bundle.quote;
@@ -312,6 +335,7 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     println!("preview_mode: {}", render.preview_mode);
     println!("preview_output: {}", output_path.display());
     println!("preview_metadata: {}", render.meta_path.display());
+    println!("overlay_runtime: {}", overlay_status);
 
     let effective_apply_wallpaper = cfg.apply_wallpaper && cfg.show_background_layer;
     let wallpaper_target = if effective_apply_wallpaper {
@@ -419,6 +443,16 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     if cfg.weather_refresh_seconds < 60 {
         anyhow::bail!("weather_refresh_seconds must be >= 60");
     }
+    if !["wallpaper", "overlay"]
+        .contains(&cfg.news_render_mode.trim().to_ascii_lowercase().as_str())
+    {
+        anyhow::bail!("news_render_mode must be wallpaper or overlay");
+    }
+    if !["wallpaper", "overlay"]
+        .contains(&cfg.cams_render_mode.trim().to_ascii_lowercase().as_str())
+    {
+        anyhow::bail!("cams_render_mode must be wallpaper or overlay");
+    }
     if !(0.05..=30.0).contains(&cfg.news_fps) {
         anyhow::bail!("news_fps must be between 0.05 and 30.0");
     }
@@ -467,6 +501,16 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     if !(0.05..=10.0).contains(&cfg.cams_fps) {
         anyhow::bail!("cams_fps must be between 0.05 and 10.0");
     }
+    if news_overlay_video_enabled(cfg) && overlay_video_player().is_none() {
+        anyhow::bail!(
+            "news overlay requires mpv or ffplay on PATH; packaged builds should install mpv"
+        );
+    }
+    if cams_overlay_enabled(cfg) && overlay_video_player().is_none() {
+        anyhow::bail!(
+            "cams overlay requires mpv or ffplay on PATH; packaged builds should install mpv"
+        );
+    }
     if !(120..=1920).contains(&cfg.weather_widget_width) {
         anyhow::bail!("weather_widget_width must be between 120 and 1920");
     }
@@ -487,6 +531,20 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     }
     if !(120..=1080).contains(&cfg.news_widget_height) {
         anyhow::bail!("news_widget_height must be between 120 and 1080");
+    }
+    if cfg.overlay_script_ticker_enabled && cfg.overlay_script_ticker_command.trim().is_empty() {
+        anyhow::bail!(
+            "overlay_script_ticker_command is required when overlay_script_ticker_enabled=true"
+        );
+    }
+    if !(220..=1920).contains(&cfg.overlay_script_ticker_width) {
+        anyhow::bail!("overlay_script_ticker_width must be between 220 and 1920");
+    }
+    if !(32..=240).contains(&cfg.overlay_script_ticker_height) {
+        anyhow::bail!("overlay_script_ticker_height must be between 32 and 240");
+    }
+    if !(10..=120).contains(&cfg.overlay_script_ticker_font_size) {
+        anyhow::bail!("overlay_script_ticker_font_size must be between 10 and 120");
     }
 
     let backend = cfg.wallpaper_backend.trim().to_ascii_lowercase();
@@ -1184,7 +1242,7 @@ fn resolve_widgets_legacy(
     } else {
         String::new()
     };
-    let cams = if cfg.show_cams_layer {
+    let cams = if cams_widget_enabled(cfg) {
         resolve_cams_widget(cfg).unwrap_or_else(cams_unavailable_payload)
     } else {
         CamsWidgetPayload {
@@ -1352,7 +1410,7 @@ fn widget_instance_from_config(cfg: &AppConfig, widget_type: &str) -> Result<Wid
         }
         "cams" => {
             let mut instance = WidgetInstanceConfig::new("cams", "cams_main");
-            instance.enabled = cfg.show_cams_layer;
+            instance.enabled = cams_widget_enabled(cfg);
             instance.layer_z = cfg.layer_z_cams;
             instance.pos_x = cfg.cams_pos_x;
             instance.pos_y = cfg.cams_pos_y;
@@ -1960,63 +2018,30 @@ fn news_source_profile(cfg: &AppConfig) -> (&'static str, String, Option<&'stati
     news_source_profile_raw(&cfg.news_source, &cfg.news_custom_url)
 }
 
+fn news_source_supports_live_video_source(source: &str, custom_url: &str) -> bool {
+    if source == "custom" {
+        return stream_like_endpoint(custom_url);
+    }
+    builtin_news_source_is_live_video(source)
+}
+
+fn news_overlay_video_enabled(cfg: &AppConfig) -> bool {
+    news_overlay_enabled(cfg)
+        && news_source_supports_live_video_source(&cfg.news_source, &cfg.news_custom_url)
+}
+
 fn news_source_profile_raw(
     source: &str,
     custom_url: &str,
 ) -> (&'static str, String, Option<&'static str>) {
-    match source {
-        "euronews" => (
-            "Euronews",
-            "https://www.youtube.com/watch?v=pykpO5kQJ98".to_string(),
-            Some("https://www.euronews.com/rss"),
-        ),
-        "aljazeera" => (
-            "Al Jazeera English",
-            "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(),
-            Some("https://www.aljazeera.com/xml/rss/all.xml"),
-        ),
-        "france24" => (
-            "France 24",
-            "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(),
-            Some("https://www.france24.com/en/rss"),
-        ),
-        "dw" => (
-            "DW News",
-            "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(),
-            Some("https://rss.dw.com/rdf/rss-en-all"),
-        ),
-        "yahoo_finance" => (
-            "Yahoo Finance",
-            "https://www.youtube.com/watch?v=9Auq9mYxFEE".to_string(),
-            Some("https://finance.yahoo.com/news/rssindex"),
-        ),
-        "bloomberg_tv" => (
-            "Bloomberg TV",
-            "https://www.youtube.com/watch?v=dp8PhLsUcFE".to_string(),
-            Some("https://feeds.bloomberg.com/markets/news.rss"),
-        ),
-        "techcrunch" => (
-            "TechCrunch",
-            "https://techcrunch.com/".to_string(),
-            Some("https://techcrunch.com/feed/"),
-        ),
-        "theverge" => (
-            "The Verge",
-            "https://www.theverge.com/tech".to_string(),
-            Some("https://www.theverge.com/rss/index.xml"),
-        ),
-        "nasa_tv" => (
-            "NASA TV",
-            "https://www.youtube.com/watch?v=21X5lGlDOfg".to_string(),
-            Some("https://www.nasa.gov/rss/dyn/breaking_news.rss"),
-        ),
-        "documentary_heaven" => (
-            "DocumentaryHeaven",
-            "https://documentaryheaven.com/".to_string(),
-            Some("https://documentaryheaven.com/feed/"),
-        ),
-        _ => ("Custom", custom_url.trim().to_string(), None),
+    if let Some(source) = builtin_news_source(source) {
+        return (
+            source.name,
+            source.stream_url.to_string(),
+            source.ticker_url,
+        );
     }
+    ("Custom", custom_url.trim().to_string(), None)
 }
 
 fn fetch_rss_ticker(url: &str) -> Option<String> {
@@ -2125,18 +2150,19 @@ fn resolve_weather_minimap(
 fn resolve_weather_minimap_raw(lat: f64, lon: f64) -> Option<PathBuf> {
     let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
     fs::create_dir_all(&cache_dir).ok()?;
+    let zoom = weather_map_zoom_for_lat(lat);
     let output = cache_dir.join(format!(
         "weather-map-base-{}.png",
-        stable_hash(&format!("{lat:.4}:{lon:.4}:z{WEATHER_MAP_ZOOM}"))
+        stable_hash(&format!("{lat:.4}:{lon:.4}:z{zoom}"))
     ));
     if output.exists() {
         return Some(output);
     }
 
-    let (tile_x, tile_y) = lat_lon_to_tile(lat, lon, WEATHER_MAP_ZOOM);
+    let (tile_x, tile_y) = lat_lon_to_tile(lat, lon, zoom);
     let base_x = tile_x.floor() as i64 - 1;
     let base_y = tile_y.floor() as i64 - 1;
-    let tile_span = (1_i64) << WEATHER_MAP_ZOOM;
+    let tile_span = (1_i64) << zoom;
     let mut mosaic = RgbaImage::from_pixel(
         WEATHER_MAP_TILE_SIZE * 3,
         WEATHER_MAP_TILE_SIZE * 3,
@@ -2150,7 +2176,7 @@ fn resolve_weather_minimap_raw(lat: f64, lon: f64) -> Option<PathBuf> {
             let clamped_y = (base_y + oy).clamp(0, tile_span.saturating_sub(1));
             let url = format!(
                 "https://tile.openstreetmap.org/{}/{}/{}.png",
-                WEATHER_MAP_ZOOM, wrapped_x, clamped_y
+                zoom, wrapped_x, clamped_y
             );
             if let Ok(path) = fetch_remote_image(url, ImageProvider::Generic)
                 && let Ok(tile) = image::open(path)
@@ -2179,6 +2205,15 @@ fn resolve_weather_minimap_raw(lat: f64, lon: f64) -> Option<PathBuf> {
     let crop_y = (center_px_y - 180).clamp(0, max_crop_y) as u32;
     let cropped = imageops::crop_imm(&mosaic, crop_x, crop_y, 640, 360).to_image();
     write_weather_image(&output, &cropped)
+}
+
+fn weather_map_zoom_for_lat(lat: f64) -> u32 {
+    let lat_cos = lat.to_radians().cos().abs().max(0.2);
+    let target_width_meters = WEATHER_MAP_TARGET_RADIUS_KM * 2.0 * 1000.0;
+    let meters_per_pixel = target_width_meters / 640.0;
+    let world_meters = 40_075_016.686_f64 * lat_cos;
+    let zoom = (world_meters / (WEATHER_MAP_TILE_SIZE as f64 * meters_per_pixel)).log2();
+    zoom.round().clamp(8.0, 12.0) as u32
 }
 
 fn lat_lon_to_tile(lat: f64, lon: f64, zoom: u32) -> (f64, f64) {
@@ -2293,6 +2328,488 @@ fn news_ticker_frame(input: &str) -> String {
         .collect::<String>();
     let visible = ordered_full.chars().take(92).collect::<String>();
     format!("▮ {visible} ▮")
+}
+
+#[derive(Debug, Clone)]
+struct OverlayVideoWindow {
+    label: String,
+    url: String,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    audio: bool,
+}
+
+#[derive(Debug, Clone)]
+struct OverlayTickerWindow {
+    id: String,
+    label: String,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    font_size: u32,
+    refresh_seconds: u64,
+    text: String,
+    command: String,
+}
+
+#[derive(Debug, Clone)]
+struct OverlayRuntimePlan {
+    fingerprint: String,
+    videos: Vec<OverlayVideoWindow>,
+    tickers: Vec<OverlayTickerWindow>,
+}
+
+fn sync_overlay_runtime(config_path: &Path, cfg: &AppConfig, image_cycle: u64) -> Result<String> {
+    let plan = build_overlay_runtime_plan(cfg, image_cycle)?;
+    if plan.videos.is_empty() && plan.tickers.is_empty() {
+        stop_overlay_runtime(config_path)?;
+        return Ok("disabled".to_string());
+    }
+    let has_video_windows = !plan.videos.is_empty();
+    let has_video_player = overlay_video_player().is_some();
+
+    for ticker in &plan.tickers {
+        write_overlay_ticker_state(config_path, ticker)?;
+    }
+
+    if overlay_helpers_disabled() {
+        stop_overlay_runtime(config_path)?;
+        return Ok("suppressed-by-env".to_string());
+    }
+
+    let state_path = overlay_runtime_state_path(config_path)?;
+    if let Some((fingerprint, pids)) = load_overlay_runtime_state(&state_path)?
+        && fingerprint == plan.fingerprint
+        && !pids.is_empty()
+        && pids.iter().all(|pid| process_alive(*pid))
+    {
+        return Ok(format!("active ({})", pids.len()));
+    }
+
+    stop_overlay_runtime(config_path)?;
+
+    let mut pids = Vec::<u32>::new();
+    for ticker in &plan.tickers {
+        if let Some(pid) =
+            spawn_overlay_ticker_process(&overlay_ticker_state_path(config_path, &ticker.id)?)
+        {
+            pids.push(pid);
+        }
+    }
+    for video in &plan.videos {
+        if let Some(pid) = spawn_overlay_video_process(video) {
+            pids.push(pid);
+        }
+    }
+
+    store_overlay_runtime_state(&state_path, &plan.fingerprint, &pids)?;
+    Ok(if pids.is_empty() {
+        if has_video_windows && !has_video_player {
+            "no video helper available (install mpv)".to_string()
+        } else {
+            "requested (no helpers available)".to_string()
+        }
+    } else if has_video_windows && !has_video_player {
+        format!(
+            "started ({}) + tickers only (install mpv for live video)",
+            pids.len()
+        )
+    } else if news_overlay_enabled(cfg) && !news_overlay_video_enabled(cfg) {
+        format!("started ({}) + news ticker-only source", pids.len())
+    } else {
+        format!("started ({})", pids.len())
+    })
+}
+
+fn build_overlay_runtime_plan(cfg: &AppConfig, image_cycle: u64) -> Result<OverlayRuntimePlan> {
+    let mut videos = Vec::<OverlayVideoWindow>::new();
+    let mut tickers = Vec::<OverlayTickerWindow>::new();
+
+    if news_overlay_enabled(cfg) {
+        let (label, stream_url, feed_url) = news_source_profile(cfg);
+        let has_live_video =
+            news_source_supports_live_video_source(&cfg.news_source, &cfg.news_custom_url);
+        if has_live_video {
+            videos.push(OverlayVideoWindow {
+                label: label.to_string(),
+                url: stream_url.clone(),
+                x: cfg.news_pos_x,
+                y: cfg.news_pos_y,
+                width: cfg.news_widget_width,
+                height: cfg.news_widget_height,
+                audio: cfg.news_audio_enabled,
+            });
+        }
+        tickers.push(OverlayTickerWindow {
+            id: "news".to_string(),
+            label: "news".to_string(),
+            x: cfg.news_pos_x,
+            y: if has_live_video {
+                cfg.news_pos_y
+                    .saturating_add(cfg.news_widget_height as i32)
+                    .saturating_add(8)
+            } else {
+                cfg.news_pos_y
+            },
+            width: cfg.news_widget_width,
+            height: 56,
+            font_size: 30,
+            refresh_seconds: cfg.news_refresh_seconds.max(10),
+            text: resolve_news_overlay_text(cfg, image_cycle, label, &stream_url, feed_url)
+                .unwrap_or_else(|_| compact_news_line(label)),
+            command: String::new(),
+        });
+    }
+
+    if cams_overlay_enabled(cfg) {
+        let source_cycle = now_epoch_seconds() / cfg.cams_refresh_seconds.max(10);
+        let mut sources = cams_source_entries(cfg, source_cycle);
+        let count = cfg.cams_count.clamp(1, 9) as usize;
+        if sources.len() > count {
+            sources.truncate(count);
+        }
+        let cols = cfg.cams_columns.clamp(1, 4).min(count.max(1) as u32);
+        let rows = ((sources.len().max(1) as u32).div_ceil(cols)).max(1);
+        let gap = 8_i32;
+        let total_gap_w = gap * cols.saturating_sub(1) as i32;
+        let total_gap_h = gap * rows.saturating_sub(1) as i32;
+        let cell_w = ((cfg.cams_widget_width as i32 - total_gap_w) / cols as i32).max(160) as u32;
+        let cell_h = ((cfg.cams_widget_height as i32 - total_gap_h) / rows as i32).max(96) as u32;
+        for (idx, source) in sources.iter().enumerate() {
+            let col = idx as i32 % cols as i32;
+            let row = idx as i32 / cols as i32;
+            videos.push(OverlayVideoWindow {
+                label: cam_source_display_label(source),
+                url: source.url.clone(),
+                x: cfg.cams_pos_x + col * (cell_w as i32 + gap),
+                y: cfg.cams_pos_y + row * (cell_h as i32 + gap),
+                width: cell_w,
+                height: cell_h,
+                audio: false,
+            });
+        }
+        let labels = sources
+            .iter()
+            .map(cam_source_display_label)
+            .collect::<Vec<_>>()
+            .join("  ◆  ");
+        tickers.push(OverlayTickerWindow {
+            id: "cams".to_string(),
+            label: "cams".to_string(),
+            x: cfg.cams_pos_x,
+            y: cfg
+                .cams_pos_y
+                .saturating_add(cfg.cams_widget_height as i32)
+                .saturating_add(8),
+            width: cfg.cams_widget_width,
+            height: 56,
+            font_size: 28,
+            refresh_seconds: cfg.cams_refresh_seconds.max(10),
+            text: compact_news_line(&format!("CAMS ◆ {labels}")),
+            command: String::new(),
+        });
+    }
+
+    if cfg.overlay_script_ticker_enabled {
+        tickers.push(OverlayTickerWindow {
+            id: "script".to_string(),
+            label: "script".to_string(),
+            x: cfg.overlay_script_ticker_pos_x,
+            y: cfg.overlay_script_ticker_pos_y,
+            width: cfg.overlay_script_ticker_width,
+            height: cfg.overlay_script_ticker_height,
+            font_size: cfg.overlay_script_ticker_font_size,
+            refresh_seconds: cfg.overlay_script_ticker_refresh_seconds.max(1),
+            text: String::new(),
+            command: cfg.overlay_script_ticker_command.clone(),
+        });
+    }
+
+    let fingerprint = stable_hash(&format!(
+        "news_overlay={}#{}#{}#{}#{}#{}|cams_overlay={}#{}#{}#{}#{}#{}#{}|script={}#{}#{}#{}#{}#{}",
+        news_overlay_enabled(cfg),
+        cfg.news_render_mode,
+        cfg.news_source,
+        cfg.news_custom_url,
+        cfg.news_pos_x,
+        cfg.news_pos_y,
+        cams_overlay_enabled(cfg),
+        cfg.cams_render_mode,
+        cfg.cams_source,
+        cfg.cams_custom_urls,
+        cfg.cams_pos_x,
+        cfg.cams_pos_y,
+        cfg.cams_count,
+        cfg.overlay_script_ticker_enabled,
+        cfg.overlay_script_ticker_command,
+        cfg.overlay_script_ticker_pos_x,
+        cfg.overlay_script_ticker_pos_y,
+        cfg.overlay_script_ticker_width,
+        cfg.overlay_script_ticker_height,
+    ));
+
+    Ok(OverlayRuntimePlan {
+        fingerprint,
+        videos,
+        tickers,
+    })
+}
+
+fn resolve_news_overlay_text(
+    cfg: &AppConfig,
+    cycle: u64,
+    label: &str,
+    stream_url: &str,
+    feed_url: Option<&str>,
+) -> Result<String> {
+    let cache_id = format!(
+        "news-overlay-{}",
+        stable_hash(&format!(
+            "{}|{}|{}|{}",
+            cfg.news_source, cfg.news_custom_url, cfg.news_refresh_seconds, cfg.news_fps
+        ))
+    );
+    let payload = load_cached_news_payload(&cache_id, cfg.news_refresh_seconds)?
+        .or_else(|| {
+            fetch_news_payload(label, stream_url, feed_url, Some((cfg, cycle)))
+                .ok()
+                .inspect(|fetched| {
+                    let _ = store_cached_news_payload(&cache_id, fetched);
+                })
+        })
+        .or_else(|| {
+            load_cached_news_payload(&cache_id, NEWS_WIDGET_CACHE_MAX_AGE_SECS)
+                .ok()
+                .flatten()
+        })
+        .ok_or_else(|| anyhow::anyhow!("no overlay news text available"))?;
+    Ok(compact_news_line(&payload.raw_line))
+}
+
+fn overlay_runtime_dir(config_path: &Path) -> Result<PathBuf> {
+    let base = expand_tilde("~/.local/state/wallpaper-composer/overlay")?;
+    let dir = base.join(stable_hash(&config_path.display().to_string()));
+    fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+fn overlay_runtime_state_path(config_path: &Path) -> Result<PathBuf> {
+    Ok(overlay_runtime_dir(config_path)?.join("runtime.json"))
+}
+
+fn overlay_ticker_state_path(config_path: &Path, id: &str) -> Result<PathBuf> {
+    Ok(overlay_runtime_dir(config_path)?.join(format!("ticker-{id}.json")))
+}
+
+fn write_overlay_ticker_state(config_path: &Path, ticker: &OverlayTickerWindow) -> Result<()> {
+    let path = overlay_ticker_state_path(config_path, &ticker.id)?;
+    let payload = serde_json::json!({
+        "label": ticker.label,
+        "x": ticker.x,
+        "y": ticker.y,
+        "width": ticker.width,
+        "height": ticker.height,
+        "font_size": ticker.font_size,
+        "refresh_seconds": ticker.refresh_seconds,
+        "text": ticker.text,
+        "command": ticker.command,
+    });
+    fs::write(path, payload.to_string())?;
+    Ok(())
+}
+
+fn load_overlay_runtime_state(path: &Path) -> Result<Option<(String, Vec<u32>)>> {
+    let raw = match fs::read_to_string(path) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let value = serde_json::from_str::<Value>(&raw)?;
+    let fingerprint = value
+        .get("fingerprint")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let pids = value
+        .get("pids")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_u64)
+                .map(|pid| pid as u32)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if fingerprint.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some((fingerprint, pids)))
+    }
+}
+
+fn store_overlay_runtime_state(path: &Path, fingerprint: &str, pids: &[u32]) -> Result<()> {
+    let payload = serde_json::json!({
+        "fingerprint": fingerprint,
+        "pids": pids,
+        "updated_unix": now_epoch_seconds(),
+    });
+    fs::write(path, payload.to_string())?;
+    Ok(())
+}
+
+fn stop_overlay_runtime(config_path: &Path) -> Result<()> {
+    let state_path = overlay_runtime_state_path(config_path)?;
+    if let Some((_, pids)) = load_overlay_runtime_state(&state_path)? {
+        for pid in pids {
+            let _ = Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+    }
+    let _ = fs::remove_file(&state_path);
+    Ok(())
+}
+
+fn process_alive(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn overlay_helpers_disabled() -> bool {
+    std::env::var(OVERLAY_HELPERS_DISABLED_ENV)
+        .map(|raw| {
+            let trimmed = raw.trim();
+            trimmed == "1"
+                || trimmed.eq_ignore_ascii_case("true")
+                || trimmed.eq_ignore_ascii_case("yes")
+        })
+        .unwrap_or(false)
+}
+
+fn find_overlay_gui_binary() -> Option<PathBuf> {
+    if let Ok(current) = std::env::current_exe() {
+        for candidate in [
+            current.with_file_name("le-compositeur"),
+            current.with_file_name("wc-gui"),
+        ] {
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    for cmd in ["le-compositeur", "wc-gui"] {
+        if command_exists(cmd) {
+            return Some(PathBuf::from(cmd));
+        }
+    }
+    None
+}
+
+fn overlay_video_player() -> Option<&'static str> {
+    if command_exists("mpv") {
+        Some("mpv")
+    } else if command_exists("ffplay") {
+        Some("ffplay")
+    } else {
+        None
+    }
+}
+
+fn spawn_overlay_ticker_process(state_path: &Path) -> Option<u32> {
+    let bin = find_overlay_gui_binary()?;
+    let child = Command::new(bin)
+        .arg("--overlay-state")
+        .arg(state_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    Some(child.id())
+}
+
+fn spawn_overlay_video_process(window: &OverlayVideoWindow) -> Option<u32> {
+    let player = overlay_video_player()?;
+
+    let resolved = if is_youtube_url(&window.url) {
+        resolve_youtube_playback_url(&window.url).unwrap_or_else(|| window.url.clone())
+    } else {
+        window.url.clone()
+    };
+
+    let title = format!("Le Compositeur Overlay - {}", window.label);
+    let child = if player == "mpv" {
+        let mut cmd = Command::new("mpv");
+        cmd.args([
+            "--no-terminal",
+            "--really-quiet",
+            "--force-window=yes",
+            "--no-border",
+            "--ontop",
+            "--profile=low-latency",
+            "--cache=no",
+            "--geometry",
+            &format!(
+                "{}x{}+{}+{}",
+                window.width, window.height, window.x, window.y
+            ),
+            "--title",
+            &title,
+        ]);
+        if !window.audio {
+            cmd.arg("--mute=yes");
+        }
+        if is_static_image_url(&resolved) {
+            cmd.arg("--image-display-duration=inf");
+        }
+        cmd.arg(&resolved)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?
+    } else {
+        let mut cmd = Command::new("ffplay");
+        cmd.env("SDL_VIDEO_WINDOW_POS", format!("{},{}", window.x, window.y));
+        cmd.args([
+            "-loglevel",
+            "error",
+            "-alwaysontop",
+            "1",
+            "-noborder",
+            "-window_title",
+            &title,
+            "-x",
+            &window.width.to_string(),
+            "-y",
+            &window.height.to_string(),
+        ]);
+        if !window.audio {
+            cmd.arg("-an");
+        }
+        cmd.arg(&resolved)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?
+    };
+    Some(child.id())
+}
+
+fn is_static_image_url(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".png")
+        || lower.ends_with(".webp")
+        || lower.ends_with(".bmp")
 }
 
 fn extract_first_rss_item_title(raw: &str) -> Option<String> {
@@ -2734,11 +3251,23 @@ fn is_youtube_url(url: &str) -> bool {
 }
 
 fn news_widget_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_news_layer
+    cfg.show_news_layer && !news_overlay_enabled(cfg)
 }
 
 fn news_ticker2_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_news_layer && cfg.show_news_ticker2
+    news_widget_enabled(cfg) && cfg.show_news_ticker2
+}
+
+fn news_overlay_enabled(cfg: &AppConfig) -> bool {
+    cfg.show_news_layer && cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay")
+}
+
+fn cams_widget_enabled(cfg: &AppConfig) -> bool {
+    cfg.show_cams_layer && !cams_overlay_enabled(cfg)
+}
+
+fn cams_overlay_enabled(cfg: &AppConfig) -> bool {
+    cfg.show_cams_layer && cfg.cams_render_mode.trim().eq_ignore_ascii_case("overlay")
 }
 
 fn command_exists(cmd: &str) -> bool {
@@ -3433,7 +3962,7 @@ fn loop_tick_duration(cfg: &AppConfig) -> Duration {
         let ticker_step = ticker_shift_millis_for_len(64) as f64 / 1000.0;
         seconds = seconds.min(ticker_step.max(0.033));
     }
-    if cfg.show_cams_layer {
+    if cams_widget_enabled(cfg) {
         let cams_step = 1.0 / effective_video_fps(cfg.cams_fps) as f64;
         seconds = seconds.min(cams_step.max(0.033));
     }
@@ -3714,12 +4243,14 @@ fn draw_weather_pointer(img: &mut RgbaImage, cx: i32, cy: i32, wind_deg: f64, wi
     let rad = wind_deg.to_radians();
     let dx = rad.sin();
     let dy = -rad.cos();
-    let ex = cx as f64 + dx * radius;
-    let ey = cy as f64 + dy * radius;
-    let lx = ex - (dx * 14.0) - (dy * 10.0);
-    let ly = ey - (dy * 14.0) + (dx * 10.0);
-    let rx = ex - (dx * 14.0) + (dy * 10.0);
-    let ry = ey - (dy * 14.0) - (dx * 10.0);
+    let sx = cx as f64 + dx * radius;
+    let sy = cy as f64 + dy * radius;
+    let ex = cx as f64;
+    let ey = cy as f64;
+    let lx = ex + (dx * 14.0) - (dy * 10.0);
+    let ly = ey + (dy * 14.0) + (dx * 10.0);
+    let rx = ex + (dx * 14.0) + (dy * 10.0);
+    let ry = ey + (dy * 14.0) - (dx * 10.0);
     let stroke = if wind_speed >= 35.0 {
         5
     } else if wind_speed >= 18.0 {
@@ -3730,8 +4261,8 @@ fn draw_weather_pointer(img: &mut RgbaImage, cx: i32, cy: i32, wind_deg: f64, wi
     let red = Rgba([255, 76, 76, 235]);
     draw_line(
         img,
-        cx,
-        cy,
+        sx.round() as i32,
+        sy.round() as i32,
         ex.round() as i32,
         ey.round() as i32,
         red,
@@ -3920,7 +4451,8 @@ fn fetch_stream_title_hint(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_builtin_widget_registry, cycle_pick_state_path, determine_cycle, loop_tick_duration,
+        OVERLAY_HELPERS_DISABLED_ENV, build_builtin_widget_registry, build_overlay_runtime_plan,
+        cycle_pick_state_path, determine_cycle, loop_tick_duration, overlay_helpers_disabled,
         read_cycle_pick_state, read_recent_indices, ticker_shift_millis_for_len,
         widget_instance_from_config, write_cycle_pick_state, write_recent_indices,
     };
@@ -4050,5 +4582,75 @@ mod tests {
         let cams = widget_instance_from_config(&cfg, "cams").expect("cams instance");
         assert_eq!(cams.refresh_seconds, 75);
         assert!((cams.fps_cap - 1.25).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn overlay_runtime_plan_moves_live_media_out_of_wallpaper_path() {
+        let cfg_path = std::env::temp_dir().join("wc-cli-overlay-plan.toml");
+        fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
+        let mut cfg = load_config(&cfg_path).expect("default config should parse");
+        cfg.show_news_layer = true;
+        cfg.news_render_mode = "overlay".to_string();
+        cfg.show_cams_layer = true;
+        cfg.cams_source = "custom".to_string();
+        cfg.cams_render_mode = "overlay".to_string();
+        cfg.cams_count = 2;
+        cfg.cams_columns = 2;
+        cfg.cams_custom_urls =
+            "Berlin => https://example.com/berlin.m3u8\nParis => https://example.com/paris.m3u8"
+                .to_string();
+        cfg.overlay_script_ticker_enabled = true;
+        cfg.overlay_script_ticker_command = "printf 'dynamic headline\\n'".to_string();
+
+        let news = widget_instance_from_config(&cfg, "news").expect("news instance");
+        assert!(!news.enabled);
+        let cams = widget_instance_from_config(&cfg, "cams").expect("cams instance");
+        assert!(!cams.enabled);
+
+        let plan = build_overlay_runtime_plan(&cfg, 0).expect("overlay plan");
+        assert_eq!(plan.videos.len(), 3);
+        assert_eq!(plan.tickers.len(), 3);
+        assert!(plan.tickers.iter().any(|ticker| ticker.id == "news"));
+        assert!(plan.tickers.iter().any(|ticker| ticker.id == "cams"));
+        assert!(
+            plan.tickers
+                .iter()
+                .any(|ticker| ticker.id == "script" && !ticker.command.is_empty())
+        );
+
+        let _ = fs::remove_file(cfg_path);
+    }
+
+    #[test]
+    fn overlay_runtime_plan_keeps_feed_only_news_as_ticker_only() {
+        let cfg_path = std::env::temp_dir().join("wc-cli-overlay-feed-only.toml");
+        fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
+        let mut cfg = load_config(&cfg_path).expect("default config should parse");
+        cfg.show_news_layer = true;
+        cfg.news_render_mode = "overlay".to_string();
+        cfg.news_source = "google_world_en".to_string();
+
+        let news = widget_instance_from_config(&cfg, "news").expect("news instance");
+        assert!(!news.enabled);
+
+        let plan = build_overlay_runtime_plan(&cfg, 0).expect("overlay plan");
+        assert!(plan.videos.is_empty());
+        assert!(plan.tickers.iter().any(|ticker| ticker.id == "news"));
+
+        let _ = fs::remove_file(cfg_path);
+    }
+
+    #[test]
+    fn overlay_helpers_disabled_env_is_parsed_leniently() {
+        unsafe { std::env::remove_var(OVERLAY_HELPERS_DISABLED_ENV) };
+        assert!(!overlay_helpers_disabled());
+
+        unsafe { std::env::set_var(OVERLAY_HELPERS_DISABLED_ENV, "true") };
+        assert!(overlay_helpers_disabled());
+
+        unsafe { std::env::set_var(OVERLAY_HELPERS_DISABLED_ENV, "1") };
+        assert!(overlay_helpers_disabled());
+
+        unsafe { std::env::remove_var(OVERLAY_HELPERS_DISABLED_ENV) };
     }
 }

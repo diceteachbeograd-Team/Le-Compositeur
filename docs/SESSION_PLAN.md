@@ -10,11 +10,22 @@ Use it together with `docs/TODO.md`.
 ## Current Workstream
 
 Active focus:
-1. Reproduce packaged Fedora VM freeze after GUI actions (`Render Preview`, `Validate`, `Run Once`) and remove the blocking path.
-2. Reproduce packaged self-update hang after password/auth prompt and make completion/failure deterministic.
-3. Ensure disabled widgets in `Ordering` stop all related background fetching/render activity.
-4. Validate quote recovery and bundled quote seed presence for package and archive installs.
-5. Remove the temporary `README.md` warning only after explicit functionality approval for `Weather` / `News` / `Cams`.
+1. Move `News` / `Cams` out of wallpaper rendering and into a separate overlay runtime controlled by the existing GUI.
+2. Add script-fed overlay ticker layers on top of that overlay runtime.
+3. Restore visible multi-source CAM grid output for custom camera lists and keep per-source labels readable.
+4. Tighten Weather widget layout and correct minimap zoom / wind-direction rendering.
+5. Keep the temporary `README.md` warning until explicit functionality approval for `Weather` / `News` / `Cams`.
+6. Keep growing the shipped source catalogs so world-news selection is broad without pretending feed-only sources are live video.
+
+Current branch state:
+- Overlay render-target config is wired through `wc-core`, `wc-gui`, and `wc-cli`.
+- `System` tab now exposes a script-fed overlay ticker; runtime uses the first non-empty stdout line from the configured command.
+- Schema/blueprint metadata were updated so the new overlay fields round-trip cleanly and are visible to contract consumers.
+- Local smoke tests can suppress real overlay windows with `WC_DISABLE_OVERLAY_HELPERS=1`; this was added after a host-side ticker smoke opened a visible overlay outside the VM.
+- Packaging/runtime notes now explicitly treat `mpv` as the live-overlay player dependency, with `yt-dlp` as a useful YouTube helper.
+- Built-in news sources now live in a shared `wc-core` catalog with world-region/country coverage and GUI-side filtering.
+- New default configs start with the `PlaceCats 1920x1080` image preset instead of the older random preset/local default.
+- Remaining gap is visual/runtime validation on the Fedora VM and then release prep for the next hotfix tag after `2026.03.11-9`.
 
 ## Ground Truth Commands
 
@@ -51,16 +62,18 @@ cargo run -p wc-cli -- run --once
 ## Expected Behavior Targets (current phase)
 
 Validation target:
-- Verify packaged GUI action buttons (`Validate`, `Render Preview`, `Run Once`, `Start Loop`) run via installed CLI, without Cargo workspace assumptions or UI deadlock.
+- Verify packaged GUI action buttons (`Validate`, `Render Preview`, `Run Once`, `Start Loop`) remain responsive on Fedora package installs while the loop is already active.
 - Verify quote recovery and updater behavior on Fedora (`rpm`) and Ubuntu (`deb`) package installs.
 - Capture any privilege/escalation edge-cases from `pkexec` / package-manager update path and ensure completion state is visible in GUI.
-- Local code fix is in place for async GUI actions and release-asset-based self-update; Fedora VM source + locally built RPM validation are done for CLI/runtime, remaining gap is direct packaged GUI click-through for `Update Now` / `Render Preview` against official release `2026.03.11-8`.
+- Current open gap is the packaged GUI updater click-through against a newer-than-installed published release.
 
 Widget target:
 - Keep the two independently configurable ticker instances stable in GUI + CLI + renderer path.
 - Ordering now has persistent layer Z + grid snap + overlap-safe dragging.
 - Per-widget caps are wired (`news/news_ticker2/cams` refresh + FPS); keep validating defaults on low-end devices.
 - Disabled widgets must become true runtime-off states, not just hidden overlays.
+- Resolve the current mismatch between "video/camera" expectations and static-wallpaper backends by moving live media to an overlay subsystem.
+- Keep the new script-fed overlay ticker usable without manual JSON edits; GUI command field is the operator surface.
 
 Layout target:
 - Preserve deterministic widget layer order and avoid unreadable overlaps.

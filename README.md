@@ -4,7 +4,7 @@ Dynamic desktop compositor (Rust) by diceteachbeograd-Team.
 
 Status: active hobby project (use at your own risk).
 
-Temporary note for release line `2026.03.11-8`:
+Temporary note for release line `2026.03.11-9`:
 - `Weather`, `News`, and `Cams` are still under active rework and are not yet considered fully reliable or visually finalized.
 - This note should be removed again after explicit functionality approval.
 
@@ -23,8 +23,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.11-8
-sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-8*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.11-9
+sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-9*.rpm
 le-compositeur
 ```
 
@@ -32,8 +32,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-8
-sudo apt install ./dist/le-compositeur_2026.03.11-8_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.11-9
+sudo apt install ./dist/le-compositeur_2026.03.11-9_amd64.deb
 le-compositeur
 ```
 
@@ -47,15 +47,23 @@ cargo run -p wc-gui
 - `Images`: background sources and wallpaper backend
 - `Quotes`: quote source and quote text settings
 - `Weather`: weather widget settings
-- `News`: news/video widget settings
-- `Cams`: camera/webcam source and grid settings
-- `System`: runtime, startup and integrations
+- `News`: news/video widget settings, including `wallpaper` vs `desktop overlay` render target
+- `Cams`: camera/webcam source and grid settings, including `wallpaper` vs `desktop overlay` render target
+- `System`: runtime, startup, integrations, and script-fed overlay ticker settings
 
 ## Notes
 - Weather + News widgets are disabled by default after first install.
+- Default background preset for new configs is now `PlaceCats 1920x1080` (`https://placecats.com/1920/1080`).
 - Some widgets require internet access (`Weather`, `News`, remote image/quote sources).
 - News widget size uses fixed 16:9 presets (dropdown).
 - News supports a secondary independent ticker (`show_news_ticker2`) with separate source/FPS/position/width.
+- News and Cams can now be moved out of the static wallpaper render path into a separate desktop overlay runtime.
+- News now ships with a larger built-in world catalog: curated live channels plus region/country feed sources across Europe, the Americas, Africa, Asia, and Oceania.
+- News tab now includes a catalog filter so region/country/source can be searched directly in the GUI.
+- Feed-only sources are now treated honestly: in overlay mode they render as headline/ticker sources, not fake live video.
+- System tab includes an independent overlay ticker that can be filled by any shell command; the first non-empty stdout line is rendered as the scrolling text.
+- Example script ticker command: `printf 'Build %s | %s\n' "$(date +%H:%M)" "$(cat /tmp/le-compositeur-ticker.txt 2>/dev/null)"`.
+- Overlay live video currently expects `mpv` on the target system; YouTube-like sources are more reliable when `yt-dlp` is installed as well.
 - Ordering tab now shows a grid and snaps dragged widget positions to that grid; layer Z is configurable per widget and drag collisions auto-resolve.
 - Performance caps are configurable per widget (`news_refresh_seconds`, `news_ticker2_refresh_seconds`, `cams_refresh_seconds`, `cams_fps`).
 - Linux distro smoke matrix and overlay snapshot/hash regression workflow are documented in `docs/TEST_MATRIX.md`.

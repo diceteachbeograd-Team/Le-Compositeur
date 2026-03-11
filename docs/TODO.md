@@ -9,21 +9,45 @@ Last updated: 2026-03-11
 - If session context is lost, resume from `docs/SESSION_PLAN.md`.
 
 ## Current Snapshot
-- Repo branch: `codex/fedora-vm-fixes` (pending merge to `main` for `2026.03.11-8`)
-- Latest published tag: `2026.03.11-7`
-- Next hotfix target tag: `2026.03.11-8`
+- Repo branch: `main`
+- Latest published tag: `2026.03.11-9`
+- Next hotfix target tag: `2026.03.11-10`
 - Local tests: passing (`cargo test --all`)
 - GUI tabs implemented: `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline
 
 ## Now (Active Sprint)
 
+- [ ] `P0` Split `News` / `Cams` out of wallpaper rendering into a separate overlay runtime.
+  Status: config model, GUI render-target controls, CLI overlay runtime plan, helper-process spawning, and package/runtime player hints are wired on branch `codex/video-layout-hotfix`; remaining work is visual/runtime validation of smooth playback, real stream health, and release packaging on the Fedora VM.
+  Done when: `News` / `Cams` can run in overlay mode without being baked into the wallpaper image, and the GUI controls which mode is active.
+
+- [ ] `P0` Add overlay ticker layers that can be filled dynamically by scripts.
+  Status: an independent overlay ticker is now configurable in `System`, writes JSON overlay state, and can render the first non-empty stdout line of a shell command; remaining work is runtime UX tuning and packaged-VM verification.
+  Done when: at least one overlay ticker surface can read dynamic content from a configured command or script output and is controllable from the GUI.
+
+- [ ] `P0` Restore meaningful CAM widget output for multi-source custom lists.
+  Status: user validation on `2026.03.11-8` shows CAM labels/ticker updating but the expected multi-camera grid is not consistently visible; likely failure points are preview capture success rate and/or montage/grid composition fallback.
+  Done when: multiple configured cameras produce a visible grid distribution with source labels, and missing feeds degrade per-tile instead of collapsing to one large still.
+
+- [ ] `P1` Improve Weather widget metric layout and replace text-only pseudo-icons.
+  Status: minimap zoom and incoming wind-arrow logic are wired in code for the current branch, but the right-hand metrics still need compact icon-based layout and Fedora VM user validation of the map framing.
+  Done when: the map shows roughly city-scale coverage (~50 km radius), the wind arrow indicates source direction correctly, and the metrics fit beside the minimap with readable iconography rather than plain text rows.
+
+- [ ] `P1` Improve ticker readability and motion smoothness.
+  Status: the ticker currently advances as character-level text rotation, which makes movement readable enough for static snapshots but still visually jumpy in desktop use.
+  Done when: ticker movement is visibly smoother and label/headline hierarchy remains readable at normal desktop viewing distance.
+
+- [ ] `P1` Expand shipped source catalogs for world news and public cams.
+  Status: the built-in news catalog now includes searchable world-region/country sources plus live-vs-feed separation, but the CAM side still needs a larger verified public catalog beyond the current starter presets.
+  Done when: operators can pick from a broad shipped world-news catalog and a broader maintained public-cam catalog without relying only on manual YouTube URL entry.
+
 - [ ] `P0` Reproduce and fix packaged GUI freeze after `Render Preview` / action buttons on Fedora VM installs.
-  Status: synchronous GUI action calls were moved to background workers with periodic repaint polling; Fedora VM source and packaged CLI validation now finish instead of blocking on stream capture, but direct GUI click-through validation on the packaged app is still pending.
+  Status: synchronous GUI action calls were moved to background workers with periodic repaint polling; user validation on the packaged Fedora app reports that applying settings while the loop is already running no longer crashes or deadlocks the GUI.
   Done when: packaged GUI remains clickable during and after `Validate` / `Render Preview` / `Run Once`, and no hard VM reset is required to recover.
 
 - [ ] `P0` Rework GUI self-update flow for packaged Fedora installs.
-  Status: updater now targets GitHub release package assets for local package installation instead of relying on `dnf upgrade le-compositeur`; package install path was validated manually on Fedora VM with a locally built `2026.03.11-8` RPM, but the actual GUI `Update Now` click path still needs one end-to-end check against the published `2026.03.11-8` release.
+  Status: official release `2026.03.11-8` was published and manually installed on the Fedora VM; the remaining end-to-end validation gap is the actual packaged GUI `Check Updates` -> `Update Now` path against a newer published release.
   Done when: `Check Updates` + `Update Now` either complete the package upgrade end-to-end or surface a deterministic success/failure state instead of hanging after password/auth prompts.
 
 - [ ] `P0` Disable widget runtime work when widget is disabled in `Ordering`.
@@ -105,6 +129,7 @@ Last updated: 2026-03-11
 
 ## Done Recently
 
+- [x] Published official release `2026.03.11-8`, verified GitHub artifacts, and replaced the Fedora VM local test RPM with the official published package.
 - [x] Moved GUI one-shot CLI actions (`Validate`, `Render Preview`, `Run Once`, `Migrate`, `Apply Now`) off the UI thread and added repaint polling so long renders no longer freeze the settings window.
 - [x] Reworked Linux self-update logic to download the matching GitHub release package asset (`.rpm` / `.deb`) before invoking privileged local installation.
 - [x] Bound secondary news ticker runtime enablement to the main `News` ordering toggle so disabled news no longer keeps ticker timing/fetch activity alive.
@@ -140,6 +165,11 @@ Last updated: 2026-03-11
 - [x] Added cycle-sticky image/quote picks to keep BG/QTE stable inside one rotation window.
 - [x] Switched ticker motion to reading-speed/text-length auto-shift and removed dependence on manual ticker FPS.
 - [x] Enforced smooth video/camera preview floor (`>=15 FPS`) in runtime capture path.
+- [x] Added host-safe overlay smoke mode via `WC_DISABLE_OVERLAY_HELPERS=1` so local tests can generate overlay state without opening visible host windows.
+- [x] Added package/runtime guidance for live overlay video helpers (`mpv`, optional `yt-dlp`) and clearer CLI status when overlay video cannot start due to missing player support.
+- [x] Moved built-in news source definitions into a shared catalog in `wc-core` and expanded them to shipped world-region/country sources with clear feed-vs-live-video semantics.
+- [x] Added GUI news-source filtering plus overlay warning text so feed-only sources no longer masquerade as live video.
+- [x] Switched the default background preset for new configs to `PlaceCats 1920x1080` and set the secondary ticker default to a world-news feed source.
 
 ## Restart Checklist (Operator)
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026.03.11-9 - 2026-03-11
+- Expanded shipped source selection for world news:
+  - moved built-in news sources into a shared `wc-core` catalog used by both GUI and CLI
+  - added a broader world-region/country source list spanning Europe, the Americas, Africa, Asia, and Oceania
+  - separated live-video-capable sources from feed-only headline sources so the app no longer pretends every news source is a real video stream
+- Improved news operator UX:
+  - added GUI-side catalog filters for both primary news and secondary ticker source selection
+  - added overlay warnings when the chosen source is feed/ticker only, so users get headlines/tickers instead of expecting a live video window
+- Updated defaults for new installs/configs:
+  - background source now defaults to the new shipped preset `PlaceCats 1920x1080`
+  - secondary ticker now defaults to a world-news feed source instead of a narrow tech-only feed
+- Synced release prep/docs for `2026.03.11-9` while keeping the temporary README warning that `Weather`, `News`, and `Cams` remain under active rework until explicit functionality approval.
+
 ## 2026.03.11-8 - 2026-03-11
 - Fixed packaged GUI responsiveness on Fedora/Linux installs:
   - moved one-shot GUI actions (`Validate`, `Render Preview`, `Run Once`, `Migrate`, `Apply Now`) off the UI thread

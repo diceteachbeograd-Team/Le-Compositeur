@@ -3,8 +3,14 @@ use chrono::Local;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod news_catalog;
 pub mod widget_registry;
 
+pub use news_catalog::{
+    NewsSourcePreset, builtin_news_source, builtin_news_source_is_live_video,
+    builtin_news_source_label, builtin_news_source_name, builtin_news_source_stream_url,
+    builtin_news_source_ticker_url, builtin_news_sources,
+};
 pub use widget_registry::{
     BUILTIN_WIDGET_TYPE_IDS, WidgetInstanceConfig, WidgetPlugin, WidgetRegistry,
     WidgetResolvedPayload, WidgetRuntimeContext, WidgetTypeId,
@@ -112,6 +118,7 @@ pub struct AppConfig {
     pub weather_location_override: String,
     pub news_source: String,
     pub news_custom_url: String,
+    pub news_render_mode: String,
     pub news_fps: f32,
     pub news_refresh_seconds: u64,
     pub news_audio_enabled: bool,
@@ -128,11 +135,20 @@ pub struct AppConfig {
     pub cams_widget_width: u32,
     pub cams_widget_height: u32,
     pub cams_source: String,
+    pub cams_render_mode: String,
     pub cams_custom_urls: String,
     pub cams_refresh_seconds: u64,
     pub cams_fps: f32,
     pub cams_count: u32,
     pub cams_columns: u32,
+    pub overlay_script_ticker_enabled: bool,
+    pub overlay_script_ticker_command: String,
+    pub overlay_script_ticker_refresh_seconds: u64,
+    pub overlay_script_ticker_pos_x: i32,
+    pub overlay_script_ticker_pos_y: i32,
+    pub overlay_script_ticker_width: u32,
+    pub overlay_script_ticker_height: u32,
+    pub overlay_script_ticker_font_size: u32,
     pub login_screen_integration: bool,
     pub boot_screen_integration: bool,
 }
@@ -142,9 +158,9 @@ pub fn default_config_toml() -> String {
 config_version = 1
 image_dir = "~/Pictures/Wallpapers"
 quotes_path = "~/Documents/wallpaper-composer/quotes.md"
-image_source = "local"
+image_source = "preset"
 image_source_url = ""
-image_source_preset = "picsum_random_hd"
+image_source_preset = "placecats_1920_1080"
 quote_source = "local"
 quote_source_url = ""
 quote_source_preset = "zenquotes_daily"
@@ -214,6 +230,7 @@ weather_use_system_location = true
 weather_location_override = ""
 news_source = "euronews"
 news_custom_url = ""
+news_render_mode = "wallpaper"
 news_fps = 1.0
 news_refresh_seconds = 90
 news_audio_enabled = false
@@ -221,7 +238,7 @@ show_news_ticker2 = false
 news_ticker2_pos_x = 120
 news_ticker2_pos_y = 980
 news_ticker2_width = 1280
-news_ticker2_source = "techcrunch"
+news_ticker2_source = "google_world_en"
 news_ticker2_custom_url = ""
 news_ticker2_fps = 1.2
 news_ticker2_refresh_seconds = 120
@@ -230,11 +247,20 @@ cams_pos_y = 640
 cams_widget_width = 760
 cams_widget_height = 428
 cams_source = "auto_local"
+cams_render_mode = "wallpaper"
 cams_custom_urls = ""
 cams_refresh_seconds = 75
 cams_fps = 1.0
 cams_count = 2
 cams_columns = 2
+overlay_script_ticker_enabled = false
+overlay_script_ticker_command = ""
+overlay_script_ticker_refresh_seconds = 30
+overlay_script_ticker_pos_x = 120
+overlay_script_ticker_pos_y = 920
+overlay_script_ticker_width = 1280
+overlay_script_ticker_height = 56
+overlay_script_ticker_font_size = 30
 login_screen_integration = false
 boot_screen_integration = false
 "##
@@ -243,7 +269,7 @@ boot_screen_integration = false
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Le Compositeur config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\nshow_background_layer = {}\nshow_quote_layer = {}\nshow_clock_layer = {}\nshow_weather_layer = {}\nshow_news_layer = {}\nshow_cams_layer = {}\nlayer_z_quote = {}\nlayer_z_clock = {}\nlayer_z_weather = {}\nlayer_z_news = {}\nlayer_z_cams = {}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_widget_width = {}\nweather_widget_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_widget_width = {}\nnews_widget_height = {}\nweather_refresh_seconds = {}\nweather_use_system_location = {}\nweather_location_override = {:?}\nnews_source = {:?}\nnews_custom_url = {:?}\nnews_fps = {}\nnews_refresh_seconds = {}\nnews_audio_enabled = {}\nshow_news_ticker2 = {}\nnews_ticker2_pos_x = {}\nnews_ticker2_pos_y = {}\nnews_ticker2_width = {}\nnews_ticker2_source = {:?}\nnews_ticker2_custom_url = {:?}\nnews_ticker2_fps = {}\nnews_ticker2_refresh_seconds = {}\ncams_pos_x = {}\ncams_pos_y = {}\ncams_widget_width = {}\ncams_widget_height = {}\ncams_source = {:?}\ncams_custom_urls = {:?}\ncams_refresh_seconds = {}\ncams_fps = {}\ncams_count = {}\ncams_columns = {}\nlogin_screen_integration = {}\nboot_screen_integration = {}\n",
+        "# Le Compositeur config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\nshow_background_layer = {}\nshow_quote_layer = {}\nshow_clock_layer = {}\nshow_weather_layer = {}\nshow_news_layer = {}\nshow_cams_layer = {}\nlayer_z_quote = {}\nlayer_z_clock = {}\nlayer_z_weather = {}\nlayer_z_news = {}\nlayer_z_cams = {}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_widget_width = {}\nweather_widget_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_widget_width = {}\nnews_widget_height = {}\nweather_refresh_seconds = {}\nweather_use_system_location = {}\nweather_location_override = {:?}\nnews_source = {:?}\nnews_custom_url = {:?}\nnews_render_mode = {:?}\nnews_fps = {}\nnews_refresh_seconds = {}\nnews_audio_enabled = {}\nshow_news_ticker2 = {}\nnews_ticker2_pos_x = {}\nnews_ticker2_pos_y = {}\nnews_ticker2_width = {}\nnews_ticker2_source = {:?}\nnews_ticker2_custom_url = {:?}\nnews_ticker2_fps = {}\nnews_ticker2_refresh_seconds = {}\ncams_pos_x = {}\ncams_pos_y = {}\ncams_widget_width = {}\ncams_widget_height = {}\ncams_source = {:?}\ncams_render_mode = {:?}\ncams_custom_urls = {:?}\ncams_refresh_seconds = {}\ncams_fps = {}\ncams_count = {}\ncams_columns = {}\noverlay_script_ticker_enabled = {}\noverlay_script_ticker_command = {:?}\noverlay_script_ticker_refresh_seconds = {}\noverlay_script_ticker_pos_x = {}\noverlay_script_ticker_pos_y = {}\noverlay_script_ticker_width = {}\noverlay_script_ticker_height = {}\noverlay_script_ticker_font_size = {}\nlogin_screen_integration = {}\nboot_screen_integration = {}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -319,6 +345,7 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.weather_location_override,
         cfg.news_source,
         cfg.news_custom_url,
+        cfg.news_render_mode,
         cfg.news_fps,
         cfg.news_refresh_seconds,
         cfg.news_audio_enabled,
@@ -335,11 +362,20 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.cams_widget_width,
         cfg.cams_widget_height,
         cfg.cams_source,
+        cfg.cams_render_mode,
         cfg.cams_custom_urls,
         cfg.cams_refresh_seconds,
         cfg.cams_fps,
         cfg.cams_count,
         cfg.cams_columns,
+        cfg.overlay_script_ticker_enabled,
+        cfg.overlay_script_ticker_command,
+        cfg.overlay_script_ticker_refresh_seconds,
+        cfg.overlay_script_ticker_pos_x,
+        cfg.overlay_script_ticker_pos_y,
+        cfg.overlay_script_ticker_width,
+        cfg.overlay_script_ticker_height,
+        cfg.overlay_script_ticker_font_size,
         cfg.login_screen_integration,
         cfg.boot_screen_integration
     )
@@ -367,9 +403,9 @@ pub fn settings_schema_json() -> &'static str {
 
     {"key":"image_dir","group":"sources","label":"Image Directory","type":"string","required":true,"ui_widget":"directory-picker"},
     {"key":"quotes_path","group":"sources","label":"Quotes File","type":"string","required":true,"ui_widget":"file-picker"},
-    {"key":"image_source","group":"sources","label":"Image Source Mode","type":"enum","required":false,"default":"local","options":["local","preset","url"]},
+    {"key":"image_source","group":"sources","label":"Image Source Mode","type":"enum","required":false,"default":"preset","options":["local","preset","url"]},
     {"key":"image_source_url","group":"sources","label":"Image Source URL","type":"string","required":false,"default":"","visible_when":{"field":"image_source","equals":"url"},"enabled_when":{"field":"image_source","equals":"url"}},
-    {"key":"image_source_preset","group":"sources","label":"Image Source Preset","type":"string","required":false,"default":"picsum_random_hd","visible_when":{"field":"image_source","equals":"preset"},"enabled_when":{"field":"image_source","equals":"preset"}},
+    {"key":"image_source_preset","group":"sources","label":"Image Source Preset","type":"string","required":false,"default":"placecats_1920_1080","visible_when":{"field":"image_source","equals":"preset"},"enabled_when":{"field":"image_source","equals":"preset"}},
     {"key":"quote_source","group":"sources","label":"Quote Source Mode","type":"enum","required":false,"default":"local","options":["local","preset","url"]},
     {"key":"quote_source_url","group":"sources","label":"Quote Source URL","type":"string","required":false,"default":"","visible_when":{"field":"quote_source","equals":"url"},"enabled_when":{"field":"quote_source","equals":"url"}},
     {"key":"quote_source_preset","group":"sources","label":"Quote Source Preset","type":"string","required":false,"default":"zenquotes_daily","visible_when":{"field":"quote_source","equals":"preset"},"enabled_when":{"field":"quote_source","equals":"preset"}},
@@ -437,6 +473,7 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"weather_location_override","group":"wallpaper","label":"Weather Location Override","type":"string","required":false,"default":"","visible_when":{"field":"weather_use_system_location","equals":false},"enabled_when":{"field":"weather_use_system_location","equals":false}},
     {"key":"news_source","group":"wallpaper","label":"News Source","type":"string","required":false,"default":"euronews"},
     {"key":"news_custom_url","group":"wallpaper","label":"News Custom URL","type":"string","required":false,"default":"","visible_when":{"field":"news_source","equals":"custom"},"enabled_when":{"field":"news_source","equals":"custom"}},
+    {"key":"news_render_mode","group":"wallpaper","label":"News Render Mode","type":"enum","required":false,"default":"wallpaper","options":["wallpaper","overlay"]},
     {"key":"news_fps","group":"wallpaper","label":"News FPS","type":"f32","required":false,"default":1.0},
     {"key":"news_refresh_seconds","group":"wallpaper","label":"News Refresh Seconds","type":"u64","required":false,"default":90},
     {"key":"news_audio_enabled","group":"wallpaper","label":"News Audio Enabled","type":"bool","required":false,"default":false},
@@ -453,11 +490,20 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"cams_widget_width","group":"wallpaper","label":"Cams Widget Width","type":"u32","required":false,"default":760},
     {"key":"cams_widget_height","group":"wallpaper","label":"Cams Widget Height","type":"u32","required":false,"default":428},
     {"key":"cams_source","group":"wallpaper","label":"Cams Source","type":"enum","required":false,"default":"auto_local","options":["auto_local","city_public","custom"]},
+    {"key":"cams_render_mode","group":"wallpaper","label":"Cams Render Mode","type":"enum","required":false,"default":"wallpaper","options":["wallpaper","overlay"]},
     {"key":"cams_custom_urls","group":"wallpaper","label":"Cams Custom URLs","type":"string","required":false,"default":"","visible_when":{"field":"cams_source","equals":"custom"},"enabled_when":{"field":"cams_source","equals":"custom"}},
     {"key":"cams_refresh_seconds","group":"wallpaper","label":"Cams Refresh Seconds","type":"u64","required":false,"default":75},
     {"key":"cams_fps","group":"wallpaper","label":"Cams FPS","type":"f32","required":false,"default":1.0},
     {"key":"cams_count","group":"wallpaper","label":"Cams Count","type":"u32","required":false,"default":2,"min":1,"max":9},
     {"key":"cams_columns","group":"wallpaper","label":"Cams Columns","type":"u32","required":false,"default":2,"min":1,"max":4},
+    {"key":"overlay_script_ticker_enabled","group":"wallpaper","label":"Overlay Script Ticker Enabled","type":"bool","required":false,"default":false},
+    {"key":"overlay_script_ticker_command","group":"wallpaper","label":"Overlay Script Ticker Command","type":"string","required":false,"default":"","visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"key":"overlay_script_ticker_refresh_seconds","group":"wallpaper","label":"Overlay Script Ticker Refresh Seconds","type":"u64","required":false,"default":30,"visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"key":"overlay_script_ticker_pos_x","group":"wallpaper","label":"Overlay Script Ticker X","type":"i32","required":false,"default":120,"visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"key":"overlay_script_ticker_pos_y","group":"wallpaper","label":"Overlay Script Ticker Y","type":"i32","required":false,"default":920,"visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"key":"overlay_script_ticker_width","group":"wallpaper","label":"Overlay Script Ticker Width","type":"u32","required":false,"default":1280,"min":220,"max":1920,"visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"key":"overlay_script_ticker_height","group":"wallpaper","label":"Overlay Script Ticker Height","type":"u32","required":false,"default":56,"min":32,"max":240,"visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"key":"overlay_script_ticker_font_size","group":"wallpaper","label":"Overlay Script Ticker Font Size","type":"u32","required":false,"default":30,"min":10,"max":120,"visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
     {"key":"login_screen_integration","group":"wallpaper","label":"Login Screen Integration","type":"bool","required":false,"default":false},
     {"key":"boot_screen_integration","group":"wallpaper","label":"Boot Screen Integration","type":"bool","required":false,"default":false}
   ]
@@ -530,7 +576,7 @@ pub fn settings_ui_blueprint_json() -> &'static str {
       {
         "id": "wallpaper",
         "title": "Wallpaper",
-        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode", "show_background_layer", "show_quote_layer", "show_clock_layer", "show_weather_layer", "show_news_layer", "show_cams_layer", "layer_z_quote", "layer_z_clock", "layer_z_weather", "layer_z_news", "layer_z_cams", "weather_pos_x", "weather_pos_y", "weather_widget_width", "weather_widget_height", "weather_font_size", "weather_font_family", "weather_color", "weather_undercolor", "weather_stroke_color", "weather_stroke_width", "news_pos_x", "news_pos_y", "news_widget_width", "news_widget_height", "weather_refresh_seconds", "weather_use_system_location", "weather_location_override", "news_source", "news_custom_url", "news_fps", "news_refresh_seconds", "news_audio_enabled", "show_news_ticker2", "news_ticker2_pos_x", "news_ticker2_pos_y", "news_ticker2_width", "news_ticker2_source", "news_ticker2_custom_url", "news_ticker2_fps", "news_ticker2_refresh_seconds", "cams_pos_x", "cams_pos_y", "cams_widget_width", "cams_widget_height", "cams_source", "cams_custom_urls", "cams_refresh_seconds", "cams_fps", "cams_count", "cams_columns", "login_screen_integration", "boot_screen_integration"]
+        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode", "show_background_layer", "show_quote_layer", "show_clock_layer", "show_weather_layer", "show_news_layer", "show_cams_layer", "layer_z_quote", "layer_z_clock", "layer_z_weather", "layer_z_news", "layer_z_cams", "weather_pos_x", "weather_pos_y", "weather_widget_width", "weather_widget_height", "weather_font_size", "weather_font_family", "weather_color", "weather_undercolor", "weather_stroke_color", "weather_stroke_width", "news_pos_x", "news_pos_y", "news_widget_width", "news_widget_height", "weather_refresh_seconds", "weather_use_system_location", "weather_location_override", "news_source", "news_custom_url", "news_render_mode", "news_fps", "news_refresh_seconds", "news_audio_enabled", "show_news_ticker2", "news_ticker2_pos_x", "news_ticker2_pos_y", "news_ticker2_width", "news_ticker2_source", "news_ticker2_custom_url", "news_ticker2_fps", "news_ticker2_refresh_seconds", "cams_pos_x", "cams_pos_y", "cams_widget_width", "cams_widget_height", "cams_source", "cams_render_mode", "cams_custom_urls", "cams_refresh_seconds", "cams_fps", "cams_count", "cams_columns", "overlay_script_ticker_enabled", "overlay_script_ticker_command", "overlay_script_ticker_refresh_seconds", "overlay_script_ticker_pos_x", "overlay_script_ticker_pos_y", "overlay_script_ticker_width", "overlay_script_ticker_height", "overlay_script_ticker_font_size", "login_screen_integration", "boot_screen_integration"]
       }
     ]
   },
@@ -557,6 +603,13 @@ pub fn settings_ui_blueprint_json() -> &'static str {
     {"field":"news_custom_url","visible_when":{"field":"news_source","equals":"custom"},"enabled_when":{"field":"news_source","equals":"custom"}},
     {"field":"news_ticker2_custom_url","visible_when":{"field":"news_ticker2_source","equals":"custom"},"enabled_when":{"field":"news_ticker2_source","equals":"custom"}},
     {"field":"cams_custom_urls","visible_when":{"field":"cams_source","equals":"custom"},"enabled_when":{"field":"cams_source","equals":"custom"}},
+    {"field":"overlay_script_ticker_command","visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"field":"overlay_script_ticker_refresh_seconds","visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"field":"overlay_script_ticker_pos_x","visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"field":"overlay_script_ticker_pos_y","visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"field":"overlay_script_ticker_width","visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"field":"overlay_script_ticker_height","visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
+    {"field":"overlay_script_ticker_font_size","visible_when":{"field":"overlay_script_ticker_enabled","equals":true},"enabled_when":{"field":"overlay_script_ticker_enabled","equals":true}},
     {"field":"login_screen_integration"},
     {"field":"boot_screen_integration"}
   ]
@@ -652,6 +705,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut weather_location_override = None::<String>;
     let mut news_source = None::<String>;
     let mut news_custom_url = None::<String>;
+    let mut news_render_mode = None::<String>;
     let mut news_fps = None::<f32>;
     let mut news_refresh_seconds = None::<u64>;
     let mut news_audio_enabled = None::<bool>;
@@ -668,11 +722,20 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut cams_widget_width = None::<u32>;
     let mut cams_widget_height = None::<u32>;
     let mut cams_source = None::<String>;
+    let mut cams_render_mode = None::<String>;
     let mut cams_custom_urls = None::<String>;
     let mut cams_refresh_seconds = None::<u64>;
     let mut cams_fps = None::<f32>;
     let mut cams_count = None::<u32>;
     let mut cams_columns = None::<u32>;
+    let mut overlay_script_ticker_enabled = None::<bool>;
+    let mut overlay_script_ticker_command = None::<String>;
+    let mut overlay_script_ticker_refresh_seconds = None::<u64>;
+    let mut overlay_script_ticker_pos_x = None::<i32>;
+    let mut overlay_script_ticker_pos_y = None::<i32>;
+    let mut overlay_script_ticker_width = None::<u32>;
+    let mut overlay_script_ticker_height = None::<u32>;
+    let mut overlay_script_ticker_font_size = None::<u32>;
     let mut login_screen_integration = None::<bool>;
     let mut boot_screen_integration = None::<bool>;
 
@@ -763,6 +826,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "weather_location_override" => weather_location_override = parse_string(value),
             "news_source" => news_source = parse_string(value),
             "news_custom_url" => news_custom_url = parse_string(value),
+            "news_render_mode" => news_render_mode = parse_string(value),
             "news_fps" => news_fps = value.parse::<f32>().ok(),
             "news_refresh_seconds" => news_refresh_seconds = value.parse::<u64>().ok(),
             "news_audio_enabled" => news_audio_enabled = parse_bool(value),
@@ -781,11 +845,22 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "cams_widget_width" => cams_widget_width = parse_u32(value),
             "cams_widget_height" => cams_widget_height = parse_u32(value),
             "cams_source" => cams_source = parse_string(value),
+            "cams_render_mode" => cams_render_mode = parse_string(value),
             "cams_custom_urls" => cams_custom_urls = parse_string(value),
             "cams_refresh_seconds" => cams_refresh_seconds = value.parse::<u64>().ok(),
             "cams_fps" => cams_fps = value.parse::<f32>().ok(),
             "cams_count" => cams_count = parse_u32(value),
             "cams_columns" => cams_columns = parse_u32(value),
+            "overlay_script_ticker_enabled" => overlay_script_ticker_enabled = parse_bool(value),
+            "overlay_script_ticker_command" => overlay_script_ticker_command = parse_string(value),
+            "overlay_script_ticker_refresh_seconds" => {
+                overlay_script_ticker_refresh_seconds = value.parse::<u64>().ok()
+            }
+            "overlay_script_ticker_pos_x" => overlay_script_ticker_pos_x = parse_i32(value),
+            "overlay_script_ticker_pos_y" => overlay_script_ticker_pos_y = parse_i32(value),
+            "overlay_script_ticker_width" => overlay_script_ticker_width = parse_u32(value),
+            "overlay_script_ticker_height" => overlay_script_ticker_height = parse_u32(value),
+            "overlay_script_ticker_font_size" => overlay_script_ticker_font_size = parse_u32(value),
             "login_screen_integration" => login_screen_integration = parse_bool(value),
             "boot_screen_integration" => boot_screen_integration = parse_bool(value),
             _ => {}
@@ -796,9 +871,10 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         config_version: config_version.unwrap_or(1),
         image_dir: image_dir.ok_or_else(|| anyhow::anyhow!("missing key: image_dir"))?,
         quotes_path: quotes_path.ok_or_else(|| anyhow::anyhow!("missing key: quotes_path"))?,
-        image_source: image_source.unwrap_or_else(|| "local".to_string()),
+        image_source: image_source.unwrap_or_else(|| "preset".to_string()),
         image_source_url: sanitize_optional_string(image_source_url),
-        image_source_preset: sanitize_optional_string(image_source_preset),
+        image_source_preset: sanitize_optional_string(image_source_preset)
+            .or_else(|| Some("placecats_1920_1080".to_string())),
         quote_source: quote_source.unwrap_or_else(|| "local".to_string()),
         quote_source_url: sanitize_optional_string(quote_source_url),
         quote_source_preset: sanitize_optional_string(quote_source_preset),
@@ -875,6 +951,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         weather_location_override: weather_location_override.unwrap_or_default(),
         news_source: news_source.unwrap_or_else(|| "euronews".to_string()),
         news_custom_url: news_custom_url.unwrap_or_default(),
+        news_render_mode: news_render_mode.unwrap_or_else(|| "wallpaper".to_string()),
         news_fps: news_fps.unwrap_or(1.0).clamp(0.05, 30.0),
         news_refresh_seconds: news_refresh_seconds.unwrap_or(90).max(10),
         news_audio_enabled: news_audio_enabled.unwrap_or(false),
@@ -882,7 +959,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         news_ticker2_pos_x: news_ticker2_pos_x.unwrap_or(120),
         news_ticker2_pos_y: news_ticker2_pos_y.unwrap_or(980),
         news_ticker2_width: news_ticker2_width.unwrap_or(1280).clamp(220, 1920),
-        news_ticker2_source: news_ticker2_source.unwrap_or_else(|| "techcrunch".to_string()),
+        news_ticker2_source: news_ticker2_source.unwrap_or_else(|| "google_world_en".to_string()),
         news_ticker2_custom_url: news_ticker2_custom_url.unwrap_or_default(),
         news_ticker2_fps: news_ticker2_fps.unwrap_or(1.2).clamp(0.05, 30.0),
         news_ticker2_refresh_seconds: news_ticker2_refresh_seconds.unwrap_or(120).max(10),
@@ -891,11 +968,24 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         cams_widget_width: cams_widget_width.unwrap_or(760).clamp(180, 1920),
         cams_widget_height: cams_widget_height.unwrap_or(428).clamp(120, 1080),
         cams_source: cams_source.unwrap_or_else(|| "auto_local".to_string()),
+        cams_render_mode: cams_render_mode.unwrap_or_else(|| "wallpaper".to_string()),
         cams_custom_urls: cams_custom_urls.unwrap_or_default(),
         cams_refresh_seconds: cams_refresh_seconds.unwrap_or(75).max(10),
         cams_fps: cams_fps.unwrap_or(1.0).clamp(0.05, 30.0),
         cams_count: cams_count.unwrap_or(2).clamp(1, 9),
         cams_columns: cams_columns.unwrap_or(2).clamp(1, 4),
+        overlay_script_ticker_enabled: overlay_script_ticker_enabled.unwrap_or(false),
+        overlay_script_ticker_command: overlay_script_ticker_command.unwrap_or_default(),
+        overlay_script_ticker_refresh_seconds: overlay_script_ticker_refresh_seconds
+            .unwrap_or(30)
+            .max(1),
+        overlay_script_ticker_pos_x: overlay_script_ticker_pos_x.unwrap_or(120),
+        overlay_script_ticker_pos_y: overlay_script_ticker_pos_y.unwrap_or(920),
+        overlay_script_ticker_width: overlay_script_ticker_width.unwrap_or(1280).clamp(220, 1920),
+        overlay_script_ticker_height: overlay_script_ticker_height.unwrap_or(56).clamp(32, 240),
+        overlay_script_ticker_font_size: overlay_script_ticker_font_size
+            .unwrap_or(30)
+            .clamp(10, 120),
         login_screen_integration: login_screen_integration.unwrap_or(false),
         boot_screen_integration: boot_screen_integration.unwrap_or(false),
     })
@@ -1310,6 +1400,16 @@ pub struct SourcePreset {
 pub fn builtin_image_presets() -> Vec<SourcePreset> {
     vec![
         SourcePreset {
+            id: "placecats_1920_1080",
+            display_label: "PlaceCats 1920x1080",
+            name: "PlaceCats",
+            endpoint: "https://placecats.com/1920/1080",
+            category: "fun",
+            auth: "none",
+            rate_limit: "provider-defined",
+            notes: "Direct 1920x1080 cat image endpoint requested as the default background preset.",
+        },
+        SourcePreset {
             id: "picsum_random_hd",
             display_label: "Picsum Random HD",
             name: "Picsum Random",
@@ -1433,11 +1533,18 @@ pub fn presets_catalog_json() -> String {
         .map(preset_to_json)
         .collect::<Vec<_>>()
         .join(",\n");
+    let news = builtin_news_sources()
+        .iter()
+        .copied()
+        .map(news_preset_to_json)
+        .collect::<Vec<_>>()
+        .join(",\n");
 
     format!(
-        "{{\n  \"catalog_version\": 1,\n  \"image_presets\": [\n{}\n  ],\n  \"quote_presets\": [\n{}\n  ]\n}}",
+        "{{\n  \"catalog_version\": 1,\n  \"image_presets\": [\n{}\n  ],\n  \"quote_presets\": [\n{}\n  ],\n  \"news_presets\": [\n{}\n  ]\n}}",
         indent_block(&images, 4),
-        indent_block(&quotes, 4)
+        indent_block(&quotes, 4),
+        indent_block(&news, 4)
     )
 }
 
@@ -1445,6 +1552,13 @@ fn preset_to_json(p: SourcePreset) -> String {
     format!(
         "{{\"id\":{:?},\"display_label\":{:?},\"name\":{:?},\"endpoint\":{:?},\"category\":{:?},\"auth\":{:?},\"rate_limit\":{:?},\"notes\":{:?}}}",
         p.id, p.display_label, p.name, p.endpoint, p.category, p.auth, p.rate_limit, p.notes
+    )
+}
+
+fn news_preset_to_json(p: NewsSourcePreset) -> String {
+    format!(
+        "{{\"id\":{:?},\"display_label\":{:?},\"name\":{:?},\"stream_url\":{:?},\"ticker_url\":{:?},\"is_live_video\":{},\"notes\":{:?}}}",
+        p.id, p.display_label, p.name, p.stream_url, p.ticker_url, p.is_live_video, p.notes
     )
 }
 
@@ -1460,10 +1574,10 @@ fn indent_block(input: &str, spaces: usize) -> String {
 #[cfg(test)]
 mod tests {
     use crate::{
-        build_doctor_report, builtin_image_presets, builtin_quote_presets, default_config_toml,
-        ensure_local_quotes_file, expand_tilde, load_config, load_quotes, parse_bool, parse_i32,
-        parse_u32, presets_catalog_json, sanitize_optional_string, settings_schema_json,
-        settings_ui_blueprint_json, to_config_toml,
+        build_doctor_report, builtin_image_presets, builtin_news_sources, builtin_quote_presets,
+        default_config_toml, ensure_local_quotes_file, expand_tilde, load_config, load_quotes,
+        parse_bool, parse_i32, parse_u32, presets_catalog_json, sanitize_optional_string,
+        settings_schema_json, settings_ui_blueprint_json, to_config_toml,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -1494,7 +1608,11 @@ mod tests {
         fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
         let cfg = load_config(&cfg_path).expect("config should parse");
         assert_eq!(cfg.time_format, "%H:%M");
-        assert_eq!(cfg.image_source, "local");
+        assert_eq!(cfg.image_source, "preset");
+        assert_eq!(
+            cfg.image_source_preset.as_deref(),
+            Some("placecats_1920_1080")
+        );
         assert_eq!(cfg.config_version, 1);
         assert_eq!(cfg.quote_source, "local");
         assert_eq!(cfg.quote_format, "lines");
@@ -1533,6 +1651,13 @@ mod tests {
         assert_eq!(cfg.wallpaper_fit_mode, "zoom");
         assert_eq!(cfg.image_refresh_seconds, 300);
         assert_eq!(cfg.quote_refresh_seconds, 300);
+        assert_eq!(cfg.news_render_mode, "wallpaper");
+        assert_eq!(cfg.cams_render_mode, "wallpaper");
+        assert!(!cfg.overlay_script_ticker_enabled);
+        assert_eq!(cfg.overlay_script_ticker_refresh_seconds, 30);
+        assert_eq!(cfg.overlay_script_ticker_width, 1280);
+        assert_eq!(cfg.overlay_script_ticker_height, 56);
+        assert_eq!(cfg.overlay_script_ticker_font_size, 30);
         let _ = fs::remove_file(cfg_path);
     }
 
@@ -1651,15 +1776,27 @@ mod tests {
     fn builtin_presets_are_available() {
         assert!(!builtin_image_presets().is_empty());
         assert!(!builtin_quote_presets().is_empty());
+        assert!(!builtin_news_sources().is_empty());
         assert!(
             builtin_image_presets()
                 .iter()
                 .any(|p| p.id == "picsum_random_hd")
         );
+        assert!(
+            builtin_image_presets()
+                .iter()
+                .any(|p| p.id == "placecats_1920_1080")
+        );
+        assert!(
+            builtin_news_sources()
+                .iter()
+                .any(|p| p.id == "google_world_en")
+        );
     }
 
     #[test]
     fn preset_endpoint_lookup_works() {
+        assert!(super::image_preset_endpoint("placecats_1920_1080").is_some());
         assert!(super::image_preset_endpoint("picsum_random_hd").is_some());
         assert!(super::quote_preset_endpoint("zenquotes_daily").is_some());
         assert!(super::quote_preset_endpoint("missing").is_none());
@@ -1679,6 +1816,9 @@ mod tests {
         assert!(schema.contains("\"visible_when\""));
         assert!(schema.contains("\"enabled_when\""));
         assert!(schema.contains("\"ui_widget\""));
+        assert!(schema.contains("\"news_render_mode\""));
+        assert!(schema.contains("\"cams_render_mode\""));
+        assert!(schema.contains("\"overlay_script_ticker_command\""));
     }
 
     #[test]
@@ -1688,6 +1828,9 @@ mod tests {
         assert!(blueprint.contains("\"conditions\""));
         assert!(blueprint.contains("\"wallpaper_backend\""));
         assert!(blueprint.contains("\"wallpaper_fit_mode\""));
+        assert!(blueprint.contains("\"news_render_mode\""));
+        assert!(blueprint.contains("\"cams_render_mode\""));
+        assert!(blueprint.contains("\"overlay_script_ticker_enabled\""));
     }
 
     #[test]
@@ -1695,8 +1838,10 @@ mod tests {
         let json = presets_catalog_json();
         assert!(json.contains("\"image_presets\""));
         assert!(json.contains("\"quote_presets\""));
+        assert!(json.contains("\"news_presets\""));
         assert!(json.contains("\"display_label\""));
         assert!(json.contains("\"rate_limit\""));
+        assert!(json.contains("\"stream_url\""));
     }
 
     #[test]

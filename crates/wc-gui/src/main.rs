@@ -1,4 +1,6 @@
 use eframe::egui;
+use serde_json::Value;
+use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -6,9 +8,10 @@ use std::sync::OnceLock;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 use wc_core::{
-    AppConfig, builtin_image_presets, builtin_quote_presets, default_config_path,
-    ensure_local_quotes_file, expand_tilde, list_background_images, load_config, load_quotes,
-    to_config_toml,
+    AppConfig, NewsSourcePreset, builtin_image_presets, builtin_news_source,
+    builtin_news_source_label, builtin_news_source_stream_url, builtin_news_sources,
+    builtin_quote_presets, default_config_path, ensure_local_quotes_file, expand_tilde,
+    list_background_images, load_config, load_quotes, to_config_toml,
 };
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -16,6 +19,204 @@ const ORDERING_WORLD_WIDTH: i32 = 1920;
 const ORDERING_WORLD_HEIGHT: i32 = 1080;
 const ORDERING_GRID_STEP: i32 = 24;
 const ORDERING_COLLISION_ITERS: usize = 32;
+const OVERLAY_RELOAD_SECS: u64 = 1;
+
+#[derive(Clone)]
+struct OverlayTickerState {
+    label: String,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    font_size: f32,
+    refresh_seconds: u64,
+    text: String,
+    command: String,
+}
+
+impl Default for OverlayTickerState {
+    fn default() -> Self {
+        Self {
+            label: "overlay-ticker".to_string(),
+            x: 120.0,
+            y: 920.0,
+            width: 1280.0,
+            height: 56.0,
+            font_size: 30.0,
+            refresh_seconds: 30,
+            text: String::new(),
+            command: String::new(),
+        }
+    }
+}
+
+struct OverlayTickerApp {
+    state_path: PathBuf,
+    state: OverlayTickerState,
+    current_text: String,
+    started_at: Instant,
+    last_state_reload: Instant,
+    last_command_run: Instant,
+}
+
+fn overlay_state_arg() -> Option<PathBuf> {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--overlay-state" {
+            return args.next().map(PathBuf::from);
+        }
+    }
+    None
+}
+
+fn load_overlay_ticker_state(path: &Path) -> OverlayTickerState {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return OverlayTickerState::default();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&raw) else {
+        return OverlayTickerState::default();
+    };
+    OverlayTickerState {
+        label: value
+            .get("label")
+            .and_then(Value::as_str)
+            .unwrap_or("overlay-ticker")
+            .to_string(),
+        x: value.get("x").and_then(Value::as_f64).unwrap_or(120.0) as f32,
+        y: value.get("y").and_then(Value::as_f64).unwrap_or(920.0) as f32,
+        width: value.get("width").and_then(Value::as_f64).unwrap_or(1280.0) as f32,
+        height: value.get("height").and_then(Value::as_f64).unwrap_or(56.0) as f32,
+        font_size: value
+            .get("font_size")
+            .and_then(Value::as_f64)
+            .unwrap_or(30.0) as f32,
+        refresh_seconds: value
+            .get("refresh_seconds")
+            .and_then(Value::as_u64)
+            .unwrap_or(30)
+            .max(1),
+        text: value
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        command: value
+            .get("command")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    }
+}
+
+fn run_overlay_command(command: &str) -> Option<String> {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let output = Command::new("sh").args(["-lc", trimmed]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default()
+        .to_string();
+    if line.is_empty() { None } else { Some(line) }
+}
+
+impl OverlayTickerApp {
+    fn new(state_path: PathBuf) -> Self {
+        let state = load_overlay_ticker_state(&state_path);
+        let current_text = if state.command.trim().is_empty() {
+            state.text.clone()
+        } else {
+            run_overlay_command(&state.command).unwrap_or_else(|| state.text.clone())
+        };
+        Self {
+            state_path,
+            state,
+            current_text,
+            started_at: Instant::now(),
+            last_state_reload: Instant::now(),
+            last_command_run: Instant::now(),
+        }
+    }
+
+    fn sync_state(&mut self, ctx: &egui::Context) {
+        if self.last_state_reload.elapsed().as_secs() >= OVERLAY_RELOAD_SECS {
+            self.state = load_overlay_ticker_state(&self.state_path);
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
+                self.state.x,
+                self.state.y,
+            )));
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                self.state.width.max(120.0),
+                self.state.height.max(32.0),
+            )));
+            self.last_state_reload = Instant::now();
+        }
+
+        if self.state.command.trim().is_empty() {
+            self.current_text = self.state.text.clone();
+            return;
+        }
+
+        if self.last_command_run.elapsed().as_secs() >= self.state.refresh_seconds {
+            if let Some(text) = run_overlay_command(&self.state.command) {
+                self.current_text = text;
+            }
+            self.last_command_run = Instant::now();
+        }
+    }
+}
+
+impl eframe::App for OverlayTickerApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.sync_state(ctx);
+        ctx.request_repaint_after(Duration::from_millis(16));
+
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(egui::Color32::TRANSPARENT))
+            .show(ctx, |ui| {
+                let rect = ui.max_rect();
+                let painter = ui.painter_at(rect);
+                painter.rect_filled(
+                    rect,
+                    0.0,
+                    egui::Color32::from_rgba_unmultiplied(0, 16, 8, 188),
+                );
+
+                let text = if self.current_text.trim().is_empty() {
+                    self.state.label.clone()
+                } else {
+                    self.current_text.clone()
+                };
+                let repeated = format!("  {text}   ◆   {text}   ◆   {text}  ");
+                let approx_char_w = (self.state.font_size * 0.58).max(8.0);
+                let segment_w = (repeated.chars().count() as f32 * approx_char_w).max(rect.width());
+                let speed_px_per_sec = (self.state.font_size * 2.8).clamp(36.0, 180.0);
+                let offset = ((self.started_at.elapsed().as_secs_f32() * speed_px_per_sec)
+                    % segment_w)
+                    .max(0.0);
+                let font = egui::FontId::proportional(self.state.font_size.max(12.0));
+                let color = egui::Color32::from_rgb(69, 255, 40);
+
+                for idx in -1..=2 {
+                    let x = rect.left() + 16.0 + (idx as f32 * segment_w) - offset;
+                    painter.text(
+                        egui::pos2(x, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        &repeated,
+                        font.clone(),
+                        color,
+                    );
+                }
+            });
+    }
+}
 
 fn app_version_label() -> &'static str {
     static LABEL: OnceLock<String> = OnceLock::new();
@@ -63,6 +264,27 @@ fn installed_package_version() -> Option<String> {
 }
 
 fn main() -> eframe::Result<()> {
+    if let Some(state_path) = overlay_state_arg() {
+        let state = load_overlay_ticker_state(&state_path);
+        let viewport = egui::ViewportBuilder::default()
+            .with_app_id(format!("le-compositeur-overlay-{}", state.label))
+            .with_decorations(false)
+            .with_transparent(true)
+            .with_resizable(false)
+            .with_always_on_top()
+            .with_inner_size(egui::vec2(state.width.max(120.0), state.height.max(32.0)))
+            .with_position(egui::pos2(state.x, state.y));
+        let native_options = eframe::NativeOptions {
+            viewport,
+            ..Default::default()
+        };
+        return eframe::run_native(
+            "Le Compositeur Overlay",
+            native_options,
+            Box::new(|_cc| Ok(Box::new(OverlayTickerApp::new(state_path)))),
+        );
+    }
+
     let mut viewport = egui::ViewportBuilder::default().with_app_id("le-compositeur");
     if let Some(icon) = load_app_icon() {
         viewport = viewport.with_icon(icon);
@@ -196,6 +418,8 @@ struct WcGuiApp {
     autostart_toggle: bool,
     ordering_bg_texture: Option<egui::TextureHandle>,
     cams_public_choice: String,
+    news_source_filter: String,
+    news_ticker2_filter: String,
     update_status: String,
     update_release: Option<ReleaseInfo>,
     update_check_rx: Option<Receiver<Result<Option<ReleaseInfo>, String>>>,
@@ -234,6 +458,8 @@ impl WcGuiApp {
             autostart_toggle: Self::autostart_enabled(),
             ordering_bg_texture: None,
             cams_public_choice: "belgrade_center".to_string(),
+            news_source_filter: String::new(),
+            news_ticker2_filter: String::new(),
             update_status: "Update check: pending".to_string(),
             update_release: None,
             update_check_rx: None,
@@ -1050,6 +1276,7 @@ impl WcGuiApp {
 
     fn stop_runner(&mut self) {
         let mut stopped_any = false;
+        let path = self.config_path.clone();
         if let Some(mut child) = self.runner.take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -1057,6 +1284,9 @@ impl WcGuiApp {
         }
         if self.kill_external_runner_processes() {
             stopped_any = true;
+        }
+        if let Ok(mut child) = self.spawn_runner_command(&["overlay-stop"], &path, false) {
+            let _ = child.wait();
         }
         self.status = if stopped_any {
             "Runner stopped".to_string()
@@ -1499,7 +1729,7 @@ impl WcGuiApp {
                         .cfg
                         .image_source_preset
                         .clone()
-                        .unwrap_or_else(|| "picsum_random_hd".to_string());
+                        .unwrap_or_else(|| "placecats_1920_1080".to_string());
                     egui::ComboBox::from_id_salt("image_source_preset")
                         .selected_text(&selected)
                         .show_ui(ui, |ui| {
@@ -2311,11 +2541,11 @@ impl WcGuiApp {
                     egui::ComboBox::from_id_salt("news_source_ordering")
                         .selected_text(news_source_label(&self.cfg.news_source))
                         .show_ui(ui, |ui| {
-                            for &(id, label) in news_sources() {
+                            for source in news_sources() {
                                 ui.selectable_value(
                                     &mut self.cfg.news_source,
-                                    id.to_string(),
-                                    label,
+                                    source.id.to_string(),
+                                    source.display_label,
                                 );
                             }
                         })
@@ -2373,11 +2603,11 @@ impl WcGuiApp {
                     egui::ComboBox::from_id_salt("news_ticker2_source_ordering")
                         .selected_text(news_source_label(&self.cfg.news_ticker2_source))
                         .show_ui(ui, |ui| {
-                            for &(id, label) in news_sources() {
+                            for source in news_sources() {
                                 ui.selectable_value(
                                     &mut self.cfg.news_ticker2_source,
-                                    id.to_string(),
-                                    label,
+                                    source.id.to_string(),
+                                    source.display_label,
                                 );
                             }
                         });
@@ -2632,15 +2862,47 @@ impl WcGuiApp {
             |ui| {
                 ui.checkbox(&mut self.cfg.show_news_layer, "Enable news widget");
                 ui.horizontal(|ui| {
+                    ui.label("Render target");
+                    egui::ComboBox::from_id_salt("news_render_mode_tab")
+                        .selected_text(match self.cfg.news_render_mode.as_str() {
+                            "overlay" => "Desktop overlay",
+                            _ => "Wallpaper",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.cfg.news_render_mode,
+                                "wallpaper".to_string(),
+                                "Wallpaper",
+                            );
+                            ui.selectable_value(
+                                &mut self.cfg.news_render_mode,
+                                "overlay".to_string(),
+                                "Desktop overlay",
+                            );
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Catalog filter");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.news_source_filter)
+                            .hint_text("world / country / language / source"),
+                    );
+                    ui.small(format!("{} shipped sources", news_sources().len() - 1));
+                });
+                ui.horizontal(|ui| {
                     ui.label("Channel");
+                    let filtered_sources = filtered_news_sources(&self.news_source_filter);
                     egui::ComboBox::from_id_salt("news_source_tab")
                         .selected_text(news_source_label(&self.cfg.news_source))
                         .show_ui(ui, |ui| {
-                            for &(id, label) in news_sources() {
+                            if filtered_sources.is_empty() {
+                                ui.label("No matching built-in sources");
+                            }
+                            for source in &filtered_sources {
                                 ui.selectable_value(
                                     &mut self.cfg.news_source,
-                                    id.to_string(),
-                                    label,
+                                    source.id.to_string(),
+                                    source.display_label,
                                 );
                             }
                         })
@@ -2678,6 +2940,21 @@ impl WcGuiApp {
                     ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
                         .on_hover_text(self.hover_text("news_audio_enabled"));
                 });
+                if self.cfg.news_render_mode == "overlay" {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(140, 214, 255),
+                        "News video will be started as a separate overlay window instead of being baked into the wallpaper.",
+                    );
+                    if !news_source_supports_live_video(
+                        &self.cfg.news_source,
+                        &self.cfg.news_custom_url,
+                    ) {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 200, 110),
+                            "Selected source is feed/ticker only. Overlay mode will show headlines, not real live video.",
+                        );
+                    }
+                }
                 ui.horizontal(|ui| {
                     ui.label("Position X");
                     ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
@@ -2724,15 +3001,26 @@ impl WcGuiApp {
             |ui| {
                 ui.checkbox(&mut self.cfg.show_news_ticker2, "Enable secondary ticker");
                 ui.horizontal(|ui| {
+                    ui.label("Catalog filter");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.news_ticker2_filter)
+                            .hint_text("world / country / language / source"),
+                    );
+                });
+                ui.horizontal(|ui| {
                     ui.label("Ticker source");
+                    let filtered_sources = filtered_news_sources(&self.news_ticker2_filter);
                     egui::ComboBox::from_id_salt("news_ticker2_source_tab")
                         .selected_text(news_source_label(&self.cfg.news_ticker2_source))
                         .show_ui(ui, |ui| {
-                            for &(id, label) in news_sources() {
+                            if filtered_sources.is_empty() {
+                                ui.label("No matching built-in sources");
+                            }
+                            for source in &filtered_sources {
                                 ui.selectable_value(
                                     &mut self.cfg.news_ticker2_source,
-                                    id.to_string(),
-                                    label,
+                                    source.id.to_string(),
+                                    source.display_label,
                                 );
                             }
                         });
@@ -2791,6 +3079,26 @@ impl WcGuiApp {
             "Public/private camera feeds with optional custom URL lists.",
             |ui| {
                 ui.checkbox(&mut self.cfg.show_cams_layer, "Enable cams widget");
+                ui.horizontal(|ui| {
+                    ui.label("Render target");
+                    egui::ComboBox::from_id_salt("cams_render_mode_tab")
+                        .selected_text(match self.cfg.cams_render_mode.as_str() {
+                            "overlay" => "Desktop overlay",
+                            _ => "Wallpaper",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.cfg.cams_render_mode,
+                                "wallpaper".to_string(),
+                                "Wallpaper",
+                            );
+                            ui.selectable_value(
+                                &mut self.cfg.cams_render_mode,
+                                "overlay".to_string(),
+                                "Desktop overlay",
+                            );
+                        });
+                });
                 ui.horizontal(|ui| {
                     ui.label("Source mode");
                     egui::ComboBox::from_id_salt("cams_source_tab")
@@ -2900,6 +3208,16 @@ impl WcGuiApp {
                             .range(10..=3600),
                     );
                 });
+                if self.cfg.cams_render_mode == "overlay" {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(140, 214, 255),
+                        "Each camera feed will be launched as a separate overlay window tile instead of a wallpaper snapshot grid.",
+                    );
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 200, 110),
+                        "Built-in public cam presets are a mixed starter list. For stable live video use direct YouTube/HLS/RTSP URLs plus mpv.",
+                    );
+                }
             },
         );
 
@@ -3023,11 +3341,11 @@ impl WcGuiApp {
                     egui::ComboBox::from_id_salt("news_source_system")
                         .selected_text(news_source_label(&self.cfg.news_source))
                         .show_ui(ui, |ui| {
-                            for &(id, label) in news_sources() {
+                            for source in news_sources() {
                                 ui.selectable_value(
                                     &mut self.cfg.news_source,
-                                    id.to_string(),
-                                    label,
+                                    source.id.to_string(),
+                                    source.display_label,
                                 );
                             }
                         })
@@ -3050,6 +3368,63 @@ impl WcGuiApp {
                     .on_hover_text(self.hover_text("news_fps"));
                     ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
                         .on_hover_text(self.hover_text("news_audio_enabled"));
+                });
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Overlay Script Ticker",
+            "Independent scrolling-text overlay fed by a shell script or command.",
+            |ui| {
+                ui.checkbox(
+                    &mut self.cfg.overlay_script_ticker_enabled,
+                    "Enable script ticker overlay",
+                );
+                ui.horizontal(|ui| {
+                    ui.label("Command");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.cfg.overlay_script_ticker_command)
+                            .hint_text("printf 'Status: %s\\n' \"$(date +%H:%M)\""),
+                    );
+                });
+                ui.small("The first non-empty stdout line is shown in the overlay ticker.");
+                ui.horizontal(|ui| {
+                    ui.label("Refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.overlay_script_ticker_refresh_seconds)
+                            .speed(1)
+                            .range(1..=3600),
+                    );
+                    ui.label("Font");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.overlay_script_ticker_font_size)
+                            .speed(1)
+                            .range(10..=120),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("X");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.overlay_script_ticker_pos_x).speed(1),
+                    );
+                    ui.label("Y");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.overlay_script_ticker_pos_y).speed(1),
+                    );
+                    ui.label("W");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.overlay_script_ticker_width)
+                            .speed(2)
+                            .range(220..=1920),
+                    );
+                    ui.label("H");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.overlay_script_ticker_height)
+                            .speed(1)
+                            .range(32..=240),
+                    );
                 });
             },
         );
@@ -3510,20 +3885,26 @@ fn open_url(url: &str) -> bool {
     }
 }
 
-fn news_sources() -> &'static [(&'static str, &'static str)] {
-    &[
-        ("euronews", "News: Euronews Live"),
-        ("aljazeera", "News: Al Jazeera English"),
-        ("france24", "News: France24 English"),
-        ("dw", "News: DW News"),
-        ("yahoo_finance", "Boerse: Yahoo Finance Live"),
-        ("bloomberg_tv", "Boerse: Bloomberg TV"),
-        ("techcrunch", "Tech: TechCrunch Live"),
-        ("theverge", "Tech: The Verge"),
-        ("nasa_tv", "Docs: NASA TV"),
-        ("documentary_heaven", "Docs: DocumentaryHeaven"),
-        ("custom", "Custom URL"),
-    ]
+fn news_sources() -> &'static [NewsSourcePreset] {
+    builtin_news_sources()
+}
+
+fn filtered_news_sources(filter: &str) -> Vec<&'static NewsSourcePreset> {
+    let needle = filter.trim().to_ascii_lowercase();
+    news_sources()
+        .iter()
+        .filter(|source| {
+            if needle.is_empty() {
+                return true;
+            }
+            let haystack = format!(
+                "{} {} {} {}",
+                source.display_label, source.name, source.id, source.notes
+            )
+            .to_ascii_lowercase();
+            haystack.contains(&needle)
+        })
+        .collect()
 }
 
 fn news_size_presets() -> &'static [(&'static str, &'static str, u32, u32)] {
@@ -3580,26 +3961,31 @@ fn nearest_news_size_preset(width: u32, height: u32) -> (u32, u32) {
 }
 
 fn news_source_label(id: &str) -> &'static str {
-    news_sources()
-        .iter()
-        .find_map(|(k, v)| if *k == id { Some(*v) } else { None })
-        .unwrap_or("Custom URL")
+    builtin_news_source_label(id)
 }
 
 fn news_source_url(id: &str, custom: &str) -> String {
-    match id {
-        "euronews" => "https://www.youtube.com/watch?v=pykpO5kQJ98".to_string(),
-        "aljazeera" => "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(),
-        "france24" => "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(),
-        "dw" => "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(),
-        "yahoo_finance" => "https://www.youtube.com/watch?v=9Auq9mYxFEE".to_string(),
-        "bloomberg_tv" => "https://www.youtube.com/watch?v=dp8PhLsUcFE".to_string(),
-        "techcrunch" => "https://techcrunch.com/".to_string(),
-        "theverge" => "https://www.theverge.com/tech".to_string(),
-        "nasa_tv" => "https://www.youtube.com/watch?v=21X5lGlDOfg".to_string(),
-        "documentary_heaven" => "https://documentaryheaven.com/".to_string(),
-        _ => custom.to_string(),
+    builtin_news_source_stream_url(id)
+        .unwrap_or(custom)
+        .to_string()
+}
+
+fn news_source_supports_live_video(id: &str, custom: &str) -> bool {
+    if id == "custom" {
+        return stream_like_endpoint(custom);
     }
+    builtin_news_source(id)
+        .map(|source| source.is_live_video)
+        .unwrap_or(false)
+}
+
+fn stream_like_endpoint(url: &str) -> bool {
+    let url = url.trim().to_ascii_lowercase();
+    url.starts_with("rtsp://")
+        || url.ends_with(".m3u8")
+        || url.ends_with(".mpd")
+        || url.contains("youtube.com/watch")
+        || url.contains("youtu.be/")
 }
 
 fn is_camera_like_url(url: &str) -> bool {
@@ -4341,9 +4727,9 @@ fn default_cfg() -> AppConfig {
         config_version: 1,
         image_dir: "~/Pictures/Wallpapers".to_string(),
         quotes_path: "~/Documents/wallpaper-composer/quotes.md".to_string(),
-        image_source: "local".to_string(),
+        image_source: "preset".to_string(),
         image_source_url: None,
-        image_source_preset: Some("picsum_random_hd".to_string()),
+        image_source_preset: Some("placecats_1920_1080".to_string()),
         quote_source: "local".to_string(),
         quote_source_url: None,
         quote_source_preset: Some("zenquotes_daily".to_string()),
@@ -4413,6 +4799,7 @@ fn default_cfg() -> AppConfig {
         weather_location_override: String::new(),
         news_source: "euronews".to_string(),
         news_custom_url: String::new(),
+        news_render_mode: "wallpaper".to_string(),
         news_fps: 1.0,
         news_refresh_seconds: 90,
         news_audio_enabled: false,
@@ -4420,7 +4807,7 @@ fn default_cfg() -> AppConfig {
         news_ticker2_pos_x: 120,
         news_ticker2_pos_y: 980,
         news_ticker2_width: 1280,
-        news_ticker2_source: "techcrunch".to_string(),
+        news_ticker2_source: "google_world_en".to_string(),
         news_ticker2_custom_url: String::new(),
         news_ticker2_fps: 1.2,
         news_ticker2_refresh_seconds: 120,
@@ -4429,11 +4816,20 @@ fn default_cfg() -> AppConfig {
         cams_widget_width: 760,
         cams_widget_height: 428,
         cams_source: "auto_local".to_string(),
+        cams_render_mode: "wallpaper".to_string(),
         cams_custom_urls: String::new(),
         cams_refresh_seconds: 75,
         cams_fps: 1.0,
         cams_count: 2,
         cams_columns: 2,
+        overlay_script_ticker_enabled: false,
+        overlay_script_ticker_command: String::new(),
+        overlay_script_ticker_refresh_seconds: 30,
+        overlay_script_ticker_pos_x: 120,
+        overlay_script_ticker_pos_y: 920,
+        overlay_script_ticker_width: 1280,
+        overlay_script_ticker_height: 56,
+        overlay_script_ticker_font_size: 30,
         login_screen_integration: false,
         boot_screen_integration: false,
     }
