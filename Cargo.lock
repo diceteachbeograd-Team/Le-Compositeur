@@ -4569,6 +4569,7 @@ dependencies = [
  "chrono",
  "clap",
  "fs2",
+ "image",
  "reqwest",
  "serde_json",
  "wc-backend",

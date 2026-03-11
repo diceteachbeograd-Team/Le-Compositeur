@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use fs2::FileExt;
+use image::imageops;
+use image::{DynamicImage, Rgba, RgbaImage};
 use reqwest::blocking::Client;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -34,11 +36,13 @@ const NEWS_WIDGET_CACHE_MAX_AGE_SECS: u64 = 24 * 60 * 60;
 const CAMS_WIDGET_CACHE_MAX_AGE_SECS: u64 = 24 * 60 * 60;
 const WIDGET_REGISTRY_STAGE_B_ENV: &str = "WC_WIDGET_REGISTRY_STAGE_B";
 const MIN_SMOOTH_VIDEO_FPS: f32 = 15.0;
-const TICKER_MIN_PASS_SECS: f64 = 8.0;
-const TICKER_MAX_PASS_SECS: f64 = 28.0;
-const TICKER_READING_CHARS_PER_SEC: f64 = 14.0;
-const TICKER_MIN_SHIFT_MS: f64 = 70.0;
-const TICKER_MAX_SHIFT_MS: f64 = 450.0;
+const TICKER_MIN_PASS_SECS: f64 = 14.0;
+const TICKER_MAX_PASS_SECS: f64 = 42.0;
+const TICKER_READING_CHARS_PER_SEC: f64 = 7.5;
+const TICKER_MIN_SHIFT_MS: f64 = 120.0;
+const TICKER_MAX_SHIFT_MS: f64 = 650.0;
+const WEATHER_MAP_TILE_SIZE: u32 = 256;
+const WEATHER_MAP_ZOOM: u32 = 6;
 
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
@@ -704,8 +708,16 @@ fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {
         }
         "preset" | "remote_preset" => {
             let (endpoint, provider) = resolve_image_endpoint_from_preset(cfg)?;
-            fetch_remote_image(endpoint, provider)
-                .map_err(|e| anyhow::anyhow!("failed to fetch preset image source: {e}"))
+            resolve_remote_image_for_cycle(
+                cfg,
+                cycle,
+                &format!(
+                    "preset:{}:{endpoint}",
+                    cfg.image_source_preset.as_deref().unwrap_or("")
+                ),
+                || fetch_remote_image(endpoint.clone(), provider),
+            )
+            .map_err(|e| anyhow::anyhow!("failed to fetch preset image source: {e}"))
         }
         "url" | "remote_url" => {
             let endpoint = resolve_image_endpoint_from_url(cfg, cycle)?;
@@ -715,8 +727,10 @@ fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {
                     return Ok(frame);
                 }
             }
-            fetch_remote_image(endpoint, ImageProvider::Generic)
-                .map_err(|e| anyhow::anyhow!("failed to fetch custom image source: {e}"))
+            resolve_remote_image_for_cycle(cfg, cycle, &format!("url:{endpoint}"), || {
+                fetch_remote_image(endpoint.clone(), ImageProvider::Generic)
+            })
+            .map_err(|e| anyhow::anyhow!("failed to fetch custom image source: {e}"))
         }
         other => Err(anyhow::anyhow!(
             "unsupported image_source={other}; supported: local, preset, url"
@@ -865,7 +879,7 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<WeatherWidgetPayload> {
     let rain_prob = current_time
         .and_then(|time| precipitation_probability(&payload, time))
         .unwrap_or(0.0);
-    let (wind_arrow, wind_dir) = compass_arrow(wind_deg);
+    let (_, wind_dir) = compass_arrow(wind_deg);
     let temp_unit = match units {
         UnitSystem::Metric => "C",
         UnitSystem::Imperial => "F",
@@ -877,11 +891,11 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<WeatherWidgetPayload> {
     let minimap_image = resolve_weather_minimap(geo.lat, geo.lon, wind_deg, wind, wind_unit)
         .or_else(|| fallback_weather_minimap(wind_deg, wind, wind_unit));
     let text = format_weather_compact(&WeatherCompactInput {
-        condition_icon: weather_code_icon(code),
+        location_label: &geo.label,
+        condition_label: weather_code_label(code),
         temp: t,
         feels,
         rain_prob,
-        wind_arrow,
         wind_dir,
         wind_speed: wind,
         humidity,
@@ -914,6 +928,13 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
         .get("nearest_area")
         .and_then(Value::as_array)
         .and_then(|arr| arr.first());
+    let area_name = area
+        .and_then(|a| a.get("areaName"))
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("value"))
+        .and_then(Value::as_str)
+        .unwrap_or("Unknown");
     let country = area
         .and_then(|a| a.get("country"))
         .and_then(Value::as_array)
@@ -958,7 +979,7 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
         .and_then(Value::as_str)
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or_else(|| compass_degrees_for_name(wind_dir));
-    let wind_arrow = compass_arrow_for_name(wind_dir);
+    let _wind_arrow = compass_arrow_for_name(wind_dir);
     let area_lat = area
         .and_then(|a| a.get("latitude"))
         .and_then(Value::as_str)
@@ -1009,11 +1030,11 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
         .or_else(|| fallback_weather_minimap(wind_deg, wind, wind_unit));
     Ok(WeatherWidgetPayload {
         text: format_weather_compact(&WeatherCompactInput {
-            condition_icon: compact_condition_symbol(desc),
+            location_label: &format!("{area_name}, {country}"),
+            condition_label: compact_condition_label(desc),
             temp,
             feels,
             rain_prob: rain,
-            wind_arrow,
             wind_dir,
             wind_speed: wind,
             humidity,
@@ -1549,6 +1570,7 @@ impl WidgetPlugin for CamsWidgetPlugin {
 
 fn resolve_news_widget(cfg: &AppConfig, cycle: u64) -> Result<NewsWidgetPayload> {
     let (label, stream_url, feed_url) = news_source_profile(cfg);
+    let preview_image = resolve_news_preview_image(cfg, &stream_url, cycle);
     let cache_id = format!(
         "news-main-{}",
         stable_hash(&format!(
@@ -1579,7 +1601,7 @@ fn resolve_news_widget(cfg: &AppConfig, cycle: u64) -> Result<NewsWidgetPayload>
     let line = news_ticker_frame(&payload.raw_line);
     Ok(NewsWidgetPayload {
         text: line,
-        preview_image: payload.preview_image,
+        preview_image: preview_image.or(payload.preview_image),
     })
 }
 
@@ -1649,20 +1671,11 @@ fn resolve_cams_widget(cfg: &AppConfig) -> Result<CamsWidgetPayload> {
             source_fingerprint
         ))
     );
+    let preview_image = resolve_cams_preview_image(cfg, &sources);
     let cached = load_cached_cams_payload(&cache_id, cfg.cams_refresh_seconds)?;
     let payload = if let Some(fresh) = cached {
         fresh
     } else {
-        let mut frames = Vec::<PathBuf>::new();
-        for source in &sources {
-            if let Some(frame) =
-                capture_stream_preview(&source.url, effective_video_fps(cfg.cams_fps))
-            {
-                frames.push(frame);
-            }
-        }
-        let preview_image = compose_cams_grid(&frames, cfg.cams_columns.clamp(1, 4))
-            .or_else(|| frames.first().cloned());
         let short = sources
             .iter()
             .map(cam_source_display_label)
@@ -1670,7 +1683,7 @@ fn resolve_cams_widget(cfg: &AppConfig) -> Result<CamsWidgetPayload> {
             .join(" ◆ ");
         let built = CamsCachedPayload {
             base_line: compact_news_line(&format!("CAMS ◆ {short}")),
-            preview_image,
+            preview_image: preview_image.clone(),
         };
         store_cached_cams_payload(&cache_id, &built)?;
         if built.preview_image.is_some() {
@@ -1687,8 +1700,35 @@ fn resolve_cams_widget(cfg: &AppConfig) -> Result<CamsWidgetPayload> {
 
     Ok(CamsWidgetPayload {
         text,
-        preview_image: payload.preview_image,
+        preview_image: preview_image.or(payload.preview_image),
     })
+}
+
+fn resolve_cams_preview_image(cfg: &AppConfig, sources: &[CamSourceEntry]) -> Option<PathBuf> {
+    let mut frames = Vec::<PathBuf>::new();
+    for source in sources {
+        if let Some(frame) =
+            resolve_cam_source_preview(&source.url, effective_video_fps(cfg.cams_fps))
+        {
+            frames.push(frame);
+        }
+    }
+    compose_cams_grid(&frames, cfg.cams_columns.clamp(1, 4)).or_else(|| frames.first().cloned())
+}
+
+fn resolve_cam_source_preview(url: &str, fps: f32) -> Option<PathBuf> {
+    if let Some(frame) = capture_stream_preview(url, fps) {
+        return Some(frame);
+    }
+    let lower = url.trim().to_ascii_lowercase();
+    if lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".png")
+        || lower.ends_with(".webp")
+    {
+        return fetch_remote_image(url.to_string(), ImageProvider::Generic).ok();
+    }
+    None
 }
 
 fn fetch_news_payload(
@@ -1733,28 +1773,26 @@ fn cams_source_entries(cfg: &AppConfig, cycle: u64) -> Vec<CamSourceEntry> {
 }
 
 fn auto_local_cam_entries(cycle: u64) -> Vec<CamSourceEntry> {
-    // Fallback-friendly list: YouTube links are resolved via yt-dlp when available,
-    // otherwise we still fetch their live thumbnail snapshots.
     rotate_cam_entries(
         vec![
             CamSourceEntry {
-                label: "New York - Times Square".to_string(),
-                url: "https://www.youtube.com/watch?v=1-iS7LArMPA".to_string(),
+                label: "Belgrade - Knez Mihailova".to_string(),
+                url: "https://stream.uzivobeograd.rs/live/cam_20.jpg".to_string(),
             },
             CamSourceEntry {
-                label: "Berlin - DW Skyline".to_string(),
-                url: "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(),
+                label: "Berlin - Funkturm".to_string(),
+                url: "https://www.berlin.de/webcams/fsz/webcam.jpg".to_string(),
             },
             CamSourceEntry {
-                label: "Paris - France24".to_string(),
-                url: "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(),
+                label: "Paris - Skyline".to_string(),
+                url: "https://images.webcamgalore.com/33422-current-webcam-Paris.jpg".to_string(),
             },
             CamSourceEntry {
-                label: "Doha - Al Jazeera".to_string(),
-                url: "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(),
+                label: "Rome - Panorama".to_string(),
+                url: "https://images.webcamgalore.com/4513-current-webcam-Rome.jpg".to_string(),
             },
             CamSourceEntry {
-                label: "Brussels - Euronews".to_string(),
+                label: "Euronews Live".to_string(),
                 url: "https://www.youtube.com/watch?v=pykpO5kQJ98".to_string(),
             },
             CamSourceEntry {
@@ -1770,20 +1808,20 @@ fn city_public_cam_entries(cycle: u64) -> Vec<CamSourceEntry> {
     rotate_cam_entries(
         vec![
             CamSourceEntry {
+                label: "Belgrade".to_string(),
+                url: "https://stream.uzivobeograd.rs/live/cam_20.jpg".to_string(),
+            },
+            CamSourceEntry {
                 label: "Berlin".to_string(),
-                url: "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(),
+                url: "https://www.berlin.de/webcams/fsz/webcam.jpg".to_string(),
             },
             CamSourceEntry {
                 label: "Paris".to_string(),
-                url: "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(),
+                url: "https://images.webcamgalore.com/33422-current-webcam-Paris.jpg".to_string(),
             },
             CamSourceEntry {
-                label: "Doha".to_string(),
-                url: "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(),
-            },
-            CamSourceEntry {
-                label: "Brussels".to_string(),
-                url: "https://www.youtube.com/watch?v=pykpO5kQJ98".to_string(),
+                label: "Rome".to_string(),
+                url: "https://images.webcamgalore.com/4513-current-webcam-Rome.jpg".to_string(),
             },
         ],
         cycle,
@@ -2022,11 +2060,11 @@ fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str, cycle: u64) -> 
 }
 
 struct WeatherCompactInput<'a> {
-    condition_icon: &'a str,
+    location_label: &'a str,
+    condition_label: &'a str,
     temp: f64,
     feels: f64,
     rain_prob: f64,
-    wind_arrow: &'a str,
     wind_dir: &'a str,
     wind_speed: f64,
     humidity: f64,
@@ -2036,14 +2074,14 @@ struct WeatherCompactInput<'a> {
 
 fn format_weather_compact(input: &WeatherCompactInput<'_>) -> String {
     format!(
-        "{}  ◉ {:.1}{}  ◇  ◍ {:.1}{}  ◇  ☂ {:.0}%\n⌖ {} {}  ◇  ➤ {:.1} {}  ◇  ◒ {:.0}%",
-        input.condition_icon,
+        "{}\n{}  {:.1}{}  feels {:.1}{}\nRain {:.0}%  Wind {} {:.1} {}\nHumidity {:.0}%",
+        input.location_label,
+        input.condition_label,
         input.temp,
         input.temp_unit,
         input.feels,
         input.temp_unit,
         input.rain_prob,
-        input.wind_arrow,
         input.wind_dir,
         input.wind_speed,
         input.wind_unit,
@@ -2075,10 +2113,70 @@ fn resolve_weather_minimap(
 }
 
 fn resolve_weather_minimap_raw(lat: f64, lon: f64) -> Option<PathBuf> {
-    let endpoint = format!(
-        "https://staticmap.openstreetmap.de/staticmap.php?center={lat:.4},{lon:.4}&zoom=7&size=640x360&maptype=mapnik&markers={lat:.4},{lon:.4},lightblue1"
+    let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
+    fs::create_dir_all(&cache_dir).ok()?;
+    let output = cache_dir.join(format!(
+        "weather-map-base-{}.png",
+        stable_hash(&format!("{lat:.4}:{lon:.4}:z{WEATHER_MAP_ZOOM}"))
+    ));
+    if output.exists() {
+        return Some(output);
+    }
+
+    let (tile_x, tile_y) = lat_lon_to_tile(lat, lon, WEATHER_MAP_ZOOM);
+    let base_x = tile_x.floor() as i64 - 1;
+    let base_y = tile_y.floor() as i64 - 1;
+    let tile_span = (1_i64) << WEATHER_MAP_ZOOM;
+    let mut mosaic = RgbaImage::from_pixel(
+        WEATHER_MAP_TILE_SIZE * 3,
+        WEATHER_MAP_TILE_SIZE * 3,
+        Rgba([18, 22, 28, 255]),
     );
-    fetch_remote_image(endpoint, ImageProvider::Generic).ok()
+    let mut downloaded_any = false;
+
+    for oy in 0..3_i64 {
+        for ox in 0..3_i64 {
+            let wrapped_x = (base_x + ox).rem_euclid(tile_span);
+            let clamped_y = (base_y + oy).clamp(0, tile_span.saturating_sub(1));
+            let url = format!(
+                "https://tile.openstreetmap.org/{}/{}/{}.png",
+                WEATHER_MAP_ZOOM, wrapped_x, clamped_y
+            );
+            if let Ok(path) = fetch_remote_image(url, ImageProvider::Generic)
+                && let Ok(tile) = image::open(path)
+            {
+                let tile_rgba = tile.to_rgba8();
+                imageops::overlay(
+                    &mut mosaic,
+                    &tile_rgba,
+                    ox * WEATHER_MAP_TILE_SIZE as i64,
+                    oy * WEATHER_MAP_TILE_SIZE as i64,
+                );
+                downloaded_any = true;
+            }
+        }
+    }
+
+    if !downloaded_any {
+        return None;
+    }
+
+    let center_px_x = ((tile_x - base_x as f64) * WEATHER_MAP_TILE_SIZE as f64).round() as i64;
+    let center_px_y = ((tile_y - base_y as f64) * WEATHER_MAP_TILE_SIZE as f64).round() as i64;
+    let max_crop_x = (mosaic.width().saturating_sub(640)) as i64;
+    let max_crop_y = (mosaic.height().saturating_sub(360)) as i64;
+    let crop_x = (center_px_x - 320).clamp(0, max_crop_x) as u32;
+    let crop_y = (center_px_y - 180).clamp(0, max_crop_y) as u32;
+    let cropped = imageops::crop_imm(&mosaic, crop_x, crop_y, 640, 360).to_image();
+    write_weather_image(&output, &cropped)
+}
+
+fn lat_lon_to_tile(lat: f64, lon: f64, zoom: u32) -> (f64, f64) {
+    let lat_rad = lat.to_radians();
+    let n = 2.0_f64.powi(zoom as i32);
+    let x = (lon + 180.0) / 360.0 * n;
+    let y = (1.0 - ((lat_rad.tan() + (1.0 / lat_rad.cos())).ln() / std::f64::consts::PI)) / 2.0 * n;
+    (x, y)
 }
 
 fn precipitation_probability(payload: &Value, current_time: &str) -> Option<f64> {
@@ -2226,41 +2324,41 @@ fn capture_stream_preview(stream_url: &str, fps: f32) -> Option<PathBuf> {
     None
 }
 
-fn weather_code_icon(code: i64) -> &'static str {
+fn weather_code_label(code: i64) -> &'static str {
     match code {
-        0 => "☀",
-        1..=3 => "⛅",
-        45 | 48 => "🌫",
-        51..=57 => "🌦",
-        61..=67 => "🌧",
-        71..=77 => "❄",
-        80..=86 => "🌧",
-        95..=99 => "⚡",
-        _ => "•",
+        0 => "Clear",
+        1..=3 => "Clouds",
+        45 | 48 => "Fog",
+        51..=57 => "Drizzle",
+        61..=67 => "Rain",
+        71..=77 => "Snow",
+        80..=86 => "Showers",
+        95..=99 => "Storm",
+        _ => "Weather",
     }
 }
 
-fn compact_condition_symbol(desc: &str) -> &'static str {
+fn compact_condition_label(desc: &str) -> &'static str {
     let l = desc.to_ascii_lowercase();
     if l.contains("thunder") {
-        return "⚡";
+        return "Storm";
     }
     if l.contains("snow") {
-        return "❄";
+        return "Snow";
     }
     if l.contains("rain") || l.contains("drizzle") || l.contains("shower") {
-        return "🌧";
+        return "Rain";
     }
     if l.contains("fog") || l.contains("mist") {
-        return "🌫";
+        return "Fog";
     }
     if l.contains("cloud") {
-        return "☁";
+        return "Clouds";
     }
     if l.contains("clear") || l.contains("sun") {
-        return "☀";
+        return "Clear";
     }
-    "•"
+    "Weather"
 }
 
 fn news_preview_candidates(cfg: &AppConfig, stream_url: &str, cycle: u64) -> Vec<String> {
@@ -2711,9 +2809,6 @@ fn parse_cache_stamp_millis(raw: &str) -> Option<u64> {
 }
 
 fn resolve_youtube_playback_url(url: &str) -> Option<String> {
-    if !command_exists("yt-dlp") {
-        return None;
-    }
     let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
     fs::create_dir_all(&cache_dir).ok()?;
     let hash = stable_hash(url);
@@ -2732,27 +2827,63 @@ fn resolve_youtube_playback_url(url: &str) -> Option<String> {
         }
     }
 
-    let output = Command::new("yt-dlp")
-        .args(["--no-warnings", "--no-playlist", "-g", url])
-        .output()
+    if command_exists("yt-dlp") {
+        let output = Command::new("yt-dlp")
+            .args(["--no-warnings", "--no-playlist", "-g", url])
+            .output()
+            .ok()?;
+        if output.status.success() {
+            let stdout = String::from_utf8(output.stdout).ok()?;
+            let mut candidates = stdout
+                .lines()
+                .map(str::trim)
+                .filter(|l| l.starts_with("http"))
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>();
+            if !candidates.is_empty() {
+                candidates.sort_by_key(|l| if l.contains(".m3u8") { 0 } else { 1 });
+                let picked = candidates[0].clone();
+                let _ = fs::write(&cache_file, format!("{picked}\n"));
+                return Some(picked);
+            }
+        }
+    }
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(8))
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+        .build()
         .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let stdout = String::from_utf8(output.stdout).ok()?;
-    let mut candidates = stdout
-        .lines()
-        .map(str::trim)
-        .filter(|l| l.starts_with("http"))
-        .map(ToOwned::to_owned)
-        .collect::<Vec<_>>();
-    if candidates.is_empty() {
-        return None;
-    }
-    candidates.sort_by_key(|l| if l.contains(".m3u8") { 0 } else { 1 });
-    let picked = candidates[0].clone();
+    let body = client
+        .get(url)
+        .send()
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .text()
+        .ok()?;
+    let picked = extract_youtube_manifest_url(&body)?;
     let _ = fs::write(&cache_file, format!("{picked}\n"));
     Some(picked)
+}
+
+fn extract_youtube_manifest_url(body: &str) -> Option<String> {
+    for needle in ["hlsManifestUrl\":\"", "dashManifestUrl\":\""] {
+        let Some(start) = body.find(needle) else {
+            continue;
+        };
+        let rest = &body[start + needle.len()..];
+        let end = rest.find("\",").or_else(|| rest.find('"'))?;
+        let raw = rest[..end].trim();
+        let val = raw
+            .replace("\\u0026", "&")
+            .replace("\\/", "/")
+            .replace("&amp;", "&");
+        if val.starts_with("http") {
+            return Some(val);
+        }
+    }
+    None
 }
 
 fn stable_hash(input: &str) -> String {
@@ -2876,6 +3007,56 @@ fn read_cycle_pick_state(path: &Path) -> Option<(u64, usize)> {
 fn write_cycle_pick_state(path: &Path, cycle: u64, idx: usize) -> Result<()> {
     fs::write(cycle_pick_state_path(path), format!("{cycle},{idx}\n"))?;
     Ok(())
+}
+
+fn remote_image_cycle_state_path(cfg: &AppConfig, key: &str) -> Result<PathBuf> {
+    let path = expand_tilde(&format!(
+        "{}.remote-image-{}",
+        cfg.rotation_state_file,
+        stable_hash(key)
+    ))?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    Ok(path)
+}
+
+fn read_cycle_image_state(path: &Path) -> Option<(u64, PathBuf)> {
+    let raw = fs::read_to_string(path).ok()?;
+    let (cycle_raw, image_raw) = raw.trim().split_once('|')?;
+    let cycle = cycle_raw.trim().parse::<u64>().ok()?;
+    let image_path = PathBuf::from(image_raw.trim());
+    if !image_path.exists() {
+        return None;
+    }
+    Some((cycle, image_path))
+}
+
+fn write_cycle_image_state(path: &Path, cycle: u64, image_path: &Path) -> Result<()> {
+    fs::write(path, format!("{cycle}|{}\n", image_path.display()))?;
+    Ok(())
+}
+
+fn resolve_remote_image_for_cycle<F>(
+    cfg: &AppConfig,
+    cycle: u64,
+    key: &str,
+    fetcher: F,
+) -> Result<PathBuf, String>
+where
+    F: FnOnce() -> Result<PathBuf, String>,
+{
+    let state_path =
+        remote_image_cycle_state_path(cfg, key).map_err(|e| format!("state path failed: {e}"))?;
+    if let Some((last_cycle, cached)) = read_cycle_image_state(&state_path)
+        && last_cycle == cycle
+    {
+        return Ok(cached);
+    }
+    let fetched = fetcher()?;
+    write_cycle_image_state(&state_path, cycle, &fetched)
+        .map_err(|e| format!("state write failed: {e}"))?;
+    Ok(fetched)
 }
 
 fn resolve_image_endpoint_from_preset(cfg: &AppConfig) -> Result<(String, ImageProvider)> {
@@ -3410,125 +3591,36 @@ fn store_cached_weather_widget(payload: &WeatherWidgetPayload) -> Result<()> {
 
 fn stylize_weather_minimap(
     input: &Path,
-    lat: f64,
-    lon: f64,
+    _lat: f64,
+    _lon: f64,
     wind_deg: f64,
     wind_speed: f64,
-    wind_unit: &str,
+    _wind_unit: &str,
 ) -> Option<PathBuf> {
-    let (cmd, use_magick_subcommand) = weather_image_magick_command()?;
-
     let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
     fs::create_dir_all(&cache_dir).ok()?;
     let hash = stable_hash(&format!(
-        "{}-{lat:.3}-{lon:.3}-{}-{}-{}",
+        "{}-{}-{}",
         input.display(),
         (wind_deg / 5.0).round() as i32,
-        (wind_speed * 2.0).round() as i32,
-        wind_unit
+        (wind_speed * 2.0).round() as i32
     ));
     let output = cache_dir.join(format!("weather-map-{hash}.png"));
     if output.exists() {
         return Some(output);
     }
 
-    let center_x = 320.0_f64;
-    let center_y = 180.0_f64;
-    let radius = 82.0_f64;
-    let rad = wind_deg.to_radians();
-    let dx = rad.sin();
-    let dy = -rad.cos();
-    let ex = center_x + dx * radius;
-    let ey = center_y + dy * radius;
-    let left_x = ex - (dx * 10.0) - (dy * 8.0);
-    let left_y = ey - (dy * 10.0) + (dx * 8.0);
-    let right_x = ex - (dx * 10.0) + (dy * 8.0);
-    let right_y = ey - (dy * 10.0) - (dx * 8.0);
-    let (_, wind_dir) = compass_arrow(wind_deg);
-    let wind_text = format!("{wind_dir} {wind_speed:.1} {wind_unit}");
-
-    let mut args = Vec::<String>::new();
-    if use_magick_subcommand {
-        args.push("convert".to_string());
+    let mut img = image::open(input).ok()?.to_rgba8();
+    if img.width() != 640 || img.height() != 360 {
+        img = imageops::resize(&img, 640, 360, imageops::FilterType::CatmullRom);
     }
-    args.extend([
-        input.display().to_string(),
-        "-auto-orient".to_string(),
-        "-resize".to_string(),
-        "640x360^".to_string(),
-        "-gravity".to_string(),
-        "Center".to_string(),
-        "-extent".to_string(),
-        "640x360".to_string(),
-        "-colorspace".to_string(),
-        "Gray".to_string(),
-        "-fill".to_string(),
-        "#11141888".to_string(),
-        "-colorize".to_string(),
-        "28".to_string(),
-        "-stroke".to_string(),
-        "#8A8F9566".to_string(),
-        "-strokewidth".to_string(),
-        "2".to_string(),
-        "-fill".to_string(),
-        "none".to_string(),
-        "-draw".to_string(),
-        format!(
-            "circle {center_x:.1},{center_y:.1} {center_x:.1},{:.1}",
-            center_y - 92.0
-        ),
-        "-stroke".to_string(),
-        "#FF4A4ADD".to_string(),
-        "-strokewidth".to_string(),
-        "4".to_string(),
-        "-draw".to_string(),
-        format!("line {center_x:.1},{center_y:.1} {ex:.1},{ey:.1}"),
-        "-fill".to_string(),
-        "#FF3B30EE".to_string(),
-        "-stroke".to_string(),
-        "#4A0D0D".to_string(),
-        "-strokewidth".to_string(),
-        "1".to_string(),
-        "-draw".to_string(),
-        format!("polygon {ex:.1},{ey:.1} {left_x:.1},{left_y:.1} {right_x:.1},{right_y:.1}"),
-        "-fill".to_string(),
-        "#FF6B6B".to_string(),
-        "-stroke".to_string(),
-        "none".to_string(),
-        "-draw".to_string(),
-        format!(
-            "circle {center_x:.1},{center_y:.1} {center_x:.1},{:.1}",
-            center_y - 4.0
-        ),
-        "-gravity".to_string(),
-        "NorthWest".to_string(),
-        "-pointsize".to_string(),
-        "28".to_string(),
-        "-fill".to_string(),
-        "#FF3B30".to_string(),
-        "-stroke".to_string(),
-        "none".to_string(),
-        "-annotate".to_string(),
-        "+22+34".to_string(),
-        wind_text,
-        output.display().to_string(),
-    ]);
-
-    let ok = Command::new(cmd)
-        .args(args)
-        .status()
-        .ok()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if ok && output.exists() {
-        Some(output)
-    } else {
-        Some(input.to_path_buf())
-    }
+    tint_weather_map(&mut img);
+    draw_weather_frame(&mut img);
+    draw_weather_pointer(&mut img, 320, 180, wind_deg, wind_speed);
+    write_weather_image(&output, &img)
 }
 
 fn fallback_weather_minimap(wind_deg: f64, wind_speed: f64, wind_unit: &str) -> Option<PathBuf> {
-    let (cmd, use_magick_subcommand) = weather_image_magick_command()?;
     let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
     fs::create_dir_all(&cache_dir).ok()?;
     let hash = stable_hash(&format!(
@@ -3541,109 +3633,214 @@ fn fallback_weather_minimap(wind_deg: f64, wind_speed: f64, wind_unit: &str) -> 
         return Some(output);
     }
 
-    let center_x = 320.0_f64;
-    let center_y = 180.0_f64;
-    let radius = 82.0_f64;
-    let rad = wind_deg.to_radians();
-    let dx = rad.sin();
-    let dy = -rad.cos();
-    let ex = center_x + dx * radius;
-    let ey = center_y + dy * radius;
-    let left_x = ex - (dx * 10.0) - (dy * 8.0);
-    let left_y = ey - (dy * 10.0) + (dx * 8.0);
-    let right_x = ex - (dx * 10.0) + (dy * 8.0);
-    let right_y = ey - (dy * 10.0) - (dx * 8.0);
-    let (_, wind_dir) = compass_arrow(wind_deg);
-    let wind_text = format!("{wind_dir} {wind_speed:.1} {wind_unit}");
-
-    let mut args = Vec::<String>::new();
-    if use_magick_subcommand {
-        args.push("convert".to_string());
+    let mut img = RgbaImage::from_pixel(640, 360, Rgba([20, 26, 33, 255]));
+    for x in (16..640).step_by(32) {
+        draw_line(&mut img, x, 12, x, 348, Rgba([46, 58, 69, 140]), 1);
     }
-    args.extend([
-        "-size".to_string(),
-        "640x360".to_string(),
-        "xc:#161A1F".to_string(),
-        "-stroke".to_string(),
-        "#2D333A88".to_string(),
-        "-strokewidth".to_string(),
-        "1".to_string(),
-        "-fill".to_string(),
-        "none".to_string(),
-        "-draw".to_string(),
-        "rectangle 8,8 632,352".to_string(),
-        "-stroke".to_string(),
-        "#8A8F9566".to_string(),
-        "-strokewidth".to_string(),
-        "2".to_string(),
-        "-draw".to_string(),
-        format!(
-            "circle {center_x:.1},{center_y:.1} {center_x:.1},{:.1}",
-            center_y - 92.0
-        ),
-        "-stroke".to_string(),
-        "#FF4A4ADD".to_string(),
-        "-strokewidth".to_string(),
-        "4".to_string(),
-        "-draw".to_string(),
-        format!("line {center_x:.1},{center_y:.1} {ex:.1},{ey:.1}"),
-        "-fill".to_string(),
-        "#FF3B30EE".to_string(),
-        "-stroke".to_string(),
-        "#4A0D0D".to_string(),
-        "-strokewidth".to_string(),
-        "1".to_string(),
-        "-draw".to_string(),
-        format!("polygon {ex:.1},{ey:.1} {left_x:.1},{left_y:.1} {right_x:.1},{right_y:.1}"),
-        "-fill".to_string(),
-        "#FF6B6B".to_string(),
-        "-stroke".to_string(),
-        "none".to_string(),
-        "-draw".to_string(),
-        format!(
-            "circle {center_x:.1},{center_y:.1} {center_x:.1},{:.1}",
-            center_y - 4.0
-        ),
-        "-gravity".to_string(),
-        "NorthWest".to_string(),
-        "-pointsize".to_string(),
-        "28".to_string(),
-        "-fill".to_string(),
-        "#FF3B30".to_string(),
-        "-annotate".to_string(),
-        "+22+34".to_string(),
-        wind_text,
-        "-pointsize".to_string(),
-        "19".to_string(),
-        "-fill".to_string(),
-        "#A6AFBA".to_string(),
-        "-annotate".to_string(),
-        "+22+66".to_string(),
-        "map unavailable".to_string(),
-        output.display().to_string(),
-    ]);
+    for y in (16..360).step_by(32) {
+        draw_line(&mut img, 12, y, 628, y, Rgba([46, 58, 69, 140]), 1);
+    }
+    draw_weather_frame(&mut img);
+    draw_weather_pointer(&mut img, 320, 180, wind_deg, wind_speed);
+    write_weather_image(&output, &img)
+}
 
-    let ok = Command::new(cmd)
-        .args(args)
-        .status()
-        .ok()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if ok && output.exists() {
-        Some(output)
-    } else {
-        None
+fn write_weather_image(path: &Path, img: &RgbaImage) -> Option<PathBuf> {
+    DynamicImage::ImageRgba8(img.clone()).save(path).ok()?;
+    Some(path.to_path_buf())
+}
+
+fn tint_weather_map(img: &mut RgbaImage) {
+    for pixel in img.pixels_mut() {
+        let src = pixel.0;
+        let lum = ((src[0] as f32 * 0.299) + (src[1] as f32 * 0.587) + (src[2] as f32 * 0.114))
+            .round() as u8;
+        let mapped = lum.saturating_add(12);
+        *pixel = Rgba([
+            mapped.saturating_sub(20),
+            mapped.saturating_sub(10),
+            mapped,
+            255,
+        ]);
     }
 }
 
-fn weather_image_magick_command() -> Option<(&'static str, bool)> {
-    if command_exists("magick") {
-        Some(("magick", true))
-    } else if command_exists("convert") {
-        Some(("convert", false))
+fn draw_weather_frame(img: &mut RgbaImage) {
+    draw_rect_outline(img, 6, 6, 628, 348, Rgba([48, 61, 74, 220]), 2);
+    draw_rect_outline(img, 14, 14, 612, 332, Rgba([28, 36, 45, 220]), 1);
+    draw_circle_outline(img, 320, 180, 82, Rgba([93, 107, 122, 170]), 2);
+    draw_filled_circle(img, 320, 180, 4, Rgba([255, 107, 107, 255]));
+}
+
+fn draw_weather_pointer(img: &mut RgbaImage, cx: i32, cy: i32, wind_deg: f64, wind_speed: f64) {
+    let radius = 80.0_f64;
+    let rad = wind_deg.to_radians();
+    let dx = rad.sin();
+    let dy = -rad.cos();
+    let ex = cx as f64 + dx * radius;
+    let ey = cy as f64 + dy * radius;
+    let lx = ex - (dx * 14.0) - (dy * 10.0);
+    let ly = ey - (dy * 14.0) + (dx * 10.0);
+    let rx = ex - (dx * 14.0) + (dy * 10.0);
+    let ry = ey - (dy * 14.0) - (dx * 10.0);
+    let stroke = if wind_speed >= 35.0 {
+        5
+    } else if wind_speed >= 18.0 {
+        4
     } else {
-        None
+        3
+    };
+    let red = Rgba([255, 76, 76, 235]);
+    draw_line(
+        img,
+        cx,
+        cy,
+        ex.round() as i32,
+        ey.round() as i32,
+        red,
+        stroke,
+    );
+    draw_line(
+        img,
+        ex.round() as i32,
+        ey.round() as i32,
+        lx.round() as i32,
+        ly.round() as i32,
+        red,
+        stroke,
+    );
+    draw_line(
+        img,
+        ex.round() as i32,
+        ey.round() as i32,
+        rx.round() as i32,
+        ry.round() as i32,
+        red,
+        stroke,
+    );
+    draw_filled_circle(img, cx, cy, 5, Rgba([255, 96, 96, 255]));
+}
+
+fn draw_rect_outline(
+    img: &mut RgbaImage,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    color: Rgba<u8>,
+    stroke: i32,
+) {
+    for offset in 0..stroke {
+        draw_line(
+            img,
+            x + offset,
+            y + offset,
+            x + w - offset,
+            y + offset,
+            color,
+            1,
+        );
+        draw_line(
+            img,
+            x + offset,
+            y + h - offset,
+            x + w - offset,
+            y + h - offset,
+            color,
+            1,
+        );
+        draw_line(
+            img,
+            x + offset,
+            y + offset,
+            x + offset,
+            y + h - offset,
+            color,
+            1,
+        );
+        draw_line(
+            img,
+            x + w - offset,
+            y + offset,
+            x + w - offset,
+            y + h - offset,
+            color,
+            1,
+        );
     }
+}
+
+fn draw_circle_outline(
+    img: &mut RgbaImage,
+    cx: i32,
+    cy: i32,
+    radius: i32,
+    color: Rgba<u8>,
+    stroke: i32,
+) {
+    for angle in 0..360 {
+        let rad = (angle as f64).to_radians();
+        let x = cx + (rad.cos() * radius as f64).round() as i32;
+        let y = cy + (rad.sin() * radius as f64).round() as i32;
+        draw_filled_circle(img, x, y, stroke.max(1) - 1, color);
+    }
+}
+
+fn draw_filled_circle(img: &mut RgbaImage, cx: i32, cy: i32, radius: i32, color: Rgba<u8>) {
+    let r2 = radius * radius;
+    for dy in -radius..=radius {
+        for dx in -radius..=radius {
+            if dx * dx + dy * dy <= r2 {
+                put_pixel_safe(img, cx + dx, cy + dy, color);
+            }
+        }
+    }
+}
+
+fn draw_line(
+    img: &mut RgbaImage,
+    mut x0: i32,
+    mut y0: i32,
+    x1: i32,
+    y1: i32,
+    color: Rgba<u8>,
+    stroke: i32,
+) {
+    let dx = (x1 - x0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let dy = -(y1 - y0).abs();
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut err = dx + dy;
+    loop {
+        for ox in -(stroke / 2)..=(stroke / 2) {
+            for oy in -(stroke / 2)..=(stroke / 2) {
+                put_pixel_safe(img, x0 + ox, y0 + oy, color);
+            }
+        }
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+        let e2 = 2 * err;
+        if e2 >= dy {
+            err += dy;
+            x0 += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+fn put_pixel_safe(img: &mut RgbaImage, x: i32, y: i32, color: Rgba<u8>) {
+    if x < 0 || y < 0 {
+        return;
+    }
+    let (w, h) = img.dimensions();
+    if x as u32 >= w || y as u32 >= h {
+        return;
+    }
+    img.put_pixel(x as u32, y as u32, color);
 }
 
 fn fetch_stream_title_hint(url: &str) -> Option<String> {
@@ -3712,7 +3909,7 @@ mod tests {
         cfg.show_news_layer = false;
         cfg.show_news_ticker2 = true;
         cfg.news_ticker2_fps = 12.0;
-        assert!(loop_tick_duration(&cfg) <= Duration::from_millis(130));
+        assert!(loop_tick_duration(&cfg) <= Duration::from_millis(250));
 
         cfg.show_news_ticker2 = false;
         cfg.show_cams_layer = true;
@@ -3772,8 +3969,8 @@ mod tests {
         let short_ms = ticker_shift_millis_for_len(24);
         let long_ms = ticker_shift_millis_for_len(96);
         assert!(short_ms > long_ms);
-        assert!(short_ms >= 120);
-        assert!(long_ms <= 120);
+        assert!(short_ms >= 300);
+        assert!(long_ms <= 180);
     }
 
     #[test]
