@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.03.11-3 - 2026-03-11
+- Fixed CI macOS release packaging regression introduced in `2026.03.11-2`:
+  - moved bundled quotes seed inside app bundle resources (`Le Compositeur.app/Contents/Resources/quotes/local-quotes.md`)
+  - resolves `codesign` failure (`unsealed contents present in the bundle root`)
+  - restores end-to-end cross-platform release publishing for GitHub tag builds
+
 ## 2026.03.11-2 - 2026-03-11
 - Fixed packaged GUI runtime command resolution:
   - GUI now searches packaged CLI binaries first (`wc-cli` / `le-compositeur-cli`, including common install paths)

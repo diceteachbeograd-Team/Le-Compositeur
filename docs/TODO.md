@@ -11,8 +11,8 @@ Last updated: 2026-03-11
 ## Current Snapshot
 - Repo branch: `main`
 - Latest published tag: `2026.03.11-1`
-- Next hotfix target tag: `2026.03.11-2`
-- Local tests: pending full run (`cargo test --all` to run before tag push)
+- Next hotfix target tag: `2026.03.11-3`
+- Local tests: passing (`cargo test --all`)
 - GUI tabs implemented: `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline
 
@@ -30,13 +30,13 @@ Last updated: 2026-03-11
 - [x] `P1` Startup update check in GUI + one-click update action.
   Done when: app checks latest release on startup, shows availability in UI, and provides update button with distro-aware command fallback.
 
-- [ ] `P0` Package runtime hotfix for GUI command execution outside source tree.
+- [x] `P0` Package runtime hotfix for GUI command execution outside source tree.
   Done when: GUI uses packaged `wc-cli`/`le-compositeur-cli` without `cargo` fallback errors on VM package install.
 
-- [ ] `P0` Ensure bundled quotes are shipped in all release bundles and Linux packages.
+- [x] `P0` Ensure bundled quotes are shipped in all release bundles and Linux packages.
   Done when: quote seed file is present in Linux package path and in tar/zip/dmg bundles, and missing local paths recover automatically.
 
-- [ ] `P1` Docs sync for the hotfix/release (`README`, `RELEASE`, `PACKAGING`, `CHANGELOG`, `TODO`).
+- [x] `P1` Docs sync for the hotfix/release (`README`, `RELEASE`, `PACKAGING`, `CHANGELOG`, `TODO`).
   Done when: user-facing docs describe behavior, limits, and operator flow.
 
 - [x] `P1` Multiple independent ticker instances (not only one News line).

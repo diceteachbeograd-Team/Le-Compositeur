@@ -150,8 +150,8 @@ jobs:
           chmod +x "${APP_ROOT}/MacOS/LeCompositeur"
           chmod +x "${APP_ROOT}/MacOS/le-compositeur-cli"
           chmod +x "${APP_ROOT}/MacOS/wc-cli"
-          mkdir -p "dist/${APP_NAME}/quotes"
-          cp assets/quotes/local/local-quotes.md "dist/${APP_NAME}/quotes/local-quotes.md"
+          mkdir -p "${APP_ROOT}/Resources/quotes"
+          cp assets/quotes/local/local-quotes.md "${APP_ROOT}/Resources/quotes/local-quotes.md"
 
           # Build a proper .icns from the repository PNG icon.
           cp assets/icons/le-compositeur.png "${ICONSET_DIR}/icon_512x512@2x.png"
