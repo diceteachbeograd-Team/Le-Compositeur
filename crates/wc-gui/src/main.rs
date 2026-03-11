@@ -2776,26 +2776,26 @@ impl WcGuiApp {
                     ui.label("Public preset");
                     egui::ComboBox::from_id_salt("cams_public_choice_tab")
                         .selected_text(match self.cams_public_choice.as_str() {
-                            "belgrade_center" => "Belgrade center mix",
-                            "europe_mix" => "Europe city mix",
-                            "world_mix" => "World live mix",
-                            _ => "Belgrade center mix",
+                            "belgrade_center" => "Capital starter mix",
+                            "europe_mix" => "Europe capitals mix",
+                            "world_mix" => "Global capitals mix",
+                            _ => "Capital starter mix",
                         })
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
                                 &mut self.cams_public_choice,
                                 "belgrade_center".to_string(),
-                                "Belgrade center mix",
+                                "Capital starter mix",
                             );
                             ui.selectable_value(
                                 &mut self.cams_public_choice,
                                 "europe_mix".to_string(),
-                                "Europe city mix",
+                                "Europe capitals mix",
                             );
                             ui.selectable_value(
                                 &mut self.cams_public_choice,
                                 "world_mix".to_string(),
-                                "World live mix",
+                                "Global capitals mix",
                             );
                         });
                     if ui.button("Apply preset URLs").clicked() {
@@ -2805,7 +2805,7 @@ impl WcGuiApp {
                     }
                 });
                 if self.cfg.cams_source == "custom" {
-                    ui.label("Custom cam URLs (one per line, supports http(s)/rtsp)");
+                    ui.label("Custom cam URLs (one per line). Optional format: Label => URL");
                     ui.add(
                         egui::TextEdit::multiline(&mut self.cfg.cams_custom_urls)
                             .desired_rows(6)
@@ -4097,20 +4097,21 @@ fn default_cfg() -> AppConfig {
 fn cams_public_preset_urls(id: &str) -> String {
     let urls: &[&str] = match id {
         "europe_mix" => &[
-            "https://www.youtube.com/watch?v=GE_SfNVNyqk",
-            "https://www.youtube.com/watch?v=l8PMl7tUDIE",
-            "https://www.youtube.com/watch?v=pykpO5kQJ98",
+            "Berlin => https://www.youtube.com/watch?v=GE_SfNVNyqk",
+            "Paris => https://www.youtube.com/watch?v=l8PMl7tUDIE",
+            "Brussels => https://www.youtube.com/watch?v=pykpO5kQJ98",
         ],
         "world_mix" => &[
-            "https://www.youtube.com/watch?v=1-iS7LArMPA",
-            "https://www.youtube.com/watch?v=21X5lGlDOfg",
-            "https://www.youtube.com/watch?v=gCNeDWCI0vo",
-            "https://www.youtube.com/watch?v=pykpO5kQJ98",
+            "New York => https://www.youtube.com/watch?v=1-iS7LArMPA",
+            "Doha => https://www.youtube.com/watch?v=gCNeDWCI0vo",
+            "Brussels => https://www.youtube.com/watch?v=pykpO5kQJ98",
+            "Earth Orbit => https://www.youtube.com/watch?v=21X5lGlDOfg",
         ],
         _ => &[
-            "https://www.youtube.com/watch?v=GE_SfNVNyqk",
-            "https://www.youtube.com/watch?v=1-iS7LArMPA",
-            "https://www.youtube.com/watch?v=l8PMl7tUDIE",
+            "New York => https://www.youtube.com/watch?v=1-iS7LArMPA",
+            "Berlin => https://www.youtube.com/watch?v=GE_SfNVNyqk",
+            "Paris => https://www.youtube.com/watch?v=l8PMl7tUDIE",
+            "Doha => https://www.youtube.com/watch?v=gCNeDWCI0vo",
         ],
     };
     urls.join("\n")

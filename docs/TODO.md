@@ -59,7 +59,7 @@ Last updated: 2026-03-11
 - [x] `P2` Add screenshot-based regression checks for overlay visibility.
   Done when: render changes can be validated against known baseline snapshots.
 
-- [ ] `P1` Curated capitals cam catalog from external directories/APIs.
+- [x] `P1` Curated capitals cam catalog from external directories/APIs.
   Done when: ship a maintained capital-priority preset list sourced from live webcam catalogs (with health checks and fallback ranking).
 
 ## Later
@@ -103,6 +103,7 @@ Last updated: 2026-03-11
 - [x] Added stream-aware background URL handling tied to `image_refresh_seconds`.
 - [x] Redesigned weather minimap wind overlay (red arrow + red speed) with generated fallback map.
 - [x] Improved cams source fallback: YouTube thumbnail fallback without `yt-dlp` and richer source labels.
+- [x] Added capital-oriented cam presets with labeled custom-entry format (`Label => URL`) for meaningful CAM ticker names.
 
 ## Restart Checklist (Operator)
 

@@ -1024,6 +1024,12 @@ struct CamsCachedPayload {
 }
 
 #[derive(Debug, Clone)]
+struct CamSourceEntry {
+    label: String,
+    url: String,
+}
+
+#[derive(Debug, Clone)]
 struct WidgetRenderBundle {
     quote: String,
     clock: String,
@@ -1596,26 +1602,32 @@ fn resolve_secondary_news_ticker(cfg: &AppConfig) -> String {
 
 fn resolve_cams_widget(cfg: &AppConfig) -> Result<CamsWidgetPayload> {
     let source_cycle = now_epoch_seconds() / cfg.cams_refresh_seconds.max(10);
-    let mut urls = cams_source_urls(cfg, source_cycle);
-    if urls.is_empty() {
+    let mut sources = cams_source_entries(cfg, source_cycle);
+    if sources.is_empty() {
         anyhow::bail!("no camera URLs available");
     }
 
     let count = cfg.cams_count.clamp(1, 5) as usize;
-    if urls.len() > count {
-        urls.truncate(count);
+    if sources.len() > count {
+        sources.truncate(count);
     }
+    let source_fingerprint = sources
+        .iter()
+        .map(|entry| format!("{}=>{}", entry.label, entry.url))
+        .collect::<Vec<_>>()
+        .join("|");
 
     let cache_id = format!(
         "cams-{}",
         stable_hash(&format!(
-            "{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}",
             cfg.cams_source,
             cfg.cams_custom_urls,
             cfg.cams_count,
             cfg.cams_columns,
             cfg.cams_refresh_seconds,
-            source_cycle
+            source_cycle,
+            source_fingerprint
         ))
     );
     let cached = load_cached_cams_payload(&cache_id, cfg.cams_refresh_seconds)?;
@@ -1623,16 +1635,16 @@ fn resolve_cams_widget(cfg: &AppConfig) -> Result<CamsWidgetPayload> {
         fresh
     } else {
         let mut frames = Vec::<PathBuf>::new();
-        for url in &urls {
-            if let Some(frame) = capture_stream_preview(url, cfg.cams_fps) {
+        for source in &sources {
+            if let Some(frame) = capture_stream_preview(&source.url, cfg.cams_fps) {
                 frames.push(frame);
             }
         }
         let preview_image = compose_cams_grid(&frames, cfg.cams_columns.clamp(1, 4))
             .or_else(|| frames.first().cloned());
-        let short = urls
+        let short = sources
             .iter()
-            .map(|u| summarize_source_label(u))
+            .map(cam_source_display_label)
             .collect::<Vec<_>>()
             .join(" ◆ ");
         let built = CamsCachedPayload {
@@ -1686,60 +1698,98 @@ fn fetch_news_payload(
     })
 }
 
-fn cams_source_urls(cfg: &AppConfig, cycle: u64) -> Vec<String> {
+fn cams_source_entries(cfg: &AppConfig, cycle: u64) -> Vec<CamSourceEntry> {
     match cfg.cams_source.trim().to_ascii_lowercase().as_str() {
         "custom" => {
-            let mut urls = parse_endpoint_list(&cfg.cams_custom_urls);
-            urls.retain(|u| looks_like_endpoint(u));
-            if urls.is_empty() {
-                auto_local_cam_urls(cycle)
+            let mut entries = parse_cam_source_list(&cfg.cams_custom_urls);
+            entries.retain(|entry| looks_like_endpoint(&entry.url));
+            if entries.is_empty() {
+                auto_local_cam_entries(cycle)
             } else {
-                rotate_urls(urls, cycle)
+                rotate_cam_entries(entries, cycle)
             }
         }
-        "city_public" => city_public_cam_urls(cycle),
-        _ => auto_local_cam_urls(cycle),
+        "city_public" => city_public_cam_entries(cycle),
+        _ => auto_local_cam_entries(cycle),
     }
 }
 
-fn auto_local_cam_urls(cycle: u64) -> Vec<String> {
+fn auto_local_cam_entries(cycle: u64) -> Vec<CamSourceEntry> {
     // Fallback-friendly list: YouTube links are resolved via yt-dlp when available,
     // otherwise we still fetch their live thumbnail snapshots.
-    rotate_urls(
+    rotate_cam_entries(
         vec![
-            "https://www.youtube.com/watch?v=1-iS7LArMPA".to_string(), // New York / Times Square
-            "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(), // Berlin / DW skyline feed
-            "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(), // Paris / France24 feed
-            "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(), // Doha / Al Jazeera
-            "https://www.youtube.com/watch?v=pykpO5kQJ98".to_string(), // Euronews live
-            "https://www.youtube.com/watch?v=21X5lGlDOfg".to_string(), // Earth/NASA view
+            CamSourceEntry {
+                label: "New York - Times Square".to_string(),
+                url: "https://www.youtube.com/watch?v=1-iS7LArMPA".to_string(),
+            },
+            CamSourceEntry {
+                label: "Berlin - DW Skyline".to_string(),
+                url: "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(),
+            },
+            CamSourceEntry {
+                label: "Paris - France24".to_string(),
+                url: "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(),
+            },
+            CamSourceEntry {
+                label: "Doha - Al Jazeera".to_string(),
+                url: "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(),
+            },
+            CamSourceEntry {
+                label: "Brussels - Euronews".to_string(),
+                url: "https://www.youtube.com/watch?v=pykpO5kQJ98".to_string(),
+            },
+            CamSourceEntry {
+                label: "Earth Orbit - NASA".to_string(),
+                url: "https://www.youtube.com/watch?v=21X5lGlDOfg".to_string(),
+            },
         ],
         cycle,
     )
 }
 
-fn city_public_cam_urls(cycle: u64) -> Vec<String> {
-    rotate_urls(
+fn city_public_cam_entries(cycle: u64) -> Vec<CamSourceEntry> {
+    rotate_cam_entries(
         vec![
-            "https://www.youtube.com/watch?v=1-iS7LArMPA".to_string(), // New York
-            "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(), // Berlin
-            "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(), // Paris
-            "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(), // Doha
+            CamSourceEntry {
+                label: "Berlin".to_string(),
+                url: "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(),
+            },
+            CamSourceEntry {
+                label: "Paris".to_string(),
+                url: "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(),
+            },
+            CamSourceEntry {
+                label: "Doha".to_string(),
+                url: "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(),
+            },
+            CamSourceEntry {
+                label: "Brussels".to_string(),
+                url: "https://www.youtube.com/watch?v=pykpO5kQJ98".to_string(),
+            },
         ],
         cycle,
     )
 }
 
-fn rotate_urls(urls: Vec<String>, cycle: u64) -> Vec<String> {
-    if urls.is_empty() {
-        return urls;
+fn rotate_cam_entries(entries: Vec<CamSourceEntry>, cycle: u64) -> Vec<CamSourceEntry> {
+    if entries.is_empty() {
+        return entries;
     }
-    let shift = (cycle as usize) % urls.len();
-    urls[shift..]
+    let shift = (cycle as usize) % entries.len();
+    entries[shift..]
         .iter()
-        .chain(urls[..shift].iter())
+        .chain(entries[..shift].iter())
         .cloned()
-        .collect::<Vec<_>>()
+        .collect()
+}
+
+fn cam_source_display_label(source: &CamSourceEntry) -> String {
+    let label = compact_news_line(source.label.trim());
+    if !label.is_empty() {
+        return label;
+    }
+    summarize_source_label(&source.url)
 }
 
 fn summarize_source_label(url: &str) -> String {
@@ -2862,6 +2912,68 @@ fn parse_endpoint_list(raw: &str) -> Vec<String> {
     if out.is_empty() && !raw.trim().is_empty() {
         out.push(raw.trim().to_string());
     }
+    out
+}
+
+fn parse_cam_source_list(raw: &str) -> Vec<CamSourceEntry> {
+    let mut out = Vec::<CamSourceEntry>::new();
+
+    for piece in raw.split(['\n', ';']) {
+        let trimmed = piece.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some((left, right)) = trimmed.split_once("=>") {
+            let url = right.trim();
+            if url.is_empty() {
+                continue;
+            }
+            let label = compact_news_line(left.trim());
+            out.push(CamSourceEntry {
+                label: if label.is_empty() {
+                    summarize_source_label(url)
+                } else {
+                    label
+                },
+                url: url.to_string(),
+            });
+            continue;
+        }
+
+        if let Some((left, right)) = trimmed.split_once('|') {
+            let url = right.trim();
+            if looks_like_endpoint(url) {
+                let label = compact_news_line(left.trim());
+                out.push(CamSourceEntry {
+                    label: if label.is_empty() {
+                        summarize_source_label(url)
+                    } else {
+                        label
+                    },
+                    url: url.to_string(),
+                });
+                continue;
+            }
+        }
+
+        out.push(CamSourceEntry {
+            label: summarize_source_label(trimmed),
+            url: trimmed.to_string(),
+        });
+    }
+
+    if out.is_empty() {
+        out.extend(
+            parse_endpoint_list(raw)
+                .into_iter()
+                .map(|url| CamSourceEntry {
+                    label: summarize_source_label(&url),
+                    url,
+                }),
+        );
+    }
+
     out
 }
 
