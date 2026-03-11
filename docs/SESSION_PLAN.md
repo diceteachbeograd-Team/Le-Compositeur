@@ -10,10 +10,10 @@ Use it together with `docs/TODO.md`.
 ## Current Workstream
 
 Active focus:
-1. Validate and harden the new auto-recovery/update flows on real package installs.
-2. Improve package-install verification coverage with real distro runs.
-3. Keep UI visual hierarchy stable after phase 2 rollout and collect VM feedback.
-4. Move plugin-style widget registry from stage-B dual-path integration toward stage-C config normalization.
+1. Ship hotfix tag `2026.03.11-2` with packaged GUI+CLI runtime integrity on VM installs.
+2. Validate quote recovery and bundled quote seed presence for package and archive installs.
+3. Keep compact GUI behavior usable on smaller windows (compact defaults + optional preview panel).
+4. Continue plugin-style widget registry rollout in guarded mode (Stage-B opt-in only).
 
 ## Ground Truth Commands
 
@@ -50,6 +50,7 @@ cargo run -p wc-cli -- run --once
 ## Expected Behavior Targets (current phase)
 
 Validation target:
+- Verify packaged GUI action buttons (`Validate`, `Run Once`, `Start Loop`) run via installed CLI, without Cargo workspace assumptions.
 - Verify quote recovery and updater behavior on Fedora (`rpm`) and Ubuntu (`deb`) package installs.
 - Capture any privilege/escalation edge-cases from `pkexec` update path.
 
@@ -65,7 +66,7 @@ Regression target:
 - Keep `native_bmp_overlay_output_hash_is_stable` passing as renderer snapshot guard.
 
 Architecture target:
-- Stage-A scaffold + Stage-B dual-path CLI integration are in place; continue staged rollout without behavior drift.
+- Stage-A scaffold + Stage-B dual-path CLI integration are in place; keep Stage-B gated via env opt-in while package/runtime fixes stabilize.
 
 ## Handoff Notes Template
 

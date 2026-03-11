@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026.03.11-2 - 2026-03-11
+- Fixed packaged GUI runtime command resolution:
+  - GUI now searches packaged CLI binaries first (`wc-cli` / `le-compositeur-cli`, including common install paths)
+  - `cargo run` fallback is disabled in release builds by default and can only be re-enabled explicitly with `WC_GUI_ALLOW_CARGO_FALLBACK=1`
+  - runner exit diagnostics now capture and print CLI stderr in the GUI status panel
+- Improved compact GUI defaults for smaller screens:
+  - `Compact UI` remains enabled by default
+  - right preview panel is now hidden by default to preserve working area
+- Hardened release packaging so artifacts stay functional outside source workspaces:
+  - Linux CI package/bundle now always includes both GUI + CLI binaries
+  - Linux package/bundle now ships default local quotes at `/usr/share/le-compositeur/quotes/local-quotes.md` (or bundle `quotes/local-quotes.md`)
+  - Windows zip now includes `LeCompositeur.exe` plus `le-compositeur-cli.exe` / `wc-cli.exe` and bundled local quotes
+  - macOS app bundle now includes CLI binaries and bundled local quotes
+  - removed standalone single-binary Linux/Windows release assets that lacked required CLI companion
+- Stage-B plugin-registry rollout safety:
+  - Stage-B path is now opt-in via `WC_WIDGET_REGISTRY_STAGE_B=1` to avoid runtime drift during package validation
+
 ## 2026.03.11-1 - 2026-03-11
 - Added plugin-registry Stage-B dual-path integration in `wc-cli`:
   - new registry-backed widget resolution path using `wc-core::widget_registry`

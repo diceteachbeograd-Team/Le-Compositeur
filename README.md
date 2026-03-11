@@ -9,9 +9,9 @@ Status: active hobby project (use at your own risk).
 
 ### Which file is for which OS?
 - Linux: `le-compositeur-linux-x86_64.deb` or `le-compositeur-linux-x86_64.rpm`
-- Windows: `LeCompositeur-windows-x86_64.exe` or `le-compositeur-windows-x86_64.zip`
+- Linux portable bundle: `le-compositeur-linux-x86_64.tar.gz`
+- Windows: `le-compositeur-windows-x86_64.zip`
 - macOS ARM: `le-compositeur-macos-arm64.dmg`
-- Linux portable binary: `le-compositeur-linux-x86_64`
 
 ## Build locally
 
@@ -19,8 +19,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.11-1
-sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.11-2
+sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-2*.rpm
 le-compositeur
 ```
 
@@ -28,8 +28,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-1
-sudo apt install ./dist/le-compositeur_2026.03.11-1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.11-2
+sudo apt install ./dist/le-compositeur_2026.03.11-2_amd64.deb
 le-compositeur
 ```
 
@@ -56,6 +56,7 @@ cargo run -p wc-gui
 - Performance caps are configurable per widget (`news_refresh_seconds`, `news_ticker2_refresh_seconds`, `cams_refresh_seconds`, `cams_fps`).
 - Linux distro smoke matrix and overlay snapshot/hash regression workflow are documented in `docs/TEST_MATRIX.md`.
 - Plugin-registry migration is documented in `docs/PLUGIN_REGISTRY_DRAFT.md`; stage-A scaffold is in `wc-core/src/widget_registry.rs` and stage-B dual-path is wired in `wc-cli`.
+- Release bundles include both GUI + CLI binaries and packaged default quotes seed (`local-quotes.md`).
 - Security notes: see [SECURITY.md](SECURITY.md)
 
 ## Full docs

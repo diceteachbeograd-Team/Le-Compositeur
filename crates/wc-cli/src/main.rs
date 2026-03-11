@@ -1011,9 +1011,11 @@ struct WidgetRenderBundle {
 }
 
 fn widget_registry_stage_b_enabled() -> bool {
-    std::env::var(WIDGET_REGISTRY_STAGE_B_ENV).map_or(true, |raw| {
-        let normalized = raw.trim().to_ascii_lowercase();
-        !(normalized == "0" || normalized == "false" || normalized == "off")
+    std::env::var(WIDGET_REGISTRY_STAGE_B_ENV).is_ok_and(|raw| {
+        matches!(
+            raw.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "on" | "yes"
+        )
     })
 }
 

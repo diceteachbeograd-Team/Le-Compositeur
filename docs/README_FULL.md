@@ -202,18 +202,18 @@ just migrate
 
 Alpha packaging helpers:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.11-1
-./scripts/build-alpha-deb.sh 2026.03.11-1
+./scripts/build-alpha-rpm.sh 2026.03.11-2
+./scripts/build-alpha-deb.sh 2026.03.11-2
 ```
 
 ### 6.1 Run on your system (release)
 Versioning scheme:
 - release version format: `YYYY.MM.DD-N`
-- example: `2026.03.11-1`
+- example: `2026.03.11-2`
 - if multiple builds happen on the same date, increment `N` (`.2`, `.3`, ...)
 
 You can choose either path:
-- `Option A`: download prebuilt release artifacts from GitHub Releases (tag `v...` or numeric tag like `2026.03.11-1`)
+- `Option A`: download prebuilt release artifacts from GitHub Releases (tag `v...` or numeric tag like `2026.03.11-2`)
 - `Option B`: build packages locally from source
 
 Fedora / RHEL (RPM):
@@ -225,8 +225,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B: local build + install
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.11-1
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.11-2
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-2*.rpm
 
 # start GUI
 wc-gui
@@ -244,8 +244,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B: local build + install
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-1
-sudo apt install ./dist/le-compositeur_2026.03.11-1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.11-2
+sudo apt install ./dist/le-compositeur_2026.03.11-2_amd64.deb
 
 # start GUI
 wc-gui
@@ -554,7 +554,7 @@ Noch offen:
 
 ### 3. Technologien und Versionen
 - Sprache: Rust (Edition `2024`)
-- Projektversion: `2026.03.11-1`
+- Projektversion: `2026.03.11-2`
 - Lizenz: `GPL-3.0-or-later`
 
 Aktuell genutzte Crates:
@@ -611,18 +611,18 @@ cargo run -p wc-gui
 
 Alpha-Paket-Helfer:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.11-1
-./scripts/build-alpha-deb.sh 2026.03.11-1
+./scripts/build-alpha-rpm.sh 2026.03.11-2
+./scripts/build-alpha-deb.sh 2026.03.11-2
 ```
 
 ### 6.1 Auf deinem System starten (release)
 Versionsschema:
 - Release-Format: `YYYY.MM.DD-N`
-- Beispiel: `2026.03.11-1`
+- Beispiel: `2026.03.11-2`
 - bei mehreren Builds am gleichen Tag `N` hochzahlen (`.2`, `.3`, ...)
 
 Zwei Wege:
-- `Option A`: fertige Release-Artefakte aus GitHub Releases laden (Tag `v...` oder numerisch wie `2026.03.11-1`)
+- `Option A`: fertige Release-Artefakte aus GitHub Releases laden (Tag `v...` oder numerisch wie `2026.03.11-2`)
 - `Option B`: lokal aus Source bauen
 
 Fedora / RHEL (RPM):
@@ -633,8 +633,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.11-1
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.11-2
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-2*.rpm
 
 wc-gui
 wc-cli run --once
@@ -648,8 +648,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-1
-sudo apt install ./dist/le-compositeur_2026.03.11-1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.11-2
+sudo apt install ./dist/le-compositeur_2026.03.11-2_amd64.deb
 
 wc-gui
 wc-cli run --once
@@ -858,7 +858,7 @@ Nije jos uradjeno:
 
 ### 3. Tehnologije i verzije
 - Jezik: Rust (edition `2024`)
-- Verzija projekta: `2026.03.11-1`
+- Verzija projekta: `2026.03.11-2`
 - Licenca: `GPL-3.0-or-later`
 
 Crate-ovi:
@@ -915,18 +915,18 @@ cargo run -p wc-gui
 
 Alpha helper skripte:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.11-1
-./scripts/build-alpha-deb.sh 2026.03.11-1
+./scripts/build-alpha-rpm.sh 2026.03.11-2
+./scripts/build-alpha-deb.sh 2026.03.11-2
 ```
 
 ### 6.1 Pokretanje na svom sistemu (release)
 Verzionisanje:
 - format izdanja: `YYYY.MM.DD-N`
-- primer: `2026.03.11-1`
+- primer: `2026.03.11-2`
 - za vise buildova istog dana povecaj `N` (`.2`, `.3`, ...)
 
 Imas dve opcije:
-- `Option A`: prebuilt release artefakti sa GitHub Releases (tag `v...` ili numericki kao `2026.03.11-1`)
+- `Option A`: prebuilt release artefakti sa GitHub Releases (tag `v...` ili numericki kao `2026.03.11-2`)
 - `Option B`: lokalni build iz source koda
 
 Fedora / RHEL (RPM):
@@ -937,8 +937,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.11-1
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.11-2
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-2*.rpm
 
 wc-gui
 wc-cli run --once
@@ -952,8 +952,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-1
-sudo apt install ./dist/le-compositeur_2026.03.11-1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.11-2
+sudo apt install ./dist/le-compositeur_2026.03.11-2_amd64.deb
 
 wc-gui
 wc-cli run --once
@@ -1121,7 +1121,7 @@ Le Compositeur 是一个面向 Linux 桌面环境的 Rust 开源项目。
 
 ### 3. 技术栈与版本
 - 语言：Rust（edition `2024`）
-- 项目版本：`2026.03.11-1`
+- 项目版本：`2026.03.11-2`
 - 许可证：`GPL-3.0-or-later`
 
 当前依赖：
@@ -1178,18 +1178,18 @@ cargo run -p wc-gui
 
 Alpha 打包脚本：
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.11-1
-./scripts/build-alpha-deb.sh 2026.03.11-1
+./scripts/build-alpha-rpm.sh 2026.03.11-2
+./scripts/build-alpha-deb.sh 2026.03.11-2
 ```
 
 ### 6.1 在你的系统上启动（release）
 版本规则：
 - 发布格式：`YYYY.MM.DD-N`
-- 示例：`2026.03.11-1`
+- 示例：`2026.03.11-2`
 - 同一天多次构建时递增 `N`（`.2`、`.3`）
 
 可选两种方式：
-- `Option A`：从 GitHub Releases 下载预构建产物（标签 `v...` 或数字标签如 `2026.03.11-1`）
+- `Option A`：从 GitHub Releases 下载预构建产物（标签 `v...` 或数字标签如 `2026.03.11-2`）
 - `Option B`：本地从源码构建
 
 Fedora / RHEL（RPM）：
@@ -1200,8 +1200,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.11-1
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.11-2
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-2*.rpm
 
 wc-gui
 wc-cli run --once
@@ -1215,8 +1215,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-1
-sudo apt install ./dist/le-compositeur_2026.03.11-1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.11-2
+sudo apt install ./dist/le-compositeur_2026.03.11-2_amd64.deb
 
 wc-gui
 wc-cli run --once

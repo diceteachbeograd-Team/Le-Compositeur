@@ -10,12 +10,16 @@ This document tracks packaging status and next steps for distribution.
   - `packaging/linux/le-compositeur.desktop`
   - `packaging/linux/le-compositeur.metainfo.xml`
   - `assets/icons/le-compositeur.svg`
+- Packaged default quotes are shipped and consumed by runtime recovery:
+  - package path: `/usr/share/le-compositeur/quotes/local-quotes.md`
+  - source seed file: `assets/quotes/local/local-quotes.md`
 - Alpha build scripts:
   - `scripts/build-alpha-rpm.sh`
   - `scripts/build-alpha-deb.sh`
 - Cross-platform alpha artifact workflow:
   - `.github/workflows/release-alpha.yml`
-  - artifacts: Linux x86_64, Windows x86_64, macOS x86_64, macOS arm64
+  - artifacts: Linux x86_64 (`.tar.gz`, `.deb`, `.rpm`), Windows x86_64 (`.zip`), macOS arm64 (`.dmg`)
+  - each platform bundle now includes both GUI and CLI binaries
 
 ## What is still missing
 1. Final maintainer identity:

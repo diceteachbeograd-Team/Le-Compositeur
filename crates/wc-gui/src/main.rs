@@ -1,4 +1,5 @@
 use eframe::egui;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
@@ -183,7 +184,9 @@ struct WcGuiApp {
     update_status: String,
     update_release: Option<ReleaseInfo>,
     update_check_rx: Option<Receiver<Result<Option<ReleaseInfo>, String>>>,
-    ui_style_applied: bool,
+    ui_compact_mode: bool,
+    show_preview_panel: bool,
+    ui_style_compact_applied: Option<bool>,
 }
 
 impl WcGuiApp {
@@ -217,7 +220,9 @@ impl WcGuiApp {
             update_status: "Update check: pending".to_string(),
             update_release: None,
             update_check_rx: None,
-            ui_style_applied: false,
+            ui_compact_mode: true,
+            show_preview_panel: false,
+            ui_style_compact_applied: None,
         };
         if let Some(msg) = app.recover_local_quotes(loaded_from_disk) {
             app.status = msg;
@@ -884,25 +889,44 @@ impl WcGuiApp {
         }
 
         let path = self.config_path.clone();
-        let direct = self.build_wc_cli_direct(args, &path).output();
-
-        let output = match direct {
-            Ok(out) => out,
-            Err(_) => match self.build_wc_cli_cargo(args, &path).output() {
-                Ok(out) => out,
-                Err(e) => {
-                    self.status = format!("Command start failed: {e}");
-                    return;
+        let mut launch_errors = Vec::<String>::new();
+        let mut output = None;
+        for bin in self.wc_cli_command_candidates() {
+            match self
+                .build_wc_cli_direct_with_bin(&bin, args, &path)
+                .output()
+            {
+                Ok(out) => {
+                    output = Some((out, format!("bin:{bin}")));
+                    break;
                 }
-            },
+                Err(e) => launch_errors.push(format!("{bin}: {e}")),
+            }
+        }
+        if output.is_none() && self.allow_cargo_fallback() {
+            match self.build_wc_cli_cargo(args, &path).output() {
+                Ok(out) => output = Some((out, "cargo".to_string())),
+                Err(e) => launch_errors.push(format!("cargo: {e}")),
+            }
+        }
+
+        let Some((output, runner_name)) = output else {
+            self.status = format!(
+                "Command start failed.\n{}\nHint: install `le-compositeur-cli`/`wc-cli`, or set WC_CLI_BIN to full path.",
+                launch_errors.join("\n")
+            );
+            return;
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         if output.status.success() {
-            self.status = format!("{} OK\n{stdout}", args.join(" "));
+            self.status = format!("{} OK ({runner_name})\n{stdout}", args.join(" "));
         } else {
-            self.status = format!("{} failed\n{stderr}\n{stdout}", args.join(" "));
+            self.status = format!(
+                "{} failed ({runner_name})\n{stderr}\n{stdout}",
+                args.join(" ")
+            );
         }
     }
 
@@ -931,25 +955,12 @@ impl WcGuiApp {
         let replaced_external = self.kill_external_runner_processes();
 
         let path = self.config_path.clone();
-        let spawn_direct = self
-            .build_wc_cli_direct(&["run", "--replace-existing"], &path)
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn();
-        let child = match spawn_direct {
+        let child = match self.spawn_runner_command(&["run", "--replace-existing"], &path, true) {
             Ok(child) => child,
-            Err(_) => match self
-                .build_wc_cli_cargo(&["run", "--replace-existing"], &path)
-                .stdout(Stdio::null())
-                .stderr(Stdio::piped())
-                .spawn()
-            {
-                Ok(child) => child,
-                Err(e) => {
-                    self.status = format!("Runner start failed: {e}");
-                    return;
-                }
-            },
+            Err(e) => {
+                self.status = format!("Runner start failed: {e}");
+                return;
+            }
         };
 
         self.runner = Some(child);
@@ -968,20 +979,9 @@ impl WcGuiApp {
         let replaced_external = self.kill_external_runner_processes();
 
         let path = self.config_path.clone();
-        let spawn_direct = self
-            .build_wc_cli_direct(&["run", "--replace-existing"], &path)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-        let result = match spawn_direct {
-            Ok(_child) => Ok(()),
-            Err(_) => self
-                .build_wc_cli_cargo(&["run", "--replace-existing"], &path)
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .map(|_child| ()),
-        };
+        let result = self
+            .spawn_runner_command(&["run", "--replace-existing"], &path, false)
+            .map(|_child| ());
 
         match result {
             Ok(()) => {
@@ -1111,7 +1111,20 @@ impl WcGuiApp {
         let polled = child.try_wait();
         match polled {
             Ok(Some(exit)) => {
-                self.status = format!("Runner exited: {exit}");
+                let mut stderr_tail = String::new();
+                if let Some(mut stderr) = child.stderr.take() {
+                    let mut buf = Vec::<u8>::new();
+                    let _ = stderr.read_to_end(&mut buf);
+                    let text = String::from_utf8_lossy(&buf).trim().to_string();
+                    if !text.is_empty() {
+                        stderr_tail = text;
+                    }
+                }
+                self.status = if stderr_tail.is_empty() {
+                    format!("Runner exited: {exit}")
+                } else {
+                    format!("Runner exited: {exit}\n{stderr_tail}")
+                };
                 self.runner = None;
             }
             Ok(None) => {}
@@ -1197,8 +1210,64 @@ impl WcGuiApp {
         }
     }
 
-    fn build_wc_cli_direct(&self, args: &[&str], path: &str) -> Command {
-        let mut cmd = Command::new("wc-cli");
+    fn wc_cli_command_candidates(&self) -> Vec<String> {
+        let mut bins = Vec::<String>::new();
+        if let Ok(custom) = std::env::var("WC_CLI_BIN") {
+            let custom = custom.trim();
+            if !custom.is_empty() {
+                bins.push(custom.to_string());
+            }
+        }
+        for bin in [
+            "wc-cli",
+            "le-compositeur-cli",
+            "/usr/bin/wc-cli",
+            "/usr/bin/le-compositeur-cli",
+            "/usr/libexec/le-compositeur/le-compositeur-cli",
+        ] {
+            bins.push(bin.to_string());
+        }
+
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                for bin in ["wc-cli", "le-compositeur-cli"] {
+                    bins.push(dir.join(bin).display().to_string());
+                    bins.push(dir.join("..").join(bin).display().to_string());
+                }
+            }
+            if let Some(dir) = exe.parent().and_then(|d| d.parent()) {
+                for bin in ["wc-cli", "le-compositeur-cli"] {
+                    bins.push(dir.join(bin).display().to_string());
+                }
+            }
+        }
+
+        let mut deduped = Vec::<String>::new();
+        for bin in bins {
+            if !deduped.iter().any(|existing| existing == &bin) {
+                deduped.push(bin);
+            }
+        }
+        deduped
+    }
+
+    fn allow_cargo_fallback(&self) -> bool {
+        if std::env::var("WC_GUI_ALLOW_CARGO_FALLBACK").is_ok_and(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "on" | "yes"
+            )
+        }) {
+            return true;
+        }
+        if !cfg!(debug_assertions) {
+            return false;
+        }
+        Path::new("Cargo.toml").exists() || Path::new("crates/wc-cli/Cargo.toml").exists()
+    }
+
+    fn build_wc_cli_direct_with_bin(&self, bin: &str, args: &[&str], path: &str) -> Command {
+        let mut cmd = Command::new(bin);
         cmd.args(args).args(["--config", path]);
         cmd
     }
@@ -1209,6 +1278,47 @@ impl WcGuiApp {
             .args(args)
             .args(["--config", path]);
         cmd
+    }
+
+    fn spawn_runner_command(
+        &self,
+        args: &[&str],
+        path: &str,
+        capture_stderr: bool,
+    ) -> Result<Child, String> {
+        let mut launch_errors = Vec::<String>::new();
+        for bin in self.wc_cli_command_candidates() {
+            let mut cmd = self.build_wc_cli_direct_with_bin(&bin, args, path);
+            cmd.stdout(Stdio::null());
+            if capture_stderr {
+                cmd.stderr(Stdio::piped());
+            } else {
+                cmd.stderr(Stdio::null());
+            }
+            match cmd.spawn() {
+                Ok(child) => return Ok(child),
+                Err(e) => launch_errors.push(format!("{bin}: {e}")),
+            }
+        }
+
+        if self.allow_cargo_fallback() {
+            let mut cmd = self.build_wc_cli_cargo(args, path);
+            cmd.stdout(Stdio::null());
+            if capture_stderr {
+                cmd.stderr(Stdio::piped());
+            } else {
+                cmd.stderr(Stdio::null());
+            }
+            match cmd.spawn() {
+                Ok(child) => return Ok(child),
+                Err(e) => launch_errors.push(format!("cargo: {e}")),
+            }
+        }
+
+        Err(format!(
+            "could not start CLI command.\n{}\nHint: install `le-compositeur-cli`/`wc-cli`, or set WC_CLI_BIN to full path.",
+            launch_errors.join("\n")
+        ))
     }
 
     fn pick_image_dir(&mut self, ctx: &egui::Context) {
@@ -3513,26 +3623,38 @@ fn fetch_weather_snapshot_wttr(
     Ok((headline, details))
 }
 
-fn apply_visual_system(ctx: &egui::Context) {
+fn apply_visual_system(ctx: &egui::Context, compact: bool) {
     let mut style = (*ctx.style()).clone();
-    style.spacing.item_spacing = egui::vec2(10.0, 8.0);
-    style.spacing.button_padding = egui::vec2(12.0, 6.0);
-    style.spacing.menu_margin = egui::Margin::symmetric(8, 6);
-    style.spacing.window_margin = egui::Margin::symmetric(10, 10);
-    style.spacing.indent = 20.0;
+    if compact {
+        style.spacing.item_spacing = egui::vec2(7.0, 5.0);
+        style.spacing.button_padding = egui::vec2(9.0, 4.0);
+        style.spacing.menu_margin = egui::Margin::symmetric(6, 4);
+        style.spacing.window_margin = egui::Margin::symmetric(8, 8);
+        style.spacing.indent = 16.0;
+    } else {
+        style.spacing.item_spacing = egui::vec2(10.0, 8.0);
+        style.spacing.button_padding = egui::vec2(12.0, 6.0);
+        style.spacing.menu_margin = egui::Margin::symmetric(8, 6);
+        style.spacing.window_margin = egui::Margin::symmetric(10, 10);
+        style.spacing.indent = 20.0;
+    }
 
-    style
-        .text_styles
-        .insert(egui::TextStyle::Heading, egui::FontId::proportional(20.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Body, egui::FontId::proportional(15.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Button, egui::FontId::proportional(14.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Monospace, egui::FontId::monospace(13.5));
+    style.text_styles.insert(
+        egui::TextStyle::Heading,
+        egui::FontId::proportional(if compact { 17.0 } else { 20.0 }),
+    );
+    style.text_styles.insert(
+        egui::TextStyle::Body,
+        egui::FontId::proportional(if compact { 13.5 } else { 15.0 }),
+    );
+    style.text_styles.insert(
+        egui::TextStyle::Button,
+        egui::FontId::proportional(if compact { 12.5 } else { 14.0 }),
+    );
+    style.text_styles.insert(
+        egui::TextStyle::Monospace,
+        egui::FontId::monospace(if compact { 12.0 } else { 13.5 }),
+    );
 
     let mut visuals = egui::Visuals::dark();
     visuals.override_text_color = Some(egui::Color32::from_rgb(230, 237, 243));
@@ -3599,9 +3721,9 @@ impl eframe::App for WcGuiApp {
             self.cfg.quote_min_font_size = self.cfg.quote_font_size;
         }
         self.enforce_news_widget_size_preset();
-        if !self.ui_style_applied {
-            apply_visual_system(ctx);
-            self.ui_style_applied = true;
+        if self.ui_style_compact_applied != Some(self.ui_compact_mode) {
+            apply_visual_system(ctx, self.ui_compact_mode);
+            self.ui_style_compact_applied = Some(self.ui_compact_mode);
         }
 
         if self.thumbnails.is_empty() || self.thumbnails_for_dir != self.cfg.image_dir {
@@ -3629,6 +3751,8 @@ impl eframe::App for WcGuiApp {
                     }
                     ui.separator();
                     ui.label(format!("Language: {}", ui_lang_label(self.ui_lang)));
+                    ui.checkbox(&mut self.ui_compact_mode, "Compact UI");
+                    ui.checkbox(&mut self.show_preview_panel, "Preview Panel");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.monospace(app_version_label());
                     });
@@ -3746,42 +3870,46 @@ impl eframe::App for WcGuiApp {
             ui.add_space(2.0);
         });
 
-        egui::SidePanel::right("thumbs")
-            .default_width(320.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                ui.group(|ui| {
-                    ui.heading("Image Preview");
-                    ui.label("First 2-3 images from selected folder");
-                    if ui.button("Refresh Preview Images").clicked() {
-                        self.refresh_thumbnails(ctx);
-                    }
-                    ui.separator();
-
-                    if self.thumbnails.is_empty() {
-                        ui.label("No thumbnails available");
-                    } else {
-                        for item in &self.thumbnails {
-                            ui.label(&item.label);
-                            ui.image((item.texture.id(), egui::vec2(280.0, 158.0)));
+        if self.show_preview_panel {
+            egui::SidePanel::right("thumbs")
+                .default_width(320.0)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.group(|ui| {
+                            ui.heading("Image Preview");
+                            ui.label("First 2-3 images from selected folder");
+                            if ui.button("Refresh Preview Images").clicked() {
+                                self.refresh_thumbnails(ctx);
+                            }
                             ui.separator();
-                        }
-                    }
-                });
 
-                ui.add_space(8.0);
-                ui.group(|ui| {
-                    ui.heading("Quote Preview");
-                    if ui.button("Reload Quotes").clicked() {
-                        self.refresh_quotes_preview();
-                    }
-                    for (i, q) in self.quote_preview.iter().enumerate() {
-                        ui.label(format!("#{}", i + 1));
-                        ui.label(q);
-                        ui.separator();
-                    }
+                            if self.thumbnails.is_empty() {
+                                ui.label("No thumbnails available");
+                            } else {
+                                for item in &self.thumbnails {
+                                    ui.label(&item.label);
+                                    ui.image((item.texture.id(), egui::vec2(280.0, 158.0)));
+                                    ui.separator();
+                                }
+                            }
+                        });
+
+                        ui.add_space(8.0);
+                        ui.group(|ui| {
+                            ui.heading("Quote Preview");
+                            if ui.button("Reload Quotes").clicked() {
+                                self.refresh_quotes_preview();
+                            }
+                            for (i, q) in self.quote_preview.iter().enumerate() {
+                                ui.label(format!("#{}", i + 1));
+                                ui.label(q);
+                                ui.separator();
+                            }
+                        });
+                    });
                 });
-            });
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading(self.active_tab_title());
@@ -4036,12 +4164,15 @@ fn settings_section(
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
     ui.group(|ui| {
-        ui.strong(title);
-        if !subtitle.trim().is_empty() {
-            ui.label(subtitle);
-        }
-        ui.separator();
-        add_contents(ui);
+        egui::CollapsingHeader::new(title)
+            .default_open(true)
+            .show(ui, |ui| {
+                if !subtitle.trim().is_empty() {
+                    ui.label(subtitle);
+                }
+                ui.separator();
+                add_contents(ui);
+            });
     });
 }
 

@@ -32,8 +32,8 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build GUI binary
-        run: cargo build --release -p wc-gui
+      - name: Build CLI and GUI binaries
+        run: cargo build --release -p wc-gui -p wc-cli
 
       - name: Build Linux bundles (.tar.gz + .deb + .rpm)
         if: matrix.name == 'linux-x86_64'
@@ -54,20 +54,27 @@ jobs:
           fi
 
           mkdir -p dist/le-compositeur-linux-x86_64-bundle/bin
+          mkdir -p dist/le-compositeur-linux-x86_64-bundle/quotes
           cp target/release/wc-gui dist/le-compositeur-linux-x86_64-bundle/bin/le-compositeur
+          cp target/release/wc-cli dist/le-compositeur-linux-x86_64-bundle/bin/le-compositeur-cli
+          cp assets/quotes/local/local-quotes.md dist/le-compositeur-linux-x86_64-bundle/quotes/local-quotes.md
           chmod +x dist/le-compositeur-linux-x86_64-bundle/bin/le-compositeur
+          chmod +x dist/le-compositeur-linux-x86_64-bundle/bin/le-compositeur-cli
           cp README.md LICENSE dist/le-compositeur-linux-x86_64-bundle/
-          cp target/release/wc-gui dist/le-compositeur-linux-x86_64
-          chmod +x dist/le-compositeur-linux-x86_64
           tar -C dist -czf dist/le-compositeur-linux-x86_64.tar.gz le-compositeur-linux-x86_64-bundle
 
           mkdir -p dist/linux-root/usr/bin
           mkdir -p dist/linux-root/usr/share/applications
           mkdir -p dist/linux-root/usr/share/icons/hicolor/512x512/apps
+          mkdir -p dist/linux-root/usr/share/le-compositeur/quotes
           mkdir -p dist/linux-root/usr/share/doc/le-compositeur
           cp target/release/wc-gui dist/linux-root/usr/bin/le-compositeur
+          cp target/release/wc-cli dist/linux-root/usr/bin/le-compositeur-cli
+          ln -sf le-compositeur-cli dist/linux-root/usr/bin/wc-cli
           chmod +x dist/linux-root/usr/bin/le-compositeur
+          chmod +x dist/linux-root/usr/bin/le-compositeur-cli
           cp assets/icons/le-compositeur.png dist/linux-root/usr/share/icons/hicolor/512x512/apps/le-compositeur.png
+          cp assets/quotes/local/local-quotes.md dist/linux-root/usr/share/le-compositeur/quotes/local-quotes.md
           cp README.md dist/linux-root/usr/share/doc/le-compositeur/README.md
           cat > dist/linux-root/usr/share/applications/le-compositeur.desktop <<'EOF'
           [Desktop Entry]
@@ -121,8 +128,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist/le-compositeur-windows-x86_64/bin | Out-Null
           Copy-Item target/release/wc-gui.exe dist/le-compositeur-windows-x86_64/bin/LeCompositeur.exe
+          Copy-Item target/release/wc-cli.exe dist/le-compositeur-windows-x86_64/bin/le-compositeur-cli.exe
+          Copy-Item target/release/wc-cli.exe dist/le-compositeur-windows-x86_64/bin/wc-cli.exe
+          New-Item -ItemType Directory -Force -Path dist/le-compositeur-windows-x86_64/quotes | Out-Null
+          Copy-Item assets/quotes/local/local-quotes.md dist/le-compositeur-windows-x86_64/quotes/local-quotes.md
           Copy-Item README.md, LICENSE dist/le-compositeur-windows-x86_64/
-          Copy-Item dist/le-compositeur-windows-x86_64/bin/LeCompositeur.exe dist/LeCompositeur-windows-x86_64.exe
           Compress-Archive -Path dist/le-compositeur-windows-x86_64 -DestinationPath dist/le-compositeur-windows-x86_64.zip -Force
 
       - name: Build macOS ARM bundle (.dmg)
@@ -135,7 +145,13 @@ jobs:
           mkdir -p "${APP_ROOT}/MacOS" "${APP_ROOT}/Resources" "${ICONSET_DIR}"
 
           cp target/release/wc-gui "${APP_ROOT}/MacOS/LeCompositeur"
+          cp target/release/wc-cli "${APP_ROOT}/MacOS/le-compositeur-cli"
+          cp target/release/wc-cli "${APP_ROOT}/MacOS/wc-cli"
           chmod +x "${APP_ROOT}/MacOS/LeCompositeur"
+          chmod +x "${APP_ROOT}/MacOS/le-compositeur-cli"
+          chmod +x "${APP_ROOT}/MacOS/wc-cli"
+          mkdir -p "dist/${APP_NAME}/quotes"
+          cp assets/quotes/local/local-quotes.md "dist/${APP_NAME}/quotes/local-quotes.md"
 
           # Build a proper .icns from the repository PNG icon.
           cp assets/icons/le-compositeur.png "${ICONSET_DIR}/icon_512x512@2x.png"
@@ -195,7 +211,6 @@ jobs:
         with:
           name: release-linux-x86_64
           path: |
-            dist/le-compositeur-linux-x86_64
             dist/le-compositeur-linux-x86_64.tar.gz
             dist/le-compositeur-linux-x86_64.deb
             dist/le-compositeur-linux-x86_64.rpm
@@ -207,7 +222,6 @@ jobs:
           name: release-windows-x86_64
           path: |
             dist/le-compositeur-windows-x86_64.zip
-            dist/LeCompositeur-windows-x86_64.exe
 
       - name: Upload macOS release files
         if: matrix.name == 'macos-arm64'
@@ -240,11 +254,16 @@ jobs:
           - This tag: https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/tag/${{ github.ref_name }}
 
           Included artifacts:
-          - Linux: `le-compositeur-linux-x86_64.tar.gz`, `le-compositeur-linux-x86_64.deb`, `le-compositeur-linux-x86_64.rpm`, `le-compositeur-linux-x86_64`
-          - Windows: `le-compositeur-windows-x86_64.zip`, `LeCompositeur-windows-x86_64.exe`
+          - Linux: `le-compositeur-linux-x86_64.tar.gz`, `le-compositeur-linux-x86_64.deb`, `le-compositeur-linux-x86_64.rpm`
+          - Windows: `le-compositeur-windows-x86_64.zip`
           - macOS ARM: `le-compositeur-macos-arm64.dmg`
 
           What changed in this release line:
+          - Hotfixes for packaged runtime reliability:
+            - release artifacts now always include both GUI + CLI binaries
+            - packaged local quotes file is shipped in Linux package + platform bundles
+            - GUI command launcher no longer falls back to `cargo` in packaged/release mode
+            - improved runner error output in GUI status panel for faster diagnosis
           - Local quote reliability:
             - local quote path auto-recovery in CLI+GUI
             - packaged default quotes are auto-rebound when paths are missing
