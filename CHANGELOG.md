@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026.03.11-7 - 2026-03-11
+- Improved runtime timing separation and preview refresh behavior:
+  - remote background sources now stay stable within one configured image cycle instead of being re-fetched every fast animation tick
+  - news preview images and camera preview frames now refresh independently from slower text/source metadata caches
+  - ticker motion remains reading-speed driven while video/cam preview capture can refresh at smooth floor cadence
+- Improved weather presentation:
+  - compact weather overlay now uses readable text labels instead of rough symbol-heavy icon rows
+  - minimap generation now stitches OpenStreetMap tiles locally so the visible map area better matches the configured location
+  - weather fallback visuals are generated locally with the same wind-direction overlay style
+- Improved public camera/source fallback behavior:
+  - camera presets now prefer direct snapshot/image endpoints where possible
+  - YouTube playback URL resolution can fall back to manifest extraction from the watch page when `yt-dlp` is unavailable
+- Updated release prep/docs for `2026.03.11-7` and kept the temporary README warning that `Weather`, `News`, and `Cams` are still under active rework until explicit functionality approval.
+
 ## 2026.03.11-6 - 2026-03-11
 - Fixed GUI self-update reliability:
   - `Update Now` now tracks package-manager process completion asynchronously instead of fire-and-forget spawn only

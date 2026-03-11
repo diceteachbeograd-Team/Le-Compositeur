@@ -10,8 +10,8 @@ Last updated: 2026-03-11
 
 ## Current Snapshot
 - Repo branch: `main`
-- Latest published tag: `2026.03.11-5`
-- Next hotfix target tag: `2026.03.11-6`
+- Latest published tag: `2026.03.11-7`
+- Next hotfix target tag: `TBD (after VM validation of 2026.03.11-7)`
 - Local tests: passing (`cargo test --all`)
 - GUI tabs implemented: `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline
@@ -53,6 +53,9 @@ Last updated: 2026-03-11
 
 - [x] `P1` Decouple ticker/video timing from user image clock settings.
   Done when: ticker shift uses auto reading-speed logic, video/camera streams enforce smooth playback floor, and loop wake interval follows `min(image_refresh_seconds, 60)` unless animation needs faster ticks.
+
+- [ ] `P1` Remove temporary README instability warning after explicit user approval.
+  Done when: user confirms `Weather`, `News`, and `Cams` are functionally acceptable and the temporary release-line warning is removed from `README.md`.
 
 ## Next (After Active Sprint)
 

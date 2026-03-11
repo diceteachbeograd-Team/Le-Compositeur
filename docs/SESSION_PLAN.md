@@ -10,10 +10,11 @@ Use it together with `docs/TODO.md`.
 ## Current Workstream
 
 Active focus:
-1. Validate hotfix tag `2026.03.11-6` on VM installs after publishing (runtime + update flow + widget visibility).
+1. Validate hotfix tag `2026.03.11-7` on VM installs after publishing (runtime + update flow + widget visibility).
 2. Validate quote recovery and bundled quote seed presence for package and archive installs.
 3. Keep compact GUI behavior usable on smaller windows (compact defaults + optional preview panel).
 4. Continue plugin-style widget registry rollout in guarded mode (Stage-B opt-in only).
+5. Remove the temporary `README.md` warning only after explicit functionality approval for `Weather` / `News` / `Cams`.
 
 ## Ground Truth Commands
 
