@@ -19,8 +19,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.10-4
-sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.10-4*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.11-1
+sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-1*.rpm
 le-compositeur
 ```
 
@@ -28,8 +28,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.10-4
-sudo apt install ./dist/le-compositeur_2026.03.10-4_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.11-1
+sudo apt install ./dist/le-compositeur_2026.03.11-1_amd64.deb
 le-compositeur
 ```
 
@@ -44,18 +44,27 @@ cargo run -p wc-gui
 - `Quotes`: quote source and quote text settings
 - `Weather`: weather widget settings
 - `News`: news/video widget settings
+- `Cams`: camera/webcam source and grid settings
 - `System`: runtime, startup and integrations
 
 ## Notes
 - Weather + News widgets are disabled by default after first install.
 - Some widgets require internet access (`Weather`, `News`, remote image/quote sources).
 - News widget size uses fixed 16:9 presets (dropdown).
+- News supports a secondary independent ticker (`show_news_ticker2`) with separate source/FPS/position/width.
+- Ordering tab now shows a grid and snaps dragged widget positions to that grid; layer Z is configurable per widget and drag collisions auto-resolve.
+- Performance caps are configurable per widget (`news_refresh_seconds`, `news_ticker2_refresh_seconds`, `cams_refresh_seconds`, `cams_fps`).
+- Linux distro smoke matrix and overlay snapshot/hash regression workflow are documented in `docs/TEST_MATRIX.md`.
+- Plugin-registry migration is documented in `docs/PLUGIN_REGISTRY_DRAFT.md`; stage-A scaffold is in `wc-core/src/widget_registry.rs` and stage-B dual-path is wired in `wc-cli`.
 - Security notes: see [SECURITY.md](SECURITY.md)
 
 ## Full docs
 - [docs/README_FULL.md](docs/README_FULL.md)
+- [docs/TODO.md](docs/TODO.md)
+- [docs/SESSION_PLAN.md](docs/SESSION_PLAN.md)
 - [docs/RELEASE.md](docs/RELEASE.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/PLUGIN_REGISTRY_DRAFT.md](docs/PLUGIN_REGISTRY_DRAFT.md)
 - [docs/PACKAGING.md](docs/PACKAGING.md)
 - [docs/USER_CONTENT_FORMAT.md](docs/USER_CONTENT_FORMAT.md)
 

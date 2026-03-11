@@ -2,13 +2,19 @@ use eframe::egui;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 use wc_core::{
-    AppConfig, builtin_image_presets, builtin_quote_presets, default_config_path, expand_tilde,
-    list_background_images, load_config, load_quotes, to_config_toml,
+    AppConfig, builtin_image_presets, builtin_quote_presets, default_config_path,
+    ensure_local_quotes_file, expand_tilde, list_background_images, load_config, load_quotes,
+    to_config_toml,
 };
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+const ORDERING_WORLD_WIDTH: i32 = 1920;
+const ORDERING_WORLD_HEIGHT: i32 = 1080;
+const ORDERING_GRID_STEP: i32 = 24;
+const ORDERING_COLLISION_ITERS: usize = 32;
 
 fn app_version_label() -> &'static str {
     static LABEL: OnceLock<String> = OnceLock::new();
@@ -25,20 +31,29 @@ fn app_version_label() -> &'static str {
 
 #[cfg(target_os = "linux")]
 fn installed_package_version() -> Option<String> {
-    let output = Command::new("rpm")
+    if let Ok(output) = Command::new("rpm")
         .args(["-q", "--qf", "%{VERSION}-%{RELEASE}", "le-compositeur"])
         .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
+        && output.status.success()
+        && let Ok(text) = String::from_utf8(output.stdout)
+    {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
     }
-    let text = String::from_utf8(output.stdout).ok()?;
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
+    if let Ok(output) = Command::new("dpkg-query")
+        .args(["-W", "-f=${Version}", "le-compositeur"])
+        .output()
+        && output.status.success()
+        && let Ok(text) = String::from_utf8(output.stdout)
+    {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
     }
+    None
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -96,6 +111,12 @@ struct ThumbnailItem {
     texture: egui::TextureHandle,
 }
 
+#[derive(Debug, Clone)]
+struct ReleaseInfo {
+    tag: String,
+    html_url: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GuiTab {
     Ordering,
@@ -124,6 +145,24 @@ enum LayoutElement {
     Cams,
 }
 
+#[derive(Clone, Copy)]
+struct WorldRect {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+}
+
+impl WorldRect {
+    fn overlaps(self, other: Self) -> bool {
+        let self_r = self.x.saturating_add(self.w);
+        let self_b = self.y.saturating_add(self.h);
+        let other_r = other.x.saturating_add(other.w);
+        let other_b = other.y.saturating_add(other.h);
+        self.x < other_r && self_r > other.x && self.y < other_b && self_b > other.y
+    }
+}
+
 struct WcGuiApp {
     config_path: String,
     cfg: AppConfig,
@@ -141,6 +180,10 @@ struct WcGuiApp {
     autostart_toggle: bool,
     ordering_bg_texture: Option<egui::TextureHandle>,
     cams_public_choice: String,
+    update_status: String,
+    update_release: Option<ReleaseInfo>,
+    update_check_rx: Option<Receiver<Result<Option<ReleaseInfo>, String>>>,
+    ui_style_applied: bool,
 }
 
 impl WcGuiApp {
@@ -149,10 +192,12 @@ impl WcGuiApp {
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| "~/.config/wallpaper-composer/config.toml".to_string());
 
-        let cfg =
-            load_config(PathBuf::from(&config_path).as_path()).unwrap_or_else(|_| default_cfg());
+        let (cfg, loaded_from_disk) = match load_config(PathBuf::from(&config_path).as_path()) {
+            Ok(cfg) => (cfg, true),
+            Err(_) => (default_cfg(), false),
+        };
 
-        Self {
+        let mut app = Self {
             config_path,
             cfg,
             status: "Ready".to_string(),
@@ -169,7 +214,16 @@ impl WcGuiApp {
             autostart_toggle: Self::autostart_enabled(),
             ordering_bg_texture: None,
             cams_public_choice: "belgrade_center".to_string(),
+            update_status: "Update check: pending".to_string(),
+            update_release: None,
+            update_check_rx: None,
+            ui_style_applied: false,
+        };
+        if let Some(msg) = app.recover_local_quotes(loaded_from_disk) {
+            app.status = msg;
         }
+        app.start_update_check();
+        app
     }
 
     fn t<'a>(&self, en: &'a str, de: &'a str, sr: &'a str, zh: &'a str) -> &'a str {
@@ -181,11 +235,292 @@ impl WcGuiApp {
         }
     }
 
+    fn active_tab_title(&self) -> &'static str {
+        match self.active_tab {
+            GuiTab::Ordering => "Layout Ordering",
+            GuiTab::Images => "Background Images",
+            GuiTab::Quotes => "Quote Source & Style",
+            GuiTab::Weather => "Weather Widget",
+            GuiTab::News => "News & Ticker Widgets",
+            GuiTab::Cams => "Cams Widget",
+            GuiTab::System => "Runtime & Integrations",
+        }
+    }
+
+    fn active_tab_hint(&self) -> &'static str {
+        match self.active_tab {
+            GuiTab::Ordering => {
+                "Use drag, snap, and layer Z to place widgets without overlap in the 16:9 workspace."
+            }
+            GuiTab::Images => {
+                "Configure source mode, ordering policy, and wallpaper backend behavior."
+            }
+            GuiTab::Quotes => {
+                "Select quote provider, ordering mode, and typography/styling controls."
+            }
+            GuiTab::Weather => {
+                "Configure weather source behavior, refresh budget, placement and visual style."
+            }
+            GuiTab::News => {
+                "Configure primary stream plus secondary ticker with independent source and caps."
+            }
+            GuiTab::Cams => {
+                "Configure camera source mode, grid layout, and network/CPU refresh limits."
+            }
+            GuiTab::System => {
+                "Manage runtime controls, updates, autostart, and desktop integration toggles."
+            }
+        }
+    }
+
+    fn tab_button_label(tab: GuiTab) -> &'static str {
+        match tab {
+            GuiTab::Ordering => "LAY Ordering",
+            GuiTab::Images => "IMG Images",
+            GuiTab::Quotes => "QTE Quotes",
+            GuiTab::Weather => "WTH Weather",
+            GuiTab::News => "NWS News",
+            GuiTab::Cams => "CAM Cams",
+            GuiTab::System => "SYS System",
+        }
+    }
+
     fn enforce_news_widget_size_preset(&mut self) {
         let (w, h) =
             nearest_news_size_preset(self.cfg.news_widget_width, self.cfg.news_widget_height);
         self.cfg.news_widget_width = w;
         self.cfg.news_widget_height = h;
+    }
+
+    fn layout_element_label(element: LayoutElement) -> &'static str {
+        match element {
+            LayoutElement::Quote => "Quote Box",
+            LayoutElement::Clock => "Clock",
+            LayoutElement::Weather => "Weather",
+            LayoutElement::News => "News",
+            LayoutElement::Cams => "Cams",
+        }
+    }
+
+    fn layout_element_z(&self, element: LayoutElement) -> i32 {
+        match element {
+            LayoutElement::Quote => self.cfg.layer_z_quote,
+            LayoutElement::Clock => self.cfg.layer_z_clock,
+            LayoutElement::Weather => self.cfg.layer_z_weather,
+            LayoutElement::News => self.cfg.layer_z_news,
+            LayoutElement::Cams => self.cfg.layer_z_cams,
+        }
+    }
+
+    fn layout_element_z_mut(&mut self, element: LayoutElement) -> &mut i32 {
+        match element {
+            LayoutElement::Quote => &mut self.cfg.layer_z_quote,
+            LayoutElement::Clock => &mut self.cfg.layer_z_clock,
+            LayoutElement::Weather => &mut self.cfg.layer_z_weather,
+            LayoutElement::News => &mut self.cfg.layer_z_news,
+            LayoutElement::Cams => &mut self.cfg.layer_z_cams,
+        }
+    }
+
+    fn normalize_layout_z(&mut self) {
+        let mut layers = [
+            (LayoutElement::Quote, self.cfg.layer_z_quote),
+            (LayoutElement::Clock, self.cfg.layer_z_clock),
+            (LayoutElement::Weather, self.cfg.layer_z_weather),
+            (LayoutElement::News, self.cfg.layer_z_news),
+            (LayoutElement::Cams, self.cfg.layer_z_cams),
+        ];
+        layers.sort_by_key(|(_, z)| *z);
+        for (idx, (element, _)) in layers.iter().enumerate() {
+            *self.layout_element_z_mut(*element) = 10 * (idx as i32 + 1);
+        }
+    }
+
+    fn draw_ordering_element(
+        &self,
+        painter: &egui::Painter,
+        element: LayoutElement,
+        rect: egui::Rect,
+    ) {
+        let selected = self.selected_element == element;
+        let (active, idle) = match element {
+            LayoutElement::Quote => (
+                egui::Color32::from_rgb(255, 0, 190),
+                egui::Color32::from_rgb(158, 46, 133),
+            ),
+            LayoutElement::Clock => (
+                egui::Color32::from_rgb(0, 255, 255),
+                egui::Color32::from_rgb(54, 150, 150),
+            ),
+            LayoutElement::Weather => (
+                egui::Color32::from_rgb(128, 255, 0),
+                egui::Color32::from_rgb(74, 140, 48),
+            ),
+            LayoutElement::News => (
+                egui::Color32::from_rgb(255, 120, 0),
+                egui::Color32::from_rgb(166, 91, 28),
+            ),
+            LayoutElement::Cams => (
+                egui::Color32::from_rgb(0, 255, 140),
+                egui::Color32::from_rgb(35, 140, 92),
+            ),
+        };
+        let neon = if selected { active } else { idle };
+        painter.rect_filled(rect, 4.0, neon.linear_multiply(0.16));
+        painter.rect_stroke(
+            rect,
+            4.0,
+            egui::Stroke::new(2.0, neon),
+            egui::StrokeKind::Middle,
+        );
+        painter.text(
+            rect.left_top() + egui::vec2(6.0, 6.0),
+            egui::Align2::LEFT_TOP,
+            Self::layout_element_label(element),
+            egui::FontId::proportional(12.0),
+            egui::Color32::WHITE,
+        );
+    }
+
+    fn layout_elements_in_z_order(&self) -> Vec<LayoutElement> {
+        let mut ordered = vec![
+            LayoutElement::Quote,
+            LayoutElement::Clock,
+            LayoutElement::Weather,
+            LayoutElement::News,
+            LayoutElement::Cams,
+        ];
+        ordered.sort_by_key(|element| self.layout_element_z(*element));
+        ordered
+    }
+
+    fn layout_element_enabled(&self, element: LayoutElement) -> bool {
+        match element {
+            LayoutElement::Quote => self.cfg.show_quote_layer,
+            LayoutElement::Clock => self.cfg.show_clock_layer,
+            LayoutElement::Weather => self.cfg.show_weather_layer,
+            LayoutElement::News => self.cfg.show_news_layer,
+            LayoutElement::Cams => self.cfg.show_cams_layer,
+        }
+    }
+
+    fn layout_element_world_rect(&self, element: LayoutElement) -> WorldRect {
+        match element {
+            LayoutElement::Quote => {
+                let (w, h) = quote_box_world_size(
+                    self.cfg.text_box_size.as_str(),
+                    self.cfg.text_box_width_pct,
+                    self.cfg.text_box_height_pct,
+                );
+                let (x, y) = clamp_world_pos(self.cfg.quote_pos_x, self.cfg.quote_pos_y, w, h);
+                WorldRect { x, y, w, h }
+            }
+            LayoutElement::Clock => {
+                let (w, h) = (180, 64);
+                let (x, y) = clamp_world_pos(self.cfg.clock_pos_x, self.cfg.clock_pos_y, w, h);
+                WorldRect { x, y, w, h }
+            }
+            LayoutElement::Weather => {
+                let w = self.cfg.weather_widget_width.clamp(120, 1920) as i32;
+                let h = self.cfg.weather_widget_height.clamp(80, 1080) as i32;
+                let (x, y) = clamp_world_pos(self.cfg.weather_pos_x, self.cfg.weather_pos_y, w, h);
+                WorldRect { x, y, w, h }
+            }
+            LayoutElement::News => {
+                let w = self.cfg.news_widget_width.clamp(180, 1920) as i32;
+                let h = self.cfg.news_widget_height.clamp(120, 1080) as i32;
+                let (x, y) = clamp_world_pos(self.cfg.news_pos_x, self.cfg.news_pos_y, w, h);
+                WorldRect { x, y, w, h }
+            }
+            LayoutElement::Cams => {
+                let w = self.cfg.cams_widget_width.clamp(180, 1920) as i32;
+                let h = self.cfg.cams_widget_height.clamp(120, 1080) as i32;
+                let (x, y) = clamp_world_pos(self.cfg.cams_pos_x, self.cfg.cams_pos_y, w, h);
+                WorldRect { x, y, w, h }
+            }
+        }
+    }
+
+    fn set_layout_world_pos(&mut self, element: LayoutElement, x: i32, y: i32) {
+        match element {
+            LayoutElement::Quote => {
+                self.cfg.quote_pos_x = x;
+                self.cfg.quote_pos_y = y;
+            }
+            LayoutElement::Clock => {
+                self.cfg.clock_pos_x = x;
+                self.cfg.clock_pos_y = y;
+            }
+            LayoutElement::Weather => {
+                self.cfg.weather_pos_x = x;
+                self.cfg.weather_pos_y = y;
+            }
+            LayoutElement::News => {
+                self.cfg.news_pos_x = x;
+                self.cfg.news_pos_y = y;
+            }
+            LayoutElement::Cams => {
+                self.cfg.cams_pos_x = x;
+                self.cfg.cams_pos_y = y;
+            }
+        }
+    }
+
+    fn resolve_selected_collision(&mut self, selected: LayoutElement) {
+        if !self.layout_element_enabled(selected) {
+            return;
+        }
+        for _ in 0..ORDERING_COLLISION_ITERS {
+            let selected_rect = self.layout_element_world_rect(selected);
+            let mut overlapping = None;
+            for element in self.layout_elements_in_z_order() {
+                if element == selected || !self.layout_element_enabled(element) {
+                    continue;
+                }
+                let other = self.layout_element_world_rect(element);
+                if selected_rect.overlaps(other) {
+                    overlapping = Some(other);
+                    break;
+                }
+            }
+            let Some(other) = overlapping else {
+                break;
+            };
+
+            let candidates = [
+                (other.x.saturating_sub(selected_rect.w), selected_rect.y),
+                (other.x.saturating_add(other.w), selected_rect.y),
+                (selected_rect.x, other.y.saturating_sub(selected_rect.h)),
+                (selected_rect.x, other.y.saturating_add(other.h)),
+            ];
+            let mut best = None::<(i32, i32, i32)>;
+            for (cx, cy) in candidates {
+                let snapped_x = snap_to_grid(cx);
+                let snapped_y = snap_to_grid(cy);
+                let (nx, ny) =
+                    clamp_world_pos(snapped_x, snapped_y, selected_rect.w, selected_rect.h);
+                let candidate = WorldRect {
+                    x: nx,
+                    y: ny,
+                    w: selected_rect.w,
+                    h: selected_rect.h,
+                };
+                if candidate.overlaps(other) {
+                    continue;
+                }
+                let dist = (nx - selected_rect.x).abs() + (ny - selected_rect.y).abs();
+                match best {
+                    None => best = Some((dist, nx, ny)),
+                    Some((best_dist, _, _)) if dist < best_dist => best = Some((dist, nx, ny)),
+                    _ => {}
+                }
+            }
+
+            let Some((_, nx, ny)) = best else {
+                break;
+            };
+            self.set_layout_world_pos(selected, nx, ny);
+        }
     }
 
     fn hover_text(&self, key: &str) -> &str {
@@ -349,11 +684,166 @@ impl WcGuiApp {
         }
     }
 
+    fn recover_local_quotes(&mut self, persist_config: bool) -> Option<String> {
+        match ensure_local_quotes_file(&mut self.cfg) {
+            Ok(Some(path)) => {
+                if persist_config && let Err(err) = self.save_to_path_inner() {
+                    return Some(format!(
+                        "Recovered quotes at {} but failed to save config: {err}",
+                        path.display()
+                    ));
+                }
+                Some(format!(
+                    "Recovered missing local quotes file: {}",
+                    path.display()
+                ))
+            }
+            Ok(None) => None,
+            Err(err) => Some(format!("Local quotes recovery failed: {err}")),
+        }
+    }
+
+    fn start_update_check(&mut self) {
+        if self.update_check_rx.is_some() {
+            return;
+        }
+        let current_version =
+            installed_package_version().unwrap_or_else(|| APP_VERSION.to_string());
+        self.update_status = format!("Update check running (current {current_version})...");
+        self.update_release = None;
+        let (tx, rx) = mpsc::channel::<Result<Option<ReleaseInfo>, String>>();
+        self.update_check_rx = Some(rx);
+        std::thread::spawn(move || {
+            let result = fetch_latest_release_info().map(|release| {
+                if is_newer_release(&release.tag, &current_version) {
+                    Some(release)
+                } else {
+                    None
+                }
+            });
+            let _ = tx.send(result);
+        });
+    }
+
+    fn poll_update_check(&mut self) {
+        let Some(rx) = self.update_check_rx.take() else {
+            return;
+        };
+
+        match rx.try_recv() {
+            Ok(Ok(Some(release))) => {
+                self.update_status = format!("Update available: {}", release.tag);
+                self.update_release = Some(release);
+            }
+            Ok(Ok(None)) => {
+                let current_version =
+                    installed_package_version().unwrap_or_else(|| APP_VERSION.to_string());
+                self.update_status = format!("Up to date ({current_version})");
+                self.update_release = None;
+            }
+            Ok(Err(err)) => {
+                self.update_status = format!("Update check failed: {err}");
+                self.update_release = None;
+            }
+            Err(TryRecvError::Empty) => {
+                self.update_check_rx = Some(rx);
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.update_status = "Update check failed: worker disconnected".to_string();
+                self.update_release = None;
+            }
+        }
+    }
+
+    fn start_self_update(&mut self) {
+        #[cfg(target_os = "linux")]
+        {
+            if command_exists("pkexec") {
+                if command_exists("dnf")
+                    && Command::new("pkexec")
+                        .args(["dnf", "-y", "upgrade", "le-compositeur"])
+                        .spawn()
+                        .is_ok()
+                {
+                    self.status = "Self-update started via dnf (authorization dialog may appear)."
+                        .to_string();
+                    return;
+                }
+                if command_exists("apt-get")
+                    && Command::new("pkexec")
+                        .args([
+                            "apt-get",
+                            "-y",
+                            "install",
+                            "--only-upgrade",
+                            "le-compositeur",
+                        ])
+                        .spawn()
+                        .is_ok()
+                {
+                    self.status =
+                        "Self-update started via apt-get (authorization dialog may appear)."
+                            .to_string();
+                    return;
+                }
+                if command_exists("zypper")
+                    && Command::new("pkexec")
+                        .args(["zypper", "--non-interactive", "update", "le-compositeur"])
+                        .spawn()
+                        .is_ok()
+                {
+                    self.status =
+                        "Self-update started via zypper (authorization dialog may appear)."
+                            .to_string();
+                    return;
+                }
+            }
+
+            let release_url = self
+                .update_release
+                .as_ref()
+                .map(|r| r.html_url.clone())
+                .unwrap_or_else(|| {
+                    "https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest"
+                        .to_string()
+                });
+            if open_url(&release_url) {
+                self.status = format!(
+                    "Automatic package update command unavailable; opened release page: {release_url}"
+                );
+            } else {
+                self.status =
+                    format!("Automatic package update unavailable. Open manually: {release_url}");
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let release_url = self
+                .update_release
+                .as_ref()
+                .map(|r| r.html_url.clone())
+                .unwrap_or_else(|| {
+                    "https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest"
+                        .to_string()
+                });
+            if open_url(&release_url) {
+                self.status = format!("Opened release page: {release_url}");
+            } else {
+                self.status = format!("Open manually: {release_url}");
+            }
+        }
+    }
+
     fn load_from_path(&mut self, ctx: &egui::Context) {
-        match load_config(PathBuf::from(&self.config_path).as_path()) {
+        let path =
+            expand_tilde(&self.config_path).unwrap_or_else(|_| PathBuf::from(&self.config_path));
+        match load_config(path.as_path()) {
             Ok(cfg) => {
                 self.cfg = cfg;
                 self.status = "Config loaded".to_string();
+                if let Some(msg) = self.recover_local_quotes(true) {
+                    self.status = msg;
+                }
                 self.refresh_thumbnails(ctx);
                 self.refresh_quotes_preview();
                 self.autostart_toggle = Self::autostart_enabled();
@@ -366,7 +856,10 @@ impl WcGuiApp {
         // Keep one effective rotation timer: image interval drives quote and loop cadence.
         self.cfg.refresh_seconds = self.cfg.image_refresh_seconds.max(1);
         self.cfg.quote_refresh_seconds = self.cfg.image_refresh_seconds.max(1);
-        let path = PathBuf::from(&self.config_path);
+        ensure_local_quotes_file(&mut self.cfg)
+            .map_err(|e| format!("Quote recovery failed: {e}"))?;
+        let path =
+            expand_tilde(&self.config_path).unwrap_or_else(|_| PathBuf::from(&self.config_path));
         if let Some(parent) = path.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
         {
@@ -676,11 +1169,15 @@ impl WcGuiApp {
             Err(err) => {
                 self.weather_status = format!("Weather refresh failed: {err}");
                 self.weather_details.clear();
+                self.weather_last_refresh = Some(Instant::now());
             }
         }
     }
 
     fn refresh_quotes_preview(&mut self) {
+        if let Some(msg) = self.recover_local_quotes(false) {
+            self.status = msg;
+        }
         let Ok(path) = expand_tilde(&self.cfg.quotes_path) else {
             self.status = "Cannot expand quotes_path".to_string();
             self.quote_preview.clear();
@@ -1122,13 +1619,7 @@ impl WcGuiApp {
         ui.horizontal(|ui| {
             ui.label("Element");
             egui::ComboBox::from_id_salt("layout_selected_element")
-                .selected_text(match self.selected_element {
-                    LayoutElement::Quote => "Quote Box",
-                    LayoutElement::Clock => "Clock",
-                    LayoutElement::Weather => "Weather",
-                    LayoutElement::News => "News",
-                    LayoutElement::Cams => "Cams",
-                })
+                .selected_text(Self::layout_element_label(self.selected_element))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
                         &mut self.selected_element,
@@ -1145,6 +1636,20 @@ impl WcGuiApp {
                     ui.selectable_value(&mut self.selected_element, LayoutElement::Cams, "Cams");
                 });
         });
+        ui.horizontal(|ui| {
+            ui.label("Layer Z");
+            let z = self.layout_element_z_mut(self.selected_element);
+            *z = (*z).clamp(0, 100);
+            ui.add(egui::DragValue::new(z).speed(1).range(0..=100));
+            ui.label("(higher = in front)");
+            if ui.button("Normalize Z").clicked() {
+                self.normalize_layout_z();
+            }
+        });
+        ui.label(format!(
+            "Grid snap: {}px ({}x{} canvas)",
+            ORDERING_GRID_STEP, ORDERING_WORLD_WIDTH, ORDERING_WORLD_HEIGHT
+        ));
 
         let canvas_w = ui.available_width().clamp(560.0, 900.0);
         let canvas_size = egui::vec2(canvas_w, canvas_w * 9.0 / 16.0);
@@ -1169,8 +1674,28 @@ impl WcGuiApp {
             egui::StrokeKind::Middle,
         );
 
-        let sx = rect.width() / 1920.0;
-        let sy = rect.height() / 1080.0;
+        let sx = rect.width() / ORDERING_WORLD_WIDTH as f32;
+        let sy = rect.height() / ORDERING_WORLD_HEIGHT as f32;
+        let step_x = (ORDERING_GRID_STEP as f32 * sx.max(0.001)).max(1.0);
+        let step_y = (ORDERING_GRID_STEP as f32 * sy.max(0.001)).max(1.0);
+        let grid_color = egui::Color32::from_gray(70).linear_multiply(0.45);
+        let mut gx = rect.left();
+        while gx <= rect.right() {
+            painter.line_segment(
+                [egui::pos2(gx, rect.top()), egui::pos2(gx, rect.bottom())],
+                egui::Stroke::new(1.0, grid_color),
+            );
+            gx += step_x;
+        }
+        let mut gy = rect.top();
+        while gy <= rect.bottom() {
+            painter.line_segment(
+                [egui::pos2(rect.left(), gy), egui::pos2(rect.right(), gy)],
+                egui::Stroke::new(1.0, grid_color),
+            );
+            gy += step_y;
+        }
+
         let quote_size = quote_box_px(
             self.cfg.text_box_size.as_str(),
             self.cfg.text_box_width_pct,
@@ -1226,19 +1751,49 @@ impl WcGuiApp {
             cams_size,
         );
 
+        let mut ordered_layers = Vec::<(LayoutElement, egui::Rect, i32)>::with_capacity(5);
+        if self.cfg.show_quote_layer {
+            ordered_layers.push((
+                LayoutElement::Quote,
+                quote_rect,
+                self.layout_element_z(LayoutElement::Quote),
+            ));
+        }
+        if self.cfg.show_clock_layer {
+            ordered_layers.push((
+                LayoutElement::Clock,
+                clock_rect,
+                self.layout_element_z(LayoutElement::Clock),
+            ));
+        }
+        if self.cfg.show_weather_layer {
+            ordered_layers.push((
+                LayoutElement::Weather,
+                weather_rect,
+                self.layout_element_z(LayoutElement::Weather),
+            ));
+        }
+        if self.cfg.show_news_layer {
+            ordered_layers.push((
+                LayoutElement::News,
+                news_rect,
+                self.layout_element_z(LayoutElement::News),
+            ));
+        }
+        if self.cfg.show_cams_layer {
+            ordered_layers.push((
+                LayoutElement::Cams,
+                cams_rect,
+                self.layout_element_z(LayoutElement::Cams),
+            ));
+        }
+
         if response.clicked()
             && let Some(pos) = response.interact_pointer_pos()
         {
-            if quote_rect.contains(pos) {
-                self.selected_element = LayoutElement::Quote;
-            } else if clock_rect.contains(pos) {
-                self.selected_element = LayoutElement::Clock;
-            } else if weather_rect.contains(pos) {
-                self.selected_element = LayoutElement::Weather;
-            } else if news_rect.contains(pos) {
-                self.selected_element = LayoutElement::News;
-            } else if cams_rect.contains(pos) {
-                self.selected_element = LayoutElement::Cams;
+            ordered_layers.sort_by(|a, b| b.2.cmp(&a.2));
+            if let Some((element, _, _)) = ordered_layers.iter().find(|(_, r, _)| r.contains(pos)) {
+                self.selected_element = *element;
             }
         }
         if response.dragged()
@@ -1246,8 +1801,13 @@ impl WcGuiApp {
         {
             let x = (pos.x - rect.left()).clamp(0.0, rect.width());
             let y = (pos.y - rect.top()).clamp(0.0, rect.height());
-            let world_x = (x / sx).round() as i32;
-            let world_y = (y / sy).round() as i32;
+            let mut world_x = snap_to_grid((x / sx).round() as i32);
+            let mut world_y = snap_to_grid((y / sy).round() as i32);
+            let selected_world = self.layout_element_world_rect(self.selected_element);
+            let (clamped_x, clamped_y) =
+                clamp_world_pos(world_x, world_y, selected_world.w, selected_world.h);
+            world_x = clamped_x;
+            world_y = clamped_y;
             match self.selected_element {
                 LayoutElement::Quote => {
                     self.cfg.quote_pos_x = world_x;
@@ -1270,6 +1830,7 @@ impl WcGuiApp {
                     self.cfg.cams_pos_y = world_y;
                 }
             }
+            self.resolve_selected_collision(self.selected_element);
             quote_rect = egui::Rect::from_min_size(
                 egui::pos2(
                     rect.left() + self.cfg.quote_pos_x as f32 * sx,
@@ -1305,112 +1866,47 @@ impl WcGuiApp {
                 ),
                 cams_size,
             );
+            ordered_layers.clear();
+            if self.cfg.show_quote_layer {
+                ordered_layers.push((
+                    LayoutElement::Quote,
+                    quote_rect,
+                    self.layout_element_z(LayoutElement::Quote),
+                ));
+            }
+            if self.cfg.show_clock_layer {
+                ordered_layers.push((
+                    LayoutElement::Clock,
+                    clock_rect,
+                    self.layout_element_z(LayoutElement::Clock),
+                ));
+            }
+            if self.cfg.show_weather_layer {
+                ordered_layers.push((
+                    LayoutElement::Weather,
+                    weather_rect,
+                    self.layout_element_z(LayoutElement::Weather),
+                ));
+            }
+            if self.cfg.show_news_layer {
+                ordered_layers.push((
+                    LayoutElement::News,
+                    news_rect,
+                    self.layout_element_z(LayoutElement::News),
+                ));
+            }
+            if self.cfg.show_cams_layer {
+                ordered_layers.push((
+                    LayoutElement::Cams,
+                    cams_rect,
+                    self.layout_element_z(LayoutElement::Cams),
+                ));
+            }
         }
 
-        if self.cfg.show_quote_layer {
-            let neon = if self.selected_element == LayoutElement::Quote {
-                egui::Color32::from_rgb(255, 0, 190)
-            } else {
-                egui::Color32::from_rgb(158, 46, 133)
-            };
-            painter.rect_filled(quote_rect, 4.0, neon.linear_multiply(0.18));
-            painter.rect_stroke(
-                quote_rect,
-                4.0,
-                egui::Stroke::new(2.0, neon),
-                egui::StrokeKind::Middle,
-            );
-            painter.text(
-                quote_rect.left_top() + egui::vec2(6.0, 6.0),
-                egui::Align2::LEFT_TOP,
-                "Quote",
-                egui::FontId::proportional(12.0),
-                egui::Color32::WHITE,
-            );
-        }
-        if self.cfg.show_clock_layer {
-            let neon = if self.selected_element == LayoutElement::Clock {
-                egui::Color32::from_rgb(0, 255, 255)
-            } else {
-                egui::Color32::from_rgb(54, 150, 150)
-            };
-            painter.rect_filled(clock_rect, 4.0, neon.linear_multiply(0.2));
-            painter.rect_stroke(
-                clock_rect,
-                4.0,
-                egui::Stroke::new(2.0, neon),
-                egui::StrokeKind::Middle,
-            );
-            painter.text(
-                clock_rect.left_top() + egui::vec2(6.0, 6.0),
-                egui::Align2::LEFT_TOP,
-                "Clock",
-                egui::FontId::proportional(12.0),
-                egui::Color32::WHITE,
-            );
-        }
-        if self.cfg.show_weather_layer {
-            let neon = if self.selected_element == LayoutElement::Weather {
-                egui::Color32::from_rgb(128, 255, 0)
-            } else {
-                egui::Color32::from_rgb(74, 140, 48)
-            };
-            painter.rect_filled(weather_rect, 4.0, neon.linear_multiply(0.15));
-            painter.rect_stroke(
-                weather_rect,
-                4.0,
-                egui::Stroke::new(2.0, neon),
-                egui::StrokeKind::Middle,
-            );
-            painter.text(
-                weather_rect.left_top() + egui::vec2(6.0, 6.0),
-                egui::Align2::LEFT_TOP,
-                "Weather",
-                egui::FontId::proportional(12.0),
-                egui::Color32::WHITE,
-            );
-        }
-        if self.cfg.show_news_layer {
-            let neon = if self.selected_element == LayoutElement::News {
-                egui::Color32::from_rgb(255, 120, 0)
-            } else {
-                egui::Color32::from_rgb(166, 91, 28)
-            };
-            painter.rect_filled(news_rect, 4.0, neon.linear_multiply(0.15));
-            painter.rect_stroke(
-                news_rect,
-                4.0,
-                egui::Stroke::new(2.0, neon),
-                egui::StrokeKind::Middle,
-            );
-            painter.text(
-                news_rect.left_top() + egui::vec2(6.0, 6.0),
-                egui::Align2::LEFT_TOP,
-                "News",
-                egui::FontId::proportional(12.0),
-                egui::Color32::WHITE,
-            );
-        }
-        if self.cfg.show_cams_layer {
-            let neon = if self.selected_element == LayoutElement::Cams {
-                egui::Color32::from_rgb(0, 255, 140)
-            } else {
-                egui::Color32::from_rgb(35, 140, 92)
-            };
-            painter.rect_filled(cams_rect, 4.0, neon.linear_multiply(0.15));
-            painter.rect_stroke(
-                cams_rect,
-                4.0,
-                egui::Stroke::new(2.0, neon),
-                egui::StrokeKind::Middle,
-            );
-            painter.text(
-                cams_rect.left_top() + egui::vec2(6.0, 6.0),
-                egui::Align2::LEFT_TOP,
-                "Cams",
-                egui::FontId::proportional(12.0),
-                egui::Color32::WHITE,
-            );
+        ordered_layers.sort_by(|a, b| a.2.cmp(&b.2));
+        for (element, layer_rect, _) in &ordered_layers {
+            self.draw_ordering_element(&painter, *element, *layer_rect);
         }
 
         ui.separator();
@@ -1685,8 +2181,69 @@ impl WcGuiApp {
                             .range(0.05..=30.0),
                     )
                     .on_hover_text(self.hover_text("news_fps"));
+                    ui.label("Refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_refresh_seconds)
+                            .speed(5)
+                            .range(10..=3600),
+                    );
                     ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
                         .on_hover_text(self.hover_text("news_audio_enabled"));
+                });
+                ui.separator();
+                ui.heading("Secondary Ticker");
+                ui.checkbox(&mut self.cfg.show_news_ticker2, "Enabled");
+                ui.horizontal(|ui| {
+                    ui.label("X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_y).speed(1));
+                    ui.label("Width");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_width)
+                            .speed(4)
+                            .range(220..=1920),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Source");
+                    egui::ComboBox::from_id_salt("news_ticker2_source_ordering")
+                        .selected_text(news_source_label(&self.cfg.news_ticker2_source))
+                        .show_ui(ui, |ui| {
+                            for &(id, label) in news_sources() {
+                                ui.selectable_value(
+                                    &mut self.cfg.news_ticker2_source,
+                                    id.to_string(),
+                                    label,
+                                );
+                            }
+                        });
+                });
+                if self.cfg.news_ticker2_source == "custom" {
+                    ui.horizontal(|ui| {
+                        ui.label("Custom URL");
+                        ui.text_edit_singleline(&mut self.cfg.news_ticker2_custom_url)
+                            .on_hover_text(self.hover_text("news_custom_url"));
+                    });
+                    if is_camera_like_url(&self.cfg.news_ticker2_custom_url)
+                        && self.cfg.news_ticker2_fps > 1.0
+                    {
+                        self.cfg.news_ticker2_fps = 1.0;
+                    }
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Ticker FPS");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_fps)
+                            .speed(0.1)
+                            .range(0.05..=30.0),
+                    );
+                    ui.label("Ticker refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_refresh_seconds)
+                            .speed(5)
+                            .range(10..=3600),
+                    );
                 });
             }
             LayoutElement::Cams => {
@@ -1755,6 +2312,18 @@ impl WcGuiApp {
                             .speed(1)
                             .range(1..=4),
                     );
+                    ui.label("FPS");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_fps)
+                            .speed(0.1)
+                            .range(0.05..=10.0),
+                    );
+                    ui.label("Refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_refresh_seconds)
+                            .speed(5)
+                            .range(10..=3600),
+                    );
                 });
             }
         }
@@ -1765,380 +2334,568 @@ impl WcGuiApp {
 
     fn render_weather_tab(&mut self, ui: &mut egui::Ui) {
         let color_help = self.hover_text("color_format").to_string();
-        ui.heading("Weather");
-        ui.label("Widget 1: weather data for your desktop location");
-        ui.separator();
-        ui.checkbox(&mut self.cfg.show_weather_layer, "Enable weather widget");
-        ui.horizontal(|ui| {
-            ui.label("Refresh seconds");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.weather_refresh_seconds)
-                    .speed(10)
-                    .range(60..=3600),
-            )
-            .on_hover_text(self.hover_text("weather_refresh_seconds"));
-            if ui.button("Refresh now").clicked() {
-                self.refresh_weather_now();
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.checkbox(
-                &mut self.cfg.weather_use_system_location,
-                "Use system location",
-            )
-            .on_hover_text(self.hover_text("weather_use_system_location"));
-        });
-        if !self.cfg.weather_use_system_location {
-            ui.horizontal(|ui| {
-                ui.label("Location override");
-                ui.text_edit_singleline(&mut self.cfg.weather_location_override)
-                    .on_hover_text(self.hover_text("weather_location_override"));
-            });
-        }
-        ui.horizontal(|ui| {
-            ui.label("Position X");
-            ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_x).speed(1));
-            ui.label("Y");
-            ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_y).speed(1));
-            ui.label("W");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.weather_widget_width)
-                    .speed(2)
-                    .range(120..=1920),
-            );
-            ui.label("H");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.weather_widget_height)
-                    .speed(2)
-                    .range(80..=1080),
-            );
-        });
-        ui.horizontal(|ui| {
-            ui.label("Font family");
-            egui::ComboBox::from_id_salt("weather_font_family_tab")
-                .selected_text(&self.cfg.weather_font_family)
-                .show_ui(ui, |ui| {
-                    for family in [
-                        "DejaVu-Sans",
-                        "Noto-Sans",
-                        "Liberation-Sans",
-                        "Serif",
-                        "Monospace",
-                    ] {
-                        ui.selectable_value(
-                            &mut self.cfg.weather_font_family,
-                            family.to_string(),
-                            family,
-                        );
+        settings_section(
+            ui,
+            "Weather Widget",
+            "Live weather data with controllable refresh budget and source location mode.",
+            |ui| {
+                ui.checkbox(&mut self.cfg.show_weather_layer, "Enable weather widget");
+                ui.horizontal(|ui| {
+                    ui.label("Refresh seconds");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.weather_refresh_seconds)
+                            .speed(10)
+                            .range(60..=3600),
+                    )
+                    .on_hover_text(self.hover_text("weather_refresh_seconds"));
+                    if ui.button("Refresh now").clicked() {
+                        self.refresh_weather_now();
                     }
                 });
-            ui.label("Text size");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.weather_font_size)
-                    .speed(1)
-                    .range(10..=220),
-            );
-            ui.label("Stroke");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.weather_stroke_width)
-                    .speed(1)
-                    .range(0..=20),
-            );
-        });
-        ui.horizontal(|ui| {
-            edit_color_field(
-                ui,
-                "Text color",
-                &mut self.cfg.weather_color,
-                false,
-                &color_help,
-            );
-            edit_color_field(
-                ui,
-                "Undercolor",
-                &mut self.cfg.weather_undercolor,
-                true,
-                &color_help,
-            );
-            edit_color_field(
-                ui,
-                "Stroke color",
-                &mut self.cfg.weather_stroke_color,
-                false,
-                &color_help,
-            );
-        });
-        ui.separator();
-        ui.label(&self.weather_status);
-        for line in &self.weather_details {
-            ui.label(line);
-        }
+                ui.horizontal(|ui| {
+                    ui.checkbox(
+                        &mut self.cfg.weather_use_system_location,
+                        "Use system location",
+                    )
+                    .on_hover_text(self.hover_text("weather_use_system_location"));
+                });
+                if !self.cfg.weather_use_system_location {
+                    ui.horizontal(|ui| {
+                        ui.label("Location override");
+                        ui.text_edit_singleline(&mut self.cfg.weather_location_override)
+                            .on_hover_text(self.hover_text("weather_location_override"));
+                    });
+                }
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Layout & Style",
+            "Placement, dimensions and visual style for the weather overlay.",
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Position X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.weather_pos_y).speed(1));
+                    ui.label("W");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.weather_widget_width)
+                            .speed(2)
+                            .range(120..=1920),
+                    );
+                    ui.label("H");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.weather_widget_height)
+                            .speed(2)
+                            .range(80..=1080),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Font family");
+                    egui::ComboBox::from_id_salt("weather_font_family_tab")
+                        .selected_text(&self.cfg.weather_font_family)
+                        .show_ui(ui, |ui| {
+                            for family in [
+                                "DejaVu-Sans",
+                                "Noto-Sans",
+                                "Liberation-Sans",
+                                "Serif",
+                                "Monospace",
+                            ] {
+                                ui.selectable_value(
+                                    &mut self.cfg.weather_font_family,
+                                    family.to_string(),
+                                    family,
+                                );
+                            }
+                        });
+                    ui.label("Text size");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.weather_font_size)
+                            .speed(1)
+                            .range(10..=220),
+                    );
+                    ui.label("Stroke");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.weather_stroke_width)
+                            .speed(1)
+                            .range(0..=20),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    edit_color_field(
+                        ui,
+                        "Text color",
+                        &mut self.cfg.weather_color,
+                        false,
+                        &color_help,
+                    );
+                    edit_color_field(
+                        ui,
+                        "Undercolor",
+                        &mut self.cfg.weather_undercolor,
+                        true,
+                        &color_help,
+                    );
+                    edit_color_field(
+                        ui,
+                        "Stroke color",
+                        &mut self.cfg.weather_stroke_color,
+                        false,
+                        &color_help,
+                    );
+                });
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Live Snapshot",
+            "Current snapshot state and provider diagnostics.",
+            |ui| {
+                ui.label(&self.weather_status);
+                for line in &self.weather_details {
+                    ui.label(line);
+                }
+            },
+        );
     }
 
     fn render_news_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("News");
-        ui.label("Widget 2: configurable live/news stream source (fixed 16:9 frame).");
-        ui.separator();
-        ui.checkbox(&mut self.cfg.show_news_layer, "Enable news widget");
-        ui.horizontal(|ui| {
-            ui.label("Channel");
-            egui::ComboBox::from_id_salt("news_source_tab")
-                .selected_text(news_source_label(&self.cfg.news_source))
-                .show_ui(ui, |ui| {
-                    for &(id, label) in news_sources() {
-                        ui.selectable_value(&mut self.cfg.news_source, id.to_string(), label);
+        settings_section(
+            ui,
+            "Primary Stream",
+            "Configurable live/news stream source in fixed 16:9 widget frame.",
+            |ui| {
+                ui.checkbox(&mut self.cfg.show_news_layer, "Enable news widget");
+                ui.horizontal(|ui| {
+                    ui.label("Channel");
+                    egui::ComboBox::from_id_salt("news_source_tab")
+                        .selected_text(news_source_label(&self.cfg.news_source))
+                        .show_ui(ui, |ui| {
+                            for &(id, label) in news_sources() {
+                                ui.selectable_value(
+                                    &mut self.cfg.news_source,
+                                    id.to_string(),
+                                    label,
+                                );
+                            }
+                        })
+                        .response
+                        .on_hover_text(self.hover_text("news_source"));
+                });
+                if self.cfg.news_source == "custom" {
+                    ui.horizontal(|ui| {
+                        ui.label("Custom URL");
+                        ui.text_edit_singleline(&mut self.cfg.news_custom_url)
+                            .on_hover_text(self.hover_text("news_custom_url"));
+                    });
+                    if is_camera_like_url(&self.cfg.news_custom_url) && self.cfg.news_fps > 1.0 {
+                        self.cfg.news_fps = 1.0;
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 180, 100),
+                            "Camera source detected: FPS capped to 1.0",
+                        );
                     }
-                })
-                .response
-                .on_hover_text(self.hover_text("news_source"));
-        });
-        if self.cfg.news_source == "custom" {
-            ui.horizontal(|ui| {
-                ui.label("Custom URL");
-                ui.text_edit_singleline(&mut self.cfg.news_custom_url)
-                    .on_hover_text(self.hover_text("news_custom_url"));
-            });
-            if is_camera_like_url(&self.cfg.news_custom_url) && self.cfg.news_fps > 1.0 {
-                self.cfg.news_fps = 1.0;
-                ui.colored_label(
-                    egui::Color32::from_rgb(255, 180, 100),
-                    "Camera source detected: FPS capped to 1.0",
-                );
-            }
-        }
-        ui.horizontal(|ui| {
-            ui.label("Playback FPS");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.news_fps)
-                    .speed(0.1)
-                    .range(0.05..=30.0),
-            )
-            .on_hover_text(self.hover_text("news_fps"));
-            ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
-                .on_hover_text(self.hover_text("news_audio_enabled"));
-        });
-        ui.horizontal(|ui| {
-            ui.label("Position X");
-            ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
-            ui.label("Y");
-            ui.add(egui::DragValue::new(&mut self.cfg.news_pos_y).speed(1));
-            ui.label("Size (16:9)");
-            let mut selected =
-                current_news_size_id(self.cfg.news_widget_width, self.cfg.news_widget_height)
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Playback FPS");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_fps)
+                            .speed(0.1)
+                            .range(0.05..=30.0),
+                    )
+                    .on_hover_text(self.hover_text("news_fps"));
+                    ui.label("Refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_refresh_seconds)
+                            .speed(5)
+                            .range(10..=3600),
+                    );
+                    ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
+                        .on_hover_text(self.hover_text("news_audio_enabled"));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Position X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_pos_y).speed(1));
+                    ui.label("Size (16:9)");
+                    let mut selected = current_news_size_id(
+                        self.cfg.news_widget_width,
+                        self.cfg.news_widget_height,
+                    )
                     .to_string();
-            egui::ComboBox::from_id_salt("news_size_tab")
-                .selected_text(news_size_label(selected.as_str()))
-                .show_ui(ui, |ui| {
-                    for (id, label, _, _) in news_size_presets() {
-                        ui.selectable_value(&mut selected, (*id).to_string(), *label);
+                    egui::ComboBox::from_id_salt("news_size_tab")
+                        .selected_text(news_size_label(selected.as_str()))
+                        .show_ui(ui, |ui| {
+                            for (id, label, _, _) in news_size_presets() {
+                                ui.selectable_value(&mut selected, (*id).to_string(), *label);
+                            }
+                        });
+                    if let Some((_, _, w, h)) = news_size_presets()
+                        .iter()
+                        .copied()
+                        .find(|(id, _, _, _)| *id == selected)
+                    {
+                        self.cfg.news_widget_width = w;
+                        self.cfg.news_widget_height = h;
                     }
                 });
-            if let Some((_, _, w, h)) = news_size_presets()
-                .iter()
-                .copied()
-                .find(|(id, _, _, _)| *id == selected)
-            {
-                self.cfg.news_widget_width = w;
-                self.cfg.news_widget_height = h;
-            }
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(ui, "Resolved Stream URL", "", |ui| {
+            ui.monospace(news_source_url(
+                &self.cfg.news_source,
+                &self.cfg.news_custom_url,
+            ));
         });
-        ui.separator();
-        ui.label("Selected stream URL:");
-        ui.monospace(news_source_url(
-            &self.cfg.news_source,
-            &self.cfg.news_custom_url,
-        ));
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Secondary Ticker",
+            "Independent ticker stream with own source, limits, and placement.",
+            |ui| {
+                ui.checkbox(&mut self.cfg.show_news_ticker2, "Enable secondary ticker");
+                ui.horizontal(|ui| {
+                    ui.label("Ticker source");
+                    egui::ComboBox::from_id_salt("news_ticker2_source_tab")
+                        .selected_text(news_source_label(&self.cfg.news_ticker2_source))
+                        .show_ui(ui, |ui| {
+                            for &(id, label) in news_sources() {
+                                ui.selectable_value(
+                                    &mut self.cfg.news_ticker2_source,
+                                    id.to_string(),
+                                    label,
+                                );
+                            }
+                        });
+                });
+                if self.cfg.news_ticker2_source == "custom" {
+                    ui.horizontal(|ui| {
+                        ui.label("Ticker custom URL");
+                        ui.text_edit_singleline(&mut self.cfg.news_ticker2_custom_url)
+                            .on_hover_text(self.hover_text("news_custom_url"));
+                    });
+                    if is_camera_like_url(&self.cfg.news_ticker2_custom_url)
+                        && self.cfg.news_ticker2_fps > 1.0
+                    {
+                        self.cfg.news_ticker2_fps = 1.0;
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 180, 100),
+                            "Camera source detected: ticker FPS capped to 1.0",
+                        );
+                    }
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Ticker FPS");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_fps)
+                            .speed(0.1)
+                            .range(0.05..=30.0),
+                    );
+                    ui.label("Ticker refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_refresh_seconds)
+                            .speed(5)
+                            .range(10..=3600),
+                    );
+                    ui.label("Ticker width");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_width)
+                            .speed(4)
+                            .range(220..=1920),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Ticker X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_x).speed(1));
+                    ui.label("Ticker Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_y).speed(1));
+                });
+                ui.label("Ticker source URL:");
+                ui.monospace(news_source_url(
+                    &self.cfg.news_ticker2_source,
+                    &self.cfg.news_ticker2_custom_url,
+                ));
+            },
+        );
     }
 
     fn render_cams_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Cams");
-        ui.label("Widget: public/private camera feeds (2-5) with optional custom URLs.");
-        ui.separator();
-        ui.checkbox(&mut self.cfg.show_cams_layer, "Enable cams widget");
-        ui.horizontal(|ui| {
-            ui.label("Source mode");
-            egui::ComboBox::from_id_salt("cams_source_tab")
-                .selected_text(match self.cfg.cams_source.as_str() {
-                    "city_public" => "City public",
-                    "custom" => "Custom URLs",
-                    _ => "Auto local/public",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut self.cfg.cams_source,
-                        "auto_local".to_string(),
-                        "Auto local/public",
+        settings_section(
+            ui,
+            "Source & Presets",
+            "Public/private camera feeds with optional custom URL lists.",
+            |ui| {
+                ui.checkbox(&mut self.cfg.show_cams_layer, "Enable cams widget");
+                ui.horizontal(|ui| {
+                    ui.label("Source mode");
+                    egui::ComboBox::from_id_salt("cams_source_tab")
+                        .selected_text(match self.cfg.cams_source.as_str() {
+                            "city_public" => "City public",
+                            "custom" => "Custom URLs",
+                            _ => "Auto local/public",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.cfg.cams_source,
+                                "auto_local".to_string(),
+                                "Auto local/public",
+                            );
+                            ui.selectable_value(
+                                &mut self.cfg.cams_source,
+                                "city_public".to_string(),
+                                "City public",
+                            );
+                            ui.selectable_value(
+                                &mut self.cfg.cams_source,
+                                "custom".to_string(),
+                                "Custom URLs",
+                            );
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Public preset");
+                    egui::ComboBox::from_id_salt("cams_public_choice_tab")
+                        .selected_text(match self.cams_public_choice.as_str() {
+                            "belgrade_center" => "Belgrade center mix",
+                            "europe_mix" => "Europe city mix",
+                            "world_mix" => "World live mix",
+                            _ => "Belgrade center mix",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.cams_public_choice,
+                                "belgrade_center".to_string(),
+                                "Belgrade center mix",
+                            );
+                            ui.selectable_value(
+                                &mut self.cams_public_choice,
+                                "europe_mix".to_string(),
+                                "Europe city mix",
+                            );
+                            ui.selectable_value(
+                                &mut self.cams_public_choice,
+                                "world_mix".to_string(),
+                                "World live mix",
+                            );
+                        });
+                    if ui.button("Apply preset URLs").clicked() {
+                        self.cfg.cams_source = "custom".to_string();
+                        self.cfg.cams_custom_urls =
+                            cams_public_preset_urls(&self.cams_public_choice);
+                    }
+                });
+                if self.cfg.cams_source == "custom" {
+                    ui.label("Custom cam URLs (one per line, supports http(s)/rtsp)");
+                    ui.add(
+                        egui::TextEdit::multiline(&mut self.cfg.cams_custom_urls)
+                            .desired_rows(6)
+                            .desired_width(f32::INFINITY),
                     );
-                    ui.selectable_value(
-                        &mut self.cfg.cams_source,
-                        "city_public".to_string(),
-                        "City public",
+                }
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Grid & Performance",
+            "Visible camera count, grid shape, FPS, and refresh budget controls.",
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Cams shown");
+                    if ui.button("-").clicked() {
+                        self.cfg.cams_count = self.cfg.cams_count.saturating_sub(1).max(1);
+                    }
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_count)
+                            .speed(1)
+                            .range(1..=5),
                     );
-                    ui.selectable_value(
-                        &mut self.cfg.cams_source,
-                        "custom".to_string(),
-                        "Custom URLs",
+                    if ui.button("+").clicked() {
+                        self.cfg.cams_count = self.cfg.cams_count.saturating_add(1).clamp(1, 5);
+                    }
+                    ui.label("Columns");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_columns)
+                            .speed(1)
+                            .range(1..=4),
                     );
                 });
-        });
-        ui.horizontal(|ui| {
-            ui.label("Public preset");
-            egui::ComboBox::from_id_salt("cams_public_choice_tab")
-                .selected_text(match self.cams_public_choice.as_str() {
-                    "belgrade_center" => "Belgrade center mix",
-                    "europe_mix" => "Europe city mix",
-                    "world_mix" => "World live mix",
-                    _ => "Belgrade center mix",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut self.cams_public_choice,
-                        "belgrade_center".to_string(),
-                        "Belgrade center mix",
+                ui.horizontal(|ui| {
+                    ui.label("Cams FPS");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_fps)
+                            .speed(0.1)
+                            .range(0.05..=10.0),
                     );
-                    ui.selectable_value(
-                        &mut self.cams_public_choice,
-                        "europe_mix".to_string(),
-                        "Europe city mix",
-                    );
-                    ui.selectable_value(
-                        &mut self.cams_public_choice,
-                        "world_mix".to_string(),
-                        "World live mix",
+                    ui.label("Refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_refresh_seconds)
+                            .speed(5)
+                            .range(10..=3600),
                     );
                 });
-            if ui.button("Apply preset URLs").clicked() {
-                self.cfg.cams_source = "custom".to_string();
-                self.cfg.cams_custom_urls = cams_public_preset_urls(&self.cams_public_choice);
-            }
-        });
-        if self.cfg.cams_source == "custom" {
-            ui.label("Custom cam URLs (one per line, supports http(s)/rtsp)");
-            ui.add(
-                egui::TextEdit::multiline(&mut self.cfg.cams_custom_urls)
-                    .desired_rows(6)
-                    .desired_width(f32::INFINITY),
-            );
-        }
-        ui.horizontal(|ui| {
-            ui.label("Cams shown");
-            if ui.button("-").clicked() {
-                self.cfg.cams_count = self.cfg.cams_count.saturating_sub(1).max(1);
-            }
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.cams_count)
-                    .speed(1)
-                    .range(1..=5),
-            );
-            if ui.button("+").clicked() {
-                self.cfg.cams_count = self.cfg.cams_count.saturating_add(1).clamp(1, 5);
-            }
-            ui.label("Columns");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.cams_columns)
-                    .speed(1)
-                    .range(1..=4),
-            );
-        });
-        ui.horizontal(|ui| {
-            ui.label("Position X");
-            ui.add(egui::DragValue::new(&mut self.cfg.cams_pos_x).speed(1));
-            ui.label("Y");
-            ui.add(egui::DragValue::new(&mut self.cfg.cams_pos_y).speed(1));
-            ui.label("W");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.cams_widget_width)
-                    .speed(2)
-                    .range(240..=1920),
-            );
-            ui.label("H");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.cams_widget_height)
-                    .speed(2)
-                    .range(140..=1080),
-            );
-        });
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Placement",
+            "Absolute overlay placement and dimensions on the render canvas.",
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Position X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.cams_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.cams_pos_y).speed(1));
+                    ui.label("W");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_widget_width)
+                            .speed(2)
+                            .range(240..=1920),
+                    );
+                    ui.label("H");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_widget_height)
+                            .speed(2)
+                            .range(140..=1080),
+                    );
+                });
+            },
+        );
     }
 
     fn render_system_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Runtime");
-        ui.horizontal(|ui| {
-            self.cfg.refresh_seconds = self.cfg.image_refresh_seconds.max(1);
-            self.cfg.quote_refresh_seconds = self.cfg.image_refresh_seconds.max(1);
-            ui.label("Master timer (from Images tab)");
-            ui.monospace(format!("{}s", self.cfg.image_refresh_seconds));
-        });
-        ui.separator();
-        ui.heading("Autostart");
-        ui.horizontal(|ui| {
-            let response = ui
-                .checkbox(
-                    &mut self.autostart_toggle,
-                    "Start automatically after login",
-                )
-                .on_hover_text(self.hover_text("autostart_enable"));
-            if response.changed() {
-                self.sync_autostart_toggle();
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label(if Self::autostart_enabled() {
-                "Status: enabled"
-            } else {
-                "Status: disabled"
-            });
-            if ui.button("Install Autostart").clicked() {
-                self.install_autostart();
-            }
-            if ui.button("Remove Autostart").clicked() {
-                self.remove_autostart();
-            }
-        });
-        ui.separator();
-        ui.heading("System Integrations");
-        ui.checkbox(
-            &mut self.cfg.login_screen_integration,
-            "Enable login-screen integration",
-        )
-        .on_hover_text(self.hover_text("login_screen_integration"));
-        ui.checkbox(
-            &mut self.cfg.boot_screen_integration,
-            "Enable boot-screen integration",
-        )
-        .on_hover_text(self.hover_text("boot_screen_integration"));
-        ui.separator();
-        ui.heading("Widget Integrations");
-        ui.horizontal(|ui| {
-            ui.label("News channel");
-            egui::ComboBox::from_id_salt("news_source_system")
-                .selected_text(news_source_label(&self.cfg.news_source))
-                .show_ui(ui, |ui| {
-                    for &(id, label) in news_sources() {
-                        ui.selectable_value(&mut self.cfg.news_source, id.to_string(), label);
+        settings_section(
+            ui,
+            "Runtime & Updates",
+            "Loop timing status and package update controls.",
+            |ui| {
+                ui.horizontal(|ui| {
+                    self.cfg.refresh_seconds = self.cfg.image_refresh_seconds.max(1);
+                    self.cfg.quote_refresh_seconds = self.cfg.image_refresh_seconds.max(1);
+                    ui.label("Master timer (from Images tab)");
+                    ui.monospace(format!("{}s", self.cfg.image_refresh_seconds));
+                });
+                ui.horizontal(|ui| {
+                    let checking = self.update_check_rx.is_some();
+                    if ui
+                        .add_enabled(!checking, egui::Button::new("Check Updates"))
+                        .clicked()
+                    {
+                        self.start_update_check();
                     }
-                })
-                .response
-                .on_hover_text(self.hover_text("news_source"));
-        });
-        if self.cfg.news_source == "custom" {
-            ui.horizontal(|ui| {
-                ui.label("Custom URL");
-                ui.text_edit_singleline(&mut self.cfg.news_custom_url);
-            });
-        }
-        ui.horizontal(|ui| {
-            ui.label("News FPS");
-            ui.add(
-                egui::DragValue::new(&mut self.cfg.news_fps)
-                    .speed(0.1)
-                    .range(0.05..=30.0),
-            )
-            .on_hover_text(self.hover_text("news_fps"));
-            ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
-                .on_hover_text(self.hover_text("news_audio_enabled"));
-        });
-        ui.separator();
-        ui.collapsing("Support the Team", |ui| {
+                    if self.update_release.is_some() && ui.button("Update Now").clicked() {
+                        self.start_self_update();
+                    }
+                    if let Some(release) = self.update_release.clone() {
+                        ui.hyperlink_to("Release Notes", release.html_url);
+                    }
+                });
+                ui.monospace(&self.update_status);
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Autostart",
+            "Control automatic startup behavior and install/remove desktop autostart entry.",
+            |ui| {
+                ui.horizontal(|ui| {
+                    let response = ui
+                        .checkbox(
+                            &mut self.autostart_toggle,
+                            "Start automatically after login",
+                        )
+                        .on_hover_text(self.hover_text("autostart_enable"));
+                    if response.changed() {
+                        self.sync_autostart_toggle();
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(if Self::autostart_enabled() {
+                        "Status: enabled"
+                    } else {
+                        "Status: disabled"
+                    });
+                    if ui.button("Install Autostart").clicked() {
+                        self.install_autostart();
+                    }
+                    if ui.button("Remove Autostart").clicked() {
+                        self.remove_autostart();
+                    }
+                });
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Integrations",
+            "Login/boot integration switches and shared widget channel controls.",
+            |ui| {
+                ui.checkbox(
+                    &mut self.cfg.login_screen_integration,
+                    "Enable login-screen integration",
+                )
+                .on_hover_text(self.hover_text("login_screen_integration"));
+                ui.checkbox(
+                    &mut self.cfg.boot_screen_integration,
+                    "Enable boot-screen integration",
+                )
+                .on_hover_text(self.hover_text("boot_screen_integration"));
+
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label("News channel");
+                    egui::ComboBox::from_id_salt("news_source_system")
+                        .selected_text(news_source_label(&self.cfg.news_source))
+                        .show_ui(ui, |ui| {
+                            for &(id, label) in news_sources() {
+                                ui.selectable_value(
+                                    &mut self.cfg.news_source,
+                                    id.to_string(),
+                                    label,
+                                );
+                            }
+                        })
+                        .response
+                        .on_hover_text(self.hover_text("news_source"));
+                });
+                if self.cfg.news_source == "custom" {
+                    ui.horizontal(|ui| {
+                        ui.label("Custom URL");
+                        ui.text_edit_singleline(&mut self.cfg.news_custom_url);
+                    });
+                }
+                ui.horizontal(|ui| {
+                    ui.label("News FPS");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_fps)
+                            .speed(0.1)
+                            .range(0.05..=30.0),
+                    )
+                    .on_hover_text(self.hover_text("news_fps"));
+                    ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
+                        .on_hover_text(self.hover_text("news_audio_enabled"));
+                });
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(ui, "Support the Team", "", |ui| {
             ui.label("If Le Compositeur helps you, you can support diceteachbeograd-Team.");
             ui.label("XRP/Monero-style address:");
             ui.monospace("raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5");
@@ -2211,6 +2968,121 @@ fn shell_quote_single(input: &str) -> String {
         return "''".to_string();
     }
     format!("'{}'", input.replace('\'', "'\"'\"'"))
+}
+
+fn fetch_latest_release_info() -> Result<ReleaseInfo, String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(6))
+        .build()
+        .map_err(|e| format!("client init failed: {e}"))?;
+    let payload = client
+        .get("https://api.github.com/repos/diceteachbeograd-Team/Le-Compositeur/releases/latest")
+        .header(reqwest::header::USER_AGENT, "le-compositeur-gui")
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .map_err(|e| format!("request failed: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("release endpoint error: {e}"))?
+        .json::<serde_json::Value>()
+        .map_err(|e| format!("response decode failed: {e}"))?;
+
+    let tag = payload
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if tag.is_empty() {
+        return Err("missing tag_name in release payload".to_string());
+    }
+    let html_url = payload
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest")
+        .to_string();
+    Ok(ReleaseInfo { tag, html_url })
+}
+
+fn is_newer_release(latest: &str, current: &str) -> bool {
+    let latest_parts = numeric_version_parts(latest);
+    let current_parts = numeric_version_parts(current);
+    if latest_parts.is_empty() || current_parts.is_empty() {
+        return latest.trim() != current.trim();
+    }
+    let len = latest_parts.len().max(current_parts.len());
+    for idx in 0..len {
+        let a = *latest_parts.get(idx).unwrap_or(&0);
+        let b = *current_parts.get(idx).unwrap_or(&0);
+        if a > b {
+            return true;
+        }
+        if a < b {
+            return false;
+        }
+    }
+    false
+}
+
+fn numeric_version_parts(raw: &str) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut buf = String::new();
+    for ch in raw.trim().trim_start_matches(['v', 'V']).chars() {
+        if ch.is_ascii_digit() {
+            buf.push(ch);
+            continue;
+        }
+        if !buf.is_empty() {
+            out.push(buf.parse::<u32>().unwrap_or(0));
+            buf.clear();
+        }
+    }
+    if !buf.is_empty() {
+        out.push(buf.parse::<u32>().unwrap_or(0));
+    }
+    out
+}
+
+#[cfg(target_os = "linux")]
+fn command_exists(name: &str) -> bool {
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path_var).any(|dir| dir.join(name).is_file())
+}
+
+fn open_url(url: &str) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(url)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .is_ok()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(url)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .is_ok()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .is_ok()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        let _ = url;
+        false
+    }
 }
 
 fn news_sources() -> &'static [(&'static str, &'static str)] {
@@ -2641,6 +3513,55 @@ fn fetch_weather_snapshot_wttr(
     Ok((headline, details))
 }
 
+fn apply_visual_system(ctx: &egui::Context) {
+    let mut style = (*ctx.style()).clone();
+    style.spacing.item_spacing = egui::vec2(10.0, 8.0);
+    style.spacing.button_padding = egui::vec2(12.0, 6.0);
+    style.spacing.menu_margin = egui::Margin::symmetric(8, 6);
+    style.spacing.window_margin = egui::Margin::symmetric(10, 10);
+    style.spacing.indent = 20.0;
+
+    style
+        .text_styles
+        .insert(egui::TextStyle::Heading, egui::FontId::proportional(20.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Body, egui::FontId::proportional(15.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Button, egui::FontId::proportional(14.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Monospace, egui::FontId::monospace(13.5));
+
+    let mut visuals = egui::Visuals::dark();
+    visuals.override_text_color = Some(egui::Color32::from_rgb(230, 237, 243));
+    visuals.window_fill = egui::Color32::from_rgb(8, 13, 18);
+    visuals.panel_fill = egui::Color32::from_rgb(10, 16, 22);
+    visuals.faint_bg_color = egui::Color32::from_rgb(16, 24, 32);
+    visuals.extreme_bg_color = egui::Color32::from_rgb(5, 10, 15);
+    visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(12, 19, 27);
+    visuals.widgets.noninteractive.fg_stroke =
+        egui::Stroke::new(1.0, egui::Color32::from_gray(170));
+    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(18, 29, 41);
+    visuals.widgets.inactive.fg_stroke =
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(195, 208, 219));
+    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(24, 41, 58);
+    visuals.widgets.hovered.fg_stroke =
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(225, 237, 246));
+    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(24, 81, 105);
+    visuals.widgets.active.fg_stroke =
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(240, 250, 255));
+    visuals.selection.bg_fill = egui::Color32::from_rgb(18, 96, 127);
+    visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(111, 237, 250));
+    visuals.hyperlink_color = egui::Color32::from_rgb(124, 225, 255);
+    visuals.warn_fg_color = egui::Color32::from_rgb(255, 193, 90);
+    visuals.error_fg_color = egui::Color32::from_rgb(255, 110, 110);
+    style.visuals = visuals;
+
+    ctx.set_style(style);
+}
+
 fn detect_ui_lang() -> UiLang {
     let locale = std::env::var("LC_ALL")
         .ok()
@@ -2673,10 +3594,15 @@ fn ui_lang_label(lang: UiLang) -> &'static str {
 impl eframe::App for WcGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_runner_state();
+        self.poll_update_check();
         if self.cfg.quote_min_font_size > self.cfg.quote_font_size {
             self.cfg.quote_min_font_size = self.cfg.quote_font_size;
         }
         self.enforce_news_widget_size_preset();
+        if !self.ui_style_applied {
+            apply_visual_system(ctx);
+            self.ui_style_applied = true;
+        }
 
         if self.thumbnails.is_empty() || self.thumbnails_for_dir != self.cfg.image_dir {
             self.refresh_thumbnails(ctx);
@@ -2687,105 +3613,180 @@ impl eframe::App for WcGuiApp {
         self.refresh_weather_if_needed();
 
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Config");
-                ui.text_edit_singleline(&mut self.config_path)
-                    .on_hover_text(self.hover_text("config_path"));
-                if ui.button("Load").clicked() {
-                    self.load_from_path(ctx);
-                }
-                if ui.button("Save").clicked() {
-                    self.save_to_path();
-                }
-                ui.separator();
-                ui.label(format!("Language: {}", ui_lang_label(self.ui_lang)));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(app_version_label());
+            ui.add_space(2.0);
+            ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    ui.strong("Session");
+                    ui.separator();
+                    ui.label("Config");
+                    ui.text_edit_singleline(&mut self.config_path)
+                        .on_hover_text(self.hover_text("config_path"));
+                    if ui.button("Load").clicked() {
+                        self.load_from_path(ctx);
+                    }
+                    if ui.button("Save").clicked() {
+                        self.save_to_path();
+                    }
+                    ui.separator();
+                    ui.label(format!("Language: {}", ui_lang_label(self.ui_lang)));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.monospace(app_version_label());
+                    });
                 });
             });
 
-            ui.horizontal(|ui| {
-                ui.label(if self.runner.is_some() {
-                    "Runner: ACTIVE"
-                } else {
-                    "Runner: STOPPED"
+            ui.add_space(6.0);
+            ui.group(|ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.strong("Actions");
+                    ui.separator();
+                    ui.label(if self.runner.is_some() {
+                        "Runner: ACTIVE"
+                    } else {
+                        "Runner: STOPPED"
+                    });
+                    if ui.button("Validate").clicked() {
+                        self.run_wc_cli(&["validate"]);
+                    }
+                    if ui.button("Render Preview").clicked() {
+                        self.run_wc_cli(&["render-preview"]);
+                    }
+                    if ui.button("Run Once").clicked() {
+                        self.run_wc_cli(&["run", "--once"]);
+                    }
+                    if ui.button("Apply Now").clicked() {
+                        self.apply_now();
+                    }
+                    if ui.button("Migrate").clicked() {
+                        self.run_wc_cli(&["migrate"]);
+                    }
+                    if ui.button("Start Loop").clicked() {
+                        self.start_runner();
+                    }
+                    if ui.button("Start Loop + Hide").clicked() {
+                        self.start_runner();
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    }
+                    if ui.button("Run Detached").clicked() {
+                        self.start_detached_runner();
+                    }
+                    if ui.button("Stop Loop").clicked() {
+                        self.stop_runner();
+                    }
+                    if ui.button("Hide Window").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    }
                 });
-                if ui.button("Validate").clicked() {
-                    self.run_wc_cli(&["validate"]);
-                }
-                if ui.button("Render Preview").clicked() {
-                    self.run_wc_cli(&["render-preview"]);
-                }
-                if ui.button("Run Once").clicked() {
-                    self.run_wc_cli(&["run", "--once"]);
-                }
-                if ui.button("Apply Now").clicked() {
-                    self.apply_now();
-                }
-                if ui.button("Migrate").clicked() {
-                    self.run_wc_cli(&["migrate"]);
-                }
-                if ui.button("Start Loop").clicked() {
-                    self.start_runner();
-                }
-                if ui.button("Start Loop + Hide").clicked() {
-                    self.start_runner();
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                }
-                if ui.button("Run Detached").clicked() {
-                    self.start_detached_runner();
-                }
-                if ui.button("Stop Loop").clicked() {
-                    self.stop_runner();
-                }
-                if ui.button("Hide Window").clicked() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                }
             });
-            ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.active_tab, GuiTab::Ordering, "Ordering");
-                ui.selectable_value(&mut self.active_tab, GuiTab::Images, "Images");
-            ui.selectable_value(&mut self.active_tab, GuiTab::Quotes, "Quotes");
-            ui.selectable_value(&mut self.active_tab, GuiTab::Weather, "Weather");
-            ui.selectable_value(&mut self.active_tab, GuiTab::News, "News");
-            ui.selectable_value(&mut self.active_tab, GuiTab::Cams, "Cams");
-            ui.selectable_value(&mut self.active_tab, GuiTab::System, "System");
-        });
+
+            ui.add_space(6.0);
+            ui.group(|ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.strong("Workspace");
+                    ui.separator();
+                    ui.selectable_value(
+                        &mut self.active_tab,
+                        GuiTab::Ordering,
+                        Self::tab_button_label(GuiTab::Ordering),
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tab,
+                        GuiTab::Images,
+                        Self::tab_button_label(GuiTab::Images),
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tab,
+                        GuiTab::Quotes,
+                        Self::tab_button_label(GuiTab::Quotes),
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tab,
+                        GuiTab::Weather,
+                        Self::tab_button_label(GuiTab::Weather),
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tab,
+                        GuiTab::News,
+                        Self::tab_button_label(GuiTab::News),
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tab,
+                        GuiTab::Cams,
+                        Self::tab_button_label(GuiTab::Cams),
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tab,
+                        GuiTab::System,
+                        Self::tab_button_label(GuiTab::System),
+                    );
+                });
+            });
+
+            ui.add_space(6.0);
+            ui.group(|ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.strong("Updates");
+                    ui.separator();
+                    let checking = self.update_check_rx.is_some();
+                    if ui
+                        .add_enabled(!checking, egui::Button::new("Check Updates"))
+                        .clicked()
+                    {
+                        self.start_update_check();
+                    }
+                    if self.update_release.is_some() && ui.button("Update Now").clicked() {
+                        self.start_self_update();
+                    }
+                    if let Some(release) = self.update_release.clone() {
+                        ui.hyperlink_to("Release Notes", release.html_url);
+                    }
+                    ui.monospace(&self.update_status);
+                });
+            });
+            ui.add_space(2.0);
         });
 
         egui::SidePanel::right("thumbs")
             .default_width(320.0)
             .resizable(true)
             .show(ctx, |ui| {
-                ui.heading("Image Preview");
-                ui.label("First 2-3 images from selected folder");
-                if ui.button("Refresh Preview Images").clicked() {
-                    self.refresh_thumbnails(ctx);
-                }
-                ui.separator();
+                ui.group(|ui| {
+                    ui.heading("Image Preview");
+                    ui.label("First 2-3 images from selected folder");
+                    if ui.button("Refresh Preview Images").clicked() {
+                        self.refresh_thumbnails(ctx);
+                    }
+                    ui.separator();
 
-                if self.thumbnails.is_empty() {
-                    ui.label("No thumbnails available");
-                } else {
-                    for item in &self.thumbnails {
-                        ui.label(&item.label);
-                        ui.image((item.texture.id(), egui::vec2(280.0, 158.0)));
+                    if self.thumbnails.is_empty() {
+                        ui.label("No thumbnails available");
+                    } else {
+                        for item in &self.thumbnails {
+                            ui.label(&item.label);
+                            ui.image((item.texture.id(), egui::vec2(280.0, 158.0)));
+                            ui.separator();
+                        }
+                    }
+                });
+
+                ui.add_space(8.0);
+                ui.group(|ui| {
+                    ui.heading("Quote Preview");
+                    if ui.button("Reload Quotes").clicked() {
+                        self.refresh_quotes_preview();
+                    }
+                    for (i, q) in self.quote_preview.iter().enumerate() {
+                        ui.label(format!("#{}", i + 1));
+                        ui.label(q);
                         ui.separator();
                     }
-                }
-
-                ui.heading("Quote Preview");
-                if ui.button("Reload Quotes").clicked() {
-                    self.refresh_quotes_preview();
-                }
-                for (i, q) in self.quote_preview.iter().enumerate() {
-                    ui.label(format!("#{}", i + 1));
-                    ui.label(q);
-                    ui.separator();
-                }
+                });
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading(self.active_tab_title());
+            ui.label(self.active_tab_hint());
+            ui.separator();
             egui::ScrollArea::vertical().show(ui, |ui| match self.active_tab {
                 GuiTab::Ordering => self.render_ordering_tab(ui),
                 GuiTab::Images => self.render_images_tab(ui, ctx),
@@ -2798,12 +3799,22 @@ impl eframe::App for WcGuiApp {
         });
 
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.label("Status");
-            ui.add(
-                egui::TextEdit::multiline(&mut self.status)
-                    .desired_rows(5)
-                    .desired_width(f32::INFINITY),
-            );
+            ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    ui.strong("Status");
+                    ui.separator();
+                    ui.label(if self.runner.is_some() {
+                        "Loop process is running"
+                    } else {
+                        "Loop process is stopped"
+                    });
+                });
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.status)
+                        .desired_rows(5)
+                        .desired_width(f32::INFINITY),
+                );
+            });
         });
     }
 }
@@ -2903,6 +3914,11 @@ fn default_cfg() -> AppConfig {
         show_weather_layer: false,
         show_news_layer: false,
         show_cams_layer: false,
+        layer_z_quote: 40,
+        layer_z_clock: 50,
+        layer_z_weather: 60,
+        layer_z_news: 70,
+        layer_z_cams: 80,
         weather_pos_x: 120,
         weather_pos_y: 120,
         weather_widget_width: 640,
@@ -2923,13 +3939,24 @@ fn default_cfg() -> AppConfig {
         news_source: "euronews".to_string(),
         news_custom_url: String::new(),
         news_fps: 1.0,
+        news_refresh_seconds: 90,
         news_audio_enabled: false,
+        show_news_ticker2: false,
+        news_ticker2_pos_x: 120,
+        news_ticker2_pos_y: 980,
+        news_ticker2_width: 1280,
+        news_ticker2_source: "techcrunch".to_string(),
+        news_ticker2_custom_url: String::new(),
+        news_ticker2_fps: 1.2,
+        news_ticker2_refresh_seconds: 120,
         cams_pos_x: 980,
         cams_pos_y: 640,
         cams_widget_width: 760,
         cams_widget_height: 428,
         cams_source: "auto_local".to_string(),
         cams_custom_urls: String::new(),
+        cams_refresh_seconds: 75,
+        cams_fps: 1.0,
         cams_count: 2,
         cams_columns: 2,
         login_screen_integration: false,
@@ -2965,18 +3992,57 @@ fn quote_box_px(
     custom_h_pct: u32,
     canvas: egui::Vec2,
 ) -> egui::Vec2 {
-    let (w_pct, h_pct) = match mode {
+    let (w_pct, h_pct) = quote_box_pct(mode, custom_w_pct, custom_h_pct);
+    egui::vec2(
+        (canvas.x * w_pct as f32 / 100.0).max(80.0),
+        (canvas.y * h_pct as f32 / 100.0).max(60.0),
+    )
+}
+
+fn quote_box_pct(mode: &str, custom_w_pct: u32, custom_h_pct: u32) -> (u32, u32) {
+    match mode {
         "quarter" => (50_u32, 50_u32),
         "third" => (66_u32, 50_u32),
         "half" => (75_u32, 60_u32),
         "full" => (100_u32, 100_u32),
         "custom" => (custom_w_pct.clamp(10, 100), custom_h_pct.clamp(10, 100)),
         _ => (50_u32, 50_u32),
-    };
-    egui::vec2(
-        (canvas.x * w_pct as f32 / 100.0).max(80.0),
-        (canvas.y * h_pct as f32 / 100.0).max(60.0),
+    }
+}
+
+fn quote_box_world_size(mode: &str, custom_w_pct: u32, custom_h_pct: u32) -> (i32, i32) {
+    let (w_pct, h_pct) = quote_box_pct(mode, custom_w_pct, custom_h_pct);
+    (
+        ((ORDERING_WORLD_WIDTH as i64 * w_pct as i64) / 100).max(80) as i32,
+        ((ORDERING_WORLD_HEIGHT as i64 * h_pct as i64) / 100).max(60) as i32,
     )
+}
+
+fn snap_to_grid(value: i32) -> i32 {
+    let step = ORDERING_GRID_STEP.max(1);
+    ((value as f32 / step as f32).round() as i32) * step
+}
+
+fn clamp_world_pos(x: i32, y: i32, w: i32, h: i32) -> (i32, i32) {
+    let max_x = (ORDERING_WORLD_WIDTH - w).max(0);
+    let max_y = (ORDERING_WORLD_HEIGHT - h).max(0);
+    (x.clamp(0, max_x), y.clamp(0, max_y))
+}
+
+fn settings_section(
+    ui: &mut egui::Ui,
+    title: &str,
+    subtitle: &str,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    ui.group(|ui| {
+        ui.strong(title);
+        if !subtitle.trim().is_empty() {
+            ui.label(subtitle);
+        }
+        ui.separator();
+        add_contents(ui);
+    });
 }
 
 fn edit_color_field(
@@ -3049,4 +4115,28 @@ fn parse_rgb_triplet(raw: &str) -> Option<egui::Color32> {
         255
     };
     Some(egui::Color32::from_rgba_premultiplied(r, g, b, a))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_newer_release, numeric_version_parts};
+
+    #[test]
+    fn numeric_version_parts_parses_common_formats() {
+        assert_eq!(numeric_version_parts("2026.03.10-8"), vec![2026, 3, 10, 8]);
+        assert_eq!(numeric_version_parts("v2026.3.10-8"), vec![2026, 3, 10, 8]);
+        assert_eq!(numeric_version_parts("2026.3.10"), vec![2026, 3, 10]);
+    }
+
+    #[test]
+    fn is_newer_release_detects_upgrade() {
+        assert!(is_newer_release("2026.03.10-8", "2026.03.10-7"));
+        assert!(is_newer_release("v2026.3.10-8", "2026.3.10-7"));
+    }
+
+    #[test]
+    fn is_newer_release_detects_no_upgrade() {
+        assert!(!is_newer_release("2026.03.10-7", "2026.03.10-7"));
+        assert!(!is_newer_release("2026.03.10-6", "2026.03.10-7"));
+    }
 }

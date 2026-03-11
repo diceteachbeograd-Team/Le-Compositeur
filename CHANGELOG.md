@@ -1,5 +1,56 @@
 # Changelog
 
+## 2026.03.11-1 - 2026-03-11
+- Added plugin-registry Stage-B dual-path integration in `wc-cli`:
+  - new registry-backed widget resolution path using `wc-core::widget_registry`
+  - built-in plugin wrappers for `quote`, `clock`, `weather`, `news`, `news_ticker2`, `cams`
+  - safe automatic fallback to legacy resolver path if registry path fails
+  - added tests for registry build coverage and config-to-instance mapping
+- Completed GUI visual-system pass phase 2:
+  - standardized section-card layout hierarchy inside `Weather`, `News`, `Cams`, `System` tabs
+  - preserved phase-1 shell hierarchy (`Session`, `Actions`, `Workspace`, `Updates`)
+- Consolidated version bump and release prep for tag `2026.03.11-1`:
+  - updated workspace/crate versions and build script defaults
+  - refreshed docs/examples to new tag/version references
+  - updated metainfo release history entry
+- Cumulative functional improvements shipped in this release line include:
+  - local quote auto-recovery and packaged default quote binding
+  - startup update check + one-click update action in GUI
+  - secondary independent news ticker with separate source/FPS/position/width
+  - ordering grid snap, persistent layer-z, and anti-overlap drag correction
+  - per-widget performance caps and cache throttling (`news/news_ticker2/cams`)
+  - renderer snapshot/hash regression guard (`native_bmp_overlay_output_hash_is_stable`)
+  - expanded distro test matrix runbook (Fedora GNOME/KDE, Ubuntu, Debian, openSUSE)
+
+## 2026.03.10-8 - 2026-03-10
+- Added local quotes auto-recovery for both CLI and GUI:
+  - missing local quotes paths are recreated or remapped to packaged defaults
+  - recovered config is persisted automatically
+- Hardened `wc-cli init` so config creation succeeds even if auto-creating quotes file fails (warning instead of hard failure).
+- Added GUI startup update check against latest GitHub release and update actions:
+  - `Check Updates` and `Update Now` controls
+  - Linux update command attempts (`dnf`/`apt-get`/`zypper`) with release-page fallback
+- Added secondary independent news ticker support (`show_news_ticker2`) with separate source/custom URL/FPS/position/width.
+- Added Ordering editor improvements:
+  - visible 24px grid with snap-to-grid widget dragging
+  - persistent per-widget layer-z controls (`layer_z_*`) for deterministic editor stacking
+  - overlap-safe drag correction to keep widgets from landing on top of each other in Ordering
+- Added per-widget runtime performance caps and throttling:
+  - `news_refresh_seconds` / `news_ticker2_refresh_seconds` for network refresh budget
+  - `cams_refresh_seconds` + `cams_fps` for cams network/CPU decode budget
+  - cache-backed widget payload reuse to avoid repeated high-frequency fetches
+- Added renderer snapshot/hash regression guard test: `native_bmp_overlay_output_hash_is_stable`.
+- Expanded distro verification runbook in `docs/TEST_MATRIX.md` with reproducible smoke commands for Fedora GNOME/KDE, Ubuntu, Debian, and openSUSE.
+- Applied GUI visual-system pass phase 1+2:
+  - unified dark-cyan theme tuning (spacing, typography, contrast)
+  - grouped topbar into Session/Actions/Workspace/Updates blocks
+  - added active-tab title/hint context header plus structured side/status panels
+  - introduced section-card hierarchy in Weather/News/Cams/System tabs
+- Added plugin registry design draft document (`docs/PLUGIN_REGISTRY_DRAFT.md`) with staged migration plan.
+- Added plugin registry stage-A scaffold module in `wc-core` (`widget_registry.rs`) with registry contract tests.
+- Fixed GUI weather refresh retry behavior to avoid repeated blocking refresh attempts on network failure.
+- Added restart-safe planning docs and synchronized roadmap/status documentation.
+
 ## 2026.03.10-4 - 2026-03-10
 - Added single-instance lock for `wc-cli run` so duplicate loop processes cannot run in parallel.
 - Added `--replace-existing` runner mode and wired GUI loop start actions to replace old runners safely.

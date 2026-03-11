@@ -14,7 +14,7 @@ Workflow file:
 - `.github/workflows/release-alpha.yml`
 
 Trigger:
-- push tags: `v*` or numeric tags like `2026.03.10-1`
+- push tags: `v*` or numeric tags like `2026.03.11-1`
 - manual `workflow_dispatch`
 
 Release publish strategy:
@@ -59,7 +59,7 @@ If you build packages locally:
 ## 6. Tagging and release type
 
 Stable release:
-- tags like `2026.03.10-1` or `v1.20260309.4`
+- tags like `2026.03.11-1` or `v1.20260309.4`
 
 Pre-release:
 - tags containing one of:
@@ -73,6 +73,6 @@ Pre-release:
 ```bash
 git checkout main
 git pull origin main
-git tag 2026.03.10-1
-git push origin 2026.03.10-1
+git tag 2026.03.11-1
+git push origin 2026.03.11-1
 ```

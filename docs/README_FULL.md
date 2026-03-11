@@ -4,6 +4,7 @@ EN | DE | SR | 中文
 
 Project status: active early-stage prototype.
 Documentation note: the English section is the canonical up-to-date reference during rapid iteration.
+Planning note: for the latest actionable status, always check `docs/TODO.md` and `docs/SESSION_PLAN.md`.
 Important: hobby project, use at your own risk ("auf eigene Gefahr"). Bugs can be reported, but fix timing is not guaranteed.
 
 ## Support / Unterstutzung / Podrska / 支持
@@ -69,37 +70,40 @@ It will generate dynamic wallpapers from:
 
 Target later stages include login-screen and boot-screen integration (optional, distro/display-manager specific).
 
-### 2. Current implementation status (as of 2026-03-06)
+### 2. Current implementation status (as of 2026-03-10)
 Implemented:
 - Rust workspace with crates:
   - `wc-cli`
   - `wc-core`
   - `wc-render`
+  - `wc-source`
+  - `wc-backend`
+  - `wc-gui`
+- GUI tabs:
+  - `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
 - CLI commands:
-  - `doctor`
-  - `init`
-  - `render-preview` (image/quote rotation + metadata sidecar)
-  - `run` (`--once` for single cycle, loop mode otherwise)
-- shared rotation timer (`refresh_seconds`) for both image and quote updates
-- no-repeat history for local sources (history-based rotation memory)
-- dynamic canvas sizing from current desktop resolution (auto-detected at runtime, fallback `1920x1080`)
-- ImageMagick render path with explicit background layer + quote/clock overlay
-- quote box size presets (`quarter`, `third`, `half`, `full`, `custom`) applied relative to current image dimensions
-- quote font rendered at configured size (no image-size-based downscale)
-- curated quote sample file: `assets/examples/quotes.md` (10 English quotes)
-- starter config generation (`init`)
-- baseline tests and lint/test workflow
+  - `doctor`, `init`, `validate`, `render-preview`, `run`, `migrate`
+  - `presets`, `preset-catalog`, `export-schema`, `ui-blueprint`
+- Separate image/quote rotation timing and persistent state rotation memory.
+- Weather + news + cams widget rendering paths (text ticker + preview image workflow).
+- Secondary independent news ticker (`show_news_ticker2`) with separate source/FPS/position/width.
+- Ordering editor grid with snap-to-grid dragging, persistent per-widget layer-Z controls, and overlap-safe drag correction.
+- Per-widget performance caps for news/cams (refresh intervals + FPS) with cache-based runtime throttling.
+- Single-instance loop lock and safer runner replacement flow.
+- Linux package pipelines (`rpm` and `deb`) with desktop entry/icon and bundled default quotes.
+- GUI startup release check with `Check Updates` / `Update Now` actions.
+- Baseline tests and lint/test workflow.
 
-Not implemented yet:
-- actual image composition pipeline
-- full wallpaper backend coverage for GNOME/KDE/Sway production edge cases
-- packaging (`rpm`, `deb`)
-- login/boot integration
+Known limitations / in progress:
+- Embedded live video inside static wallpaper is not implemented (still frame + ticker text).
+- Weather refresh retry/backoff is hardened; provider-specific edge cases can still need manual source fallback.
+- Fully unattended self-update is not implemented; current flow is one-click update command with package-manager/release-page fallback.
+- Keep roadmap status in `docs/TODO.md` as source of truth.
 
 ### 3. Technology stack and versions
 Core stack:
 - Language: Rust (edition `2024`)
-- Workspace version: `2026.03.10-1`
+- Workspace version: `2026.3.11-1`
 - License: `GPL-3.0-or-later`
 
 Crates currently in use:
@@ -120,6 +124,7 @@ Toolchain baseline:
   docs/
     PROJECT_PLAYBOOK.md
     ARCHITECTURE.md
+    PLUGIN_REGISTRY_DRAFT.md
     PACKAGING.md
     TEST_MATRIX.md
   crates/
@@ -197,18 +202,18 @@ just migrate
 
 Alpha packaging helpers:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.10-1
-./scripts/build-alpha-deb.sh 2026.03.10-1
+./scripts/build-alpha-rpm.sh 2026.03.11-1
+./scripts/build-alpha-deb.sh 2026.03.11-1
 ```
 
 ### 6.1 Run on your system (release)
 Versioning scheme:
 - release version format: `YYYY.MM.DD-N`
-- example: `2026.03.10-1`
+- example: `2026.03.11-1`
 - if multiple builds happen on the same date, increment `N` (`.2`, `.3`, ...)
 
 You can choose either path:
-- `Option A`: download prebuilt release artifacts from GitHub Releases (tag `v...` or numeric tag like `2026.03.10-1`)
+- `Option A`: download prebuilt release artifacts from GitHub Releases (tag `v...` or numeric tag like `2026.03.11-1`)
 - `Option B`: build packages locally from source
 
 Fedora / RHEL (RPM):
@@ -220,8 +225,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B: local build + install
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.10-1
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.10-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.11-1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-1*.rpm
 
 # start GUI
 wc-gui
@@ -239,8 +244,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B: local build + install
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.10-1
-sudo apt install ./dist/le-compositeur_2026.03.10-1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.11-1
+sudo apt install ./dist/le-compositeur_2026.03.11-1_amd64.deb
 
 # start GUI
 wc-gui
@@ -415,7 +420,7 @@ Local quote templates:
 - `assets/examples/quotes.md` (short English example)
 
 Installed package path (RPM/DEB):
-- `/usr/share/wallpaper-composer/quotes/local-quotes.md`
+- `/usr/share/le-compositeur/quotes/local-quotes.md`
 
 Local quote file format (block mode, recommended):
 ```txt
@@ -489,7 +494,15 @@ MVP:
 Next:
 - backend abstraction by desktop/compositor
 - package builds for Fedora/Ubuntu ecosystems
-- alpha/beta test matrix on multiple VMs
+- plugin-style widget registry
+
+Completed recently:
+- Linux distro test matrix runbook with reproducible smoke commands in `docs/TEST_MATRIX.md`
+- native BMP overlay snapshot/hash regression guard (`native_bmp_overlay_output_hash_is_stable`)
+- GUI visual-system pass phase 1+2 (app shell grouping + section-card hierarchy in key tabs)
+- plugin registry architecture draft in `docs/PLUGIN_REGISTRY_DRAFT.md`
+- plugin registry stage-A scaffold in `wc-core/src/widget_registry.rs`
+- plugin registry stage-B dual-path integration in `wc-cli` (registry-first with legacy fallback)
 
 Packaging skeletons:
 - RPM spec template: `packaging/rpm/le-compositeur.spec`
@@ -541,7 +554,7 @@ Noch offen:
 
 ### 3. Technologien und Versionen
 - Sprache: Rust (Edition `2024`)
-- Projektversion: `2026.03.10-1`
+- Projektversion: `2026.03.11-1`
 - Lizenz: `GPL-3.0-or-later`
 
 Aktuell genutzte Crates:
@@ -598,18 +611,18 @@ cargo run -p wc-gui
 
 Alpha-Paket-Helfer:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.10-1
-./scripts/build-alpha-deb.sh 2026.03.10-1
+./scripts/build-alpha-rpm.sh 2026.03.11-1
+./scripts/build-alpha-deb.sh 2026.03.11-1
 ```
 
 ### 6.1 Auf deinem System starten (release)
 Versionsschema:
 - Release-Format: `YYYY.MM.DD-N`
-- Beispiel: `2026.03.10-1`
+- Beispiel: `2026.03.11-1`
 - bei mehreren Builds am gleichen Tag `N` hochzahlen (`.2`, `.3`, ...)
 
 Zwei Wege:
-- `Option A`: fertige Release-Artefakte aus GitHub Releases laden (Tag `v...` oder numerisch wie `2026.03.10-1`)
+- `Option A`: fertige Release-Artefakte aus GitHub Releases laden (Tag `v...` oder numerisch wie `2026.03.11-1`)
 - `Option B`: lokal aus Source bauen
 
 Fedora / RHEL (RPM):
@@ -620,8 +633,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.10-1
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.10-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.11-1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-1*.rpm
 
 wc-gui
 wc-cli run --once
@@ -635,8 +648,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.10-1
-sudo apt install ./dist/le-compositeur_2026.03.10-1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.11-1
+sudo apt install ./dist/le-compositeur_2026.03.11-1_amd64.deb
 
 wc-gui
 wc-cli run --once
@@ -777,7 +790,7 @@ Autorname
 Hinweise:
 - Standarddatei im Repo: `assets/quotes/local/local-quotes.md`
 - `wc-cli init` erstellt automatisch: `~/Documents/wallpaper-composer/quotes.md`
-- Installierter Paketpfad (RPM/DEB): `/usr/share/wallpaper-composer/quotes/local-quotes.md`
+- Installierter Paketpfad (RPM/DEB): `/usr/share/le-compositeur/quotes/local-quotes.md`
 
 ### 9. Beitragen/Weiterentwickeln
 1. Zuerst `docs/PROJECT_PLAYBOOK.md` lesen.
@@ -845,7 +858,7 @@ Nije jos uradjeno:
 
 ### 3. Tehnologije i verzije
 - Jezik: Rust (edition `2024`)
-- Verzija projekta: `2026.03.10-1`
+- Verzija projekta: `2026.03.11-1`
 - Licenca: `GPL-3.0-or-later`
 
 Crate-ovi:
@@ -902,18 +915,18 @@ cargo run -p wc-gui
 
 Alpha helper skripte:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.10-1
-./scripts/build-alpha-deb.sh 2026.03.10-1
+./scripts/build-alpha-rpm.sh 2026.03.11-1
+./scripts/build-alpha-deb.sh 2026.03.11-1
 ```
 
 ### 6.1 Pokretanje na svom sistemu (release)
 Verzionisanje:
 - format izdanja: `YYYY.MM.DD-N`
-- primer: `2026.03.10-1`
+- primer: `2026.03.11-1`
 - za vise buildova istog dana povecaj `N` (`.2`, `.3`, ...)
 
 Imas dve opcije:
-- `Option A`: prebuilt release artefakti sa GitHub Releases (tag `v...` ili numericki kao `2026.03.10-1`)
+- `Option A`: prebuilt release artefakti sa GitHub Releases (tag `v...` ili numericki kao `2026.03.11-1`)
 - `Option B`: lokalni build iz source koda
 
 Fedora / RHEL (RPM):
@@ -924,8 +937,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.10-1
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.10-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.11-1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-1*.rpm
 
 wc-gui
 wc-cli run --once
@@ -939,8 +952,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.10-1
-sudo apt install ./dist/le-compositeur_2026.03.10-1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.11-1
+sudo apt install ./dist/le-compositeur_2026.03.11-1_amd64.deb
 
 wc-gui
 wc-cli run --once
@@ -1040,7 +1053,7 @@ Ime autora
 Napomene:
 - podrazumevani fajl u repou: `assets/quotes/local/local-quotes.md`
 - `wc-cli init` automatski pravi: `~/Documents/wallpaper-composer/quotes.md`
-- instalirana putanja paketa (RPM/DEB): `/usr/share/wallpaper-composer/quotes/local-quotes.md`
+- instalirana putanja paketa (RPM/DEB): `/usr/share/le-compositeur/quotes/local-quotes.md`
 
 ### 9. Dalji razvoj
 1. Prvo procitati `docs/PROJECT_PLAYBOOK.md`.
@@ -1108,7 +1121,7 @@ Le Compositeur 是一个面向 Linux 桌面环境的 Rust 开源项目。
 
 ### 3. 技术栈与版本
 - 语言：Rust（edition `2024`）
-- 项目版本：`2026.03.10-1`
+- 项目版本：`2026.03.11-1`
 - 许可证：`GPL-3.0-or-later`
 
 当前依赖：
@@ -1165,18 +1178,18 @@ cargo run -p wc-gui
 
 Alpha 打包脚本：
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.10-1
-./scripts/build-alpha-deb.sh 2026.03.10-1
+./scripts/build-alpha-rpm.sh 2026.03.11-1
+./scripts/build-alpha-deb.sh 2026.03.11-1
 ```
 
 ### 6.1 在你的系统上启动（release）
 版本规则：
 - 发布格式：`YYYY.MM.DD-N`
-- 示例：`2026.03.10-1`
+- 示例：`2026.03.11-1`
 - 同一天多次构建时递增 `N`（`.2`、`.3`）
 
 可选两种方式：
-- `Option A`：从 GitHub Releases 下载预构建产物（标签 `v...` 或数字标签如 `2026.03.10-1`）
+- `Option A`：从 GitHub Releases 下载预构建产物（标签 `v...` 或数字标签如 `2026.03.11-1`）
 - `Option B`：本地从源码构建
 
 Fedora / RHEL（RPM）：
@@ -1187,8 +1200,8 @@ sudo dnf install ./wallpaper-composer-*.rpm
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.10-1
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.10-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.11-1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-1*.rpm
 
 wc-gui
 wc-cli run --once
@@ -1202,8 +1215,8 @@ sudo apt install ./wallpaper-composer_*_amd64.deb
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.10-1
-sudo apt install ./dist/le-compositeur_2026.03.10-1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.11-1
+sudo apt install ./dist/le-compositeur_2026.03.11-1_amd64.deb
 
 wc-gui
 wc-cli run --once
@@ -1303,7 +1316,7 @@ Author Name
 说明：
 - 仓库内默认文件：`assets/quotes/local/local-quotes.md`
 - `wc-cli init` 会自动创建：`~/Documents/wallpaper-composer/quotes.md`
-- RPM/DEB 安装后的路径：`/usr/share/wallpaper-composer/quotes/local-quotes.md`
+- RPM/DEB 安装后的路径：`/usr/share/le-compositeur/quotes/local-quotes.md`
 
 ### 9. 协作开发流程
 1. 先阅读 `docs/PROJECT_PLAYBOOK.md`。

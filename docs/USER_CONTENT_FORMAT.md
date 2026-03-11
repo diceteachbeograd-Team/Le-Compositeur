@@ -63,9 +63,11 @@ Repository sample file:
 `wc-cli init` bootstrap behavior:
 - creates config at `~/.config/wallpaper-composer/config.toml`
 - auto-creates local quotes file at `~/Documents/wallpaper-composer/quotes.md` if missing
+- runtime auto-recovery now also recreates/remaps missing local quotes paths for both CLI and GUI
 
 Installed package path (RPM/DEB):
-- `/usr/share/wallpaper-composer/quotes/local-quotes.md`
+- `/usr/share/le-compositeur/quotes/local-quotes.md`
+- legacy compatibility lookup: `/usr/share/wallpaper-composer/quotes/local-quotes.md`
 
 ## Planned parsing modes
 These modes are reserved for GUI settings and future parser upgrades:

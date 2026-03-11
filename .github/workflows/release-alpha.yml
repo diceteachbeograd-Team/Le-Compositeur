@@ -244,7 +244,36 @@ jobs:
           - Windows: `le-compositeur-windows-x86_64.zip`, `LeCompositeur-windows-x86_64.exe`
           - macOS ARM: `le-compositeur-macos-arm64.dmg`
 
-          Notes:
+          What changed in this release line:
+          - Local quote reliability:
+            - local quote path auto-recovery in CLI+GUI
+            - packaged default quotes are auto-rebound when paths are missing
+          - Update flow:
+            - GUI startup release check
+            - one-click update action (`Check Updates` / `Update Now`) with distro-aware command fallback
+          - Widget system:
+            - secondary independent news ticker (`show_news_ticker2`) with own source/FPS/position/width
+            - ordering editor grid snap + per-widget layer-z + anti-overlap drag correction
+            - per-widget performance caps with cache throttling (`news/news_ticker2/cams`)
+          - Renderer quality safety:
+            - snapshot/hash regression guard (`native_bmp_overlay_output_hash_is_stable`)
+            - expanded Linux distro smoke/test matrix runbook
+          - GUI UX pass:
+            - shell hierarchy grouped into `Session/Actions/Workspace/Updates`
+            - tab-internal section-card hierarchy in Weather/News/Cams/System
+          - Plugin registry migration (in progress):
+            - architecture draft (`docs/PLUGIN_REGISTRY_DRAFT.md`)
+            - stage-A scaffold in `wc-core/src/widget_registry.rs`
+            - stage-B dual-path registry integration in `wc-cli` with automatic legacy fallback
+
+          Operator notes:
+          - If upgrading manually from package files, prefer install-over-upgrade to keep desktop entry/icon refresh deterministic.
+          - Recommended quick verification after install:
+            - `wc-cli validate`
+            - `wc-cli run --once`
+            - start `wc-gui` and verify weather/news/cams visibility in Ordering layout.
+
+          Project notes:
           - End-user application name: **Le Compositeur**
           - Project attribution: **diceteachbeograd-Team**
           EOF

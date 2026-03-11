@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use fs2::FileExt;
 use reqwest::blocking::Client;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::fs;
 use std::fs::OpenOptions;
 use std::hash::{Hash, Hasher};
@@ -15,19 +16,23 @@ use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 use wc_backend::apply_wallpaper;
 use wc_core::{
-    AppConfig, build_doctor_report, builtin_image_presets, builtin_quote_presets, cycle_index,
-    default_config_path, default_config_toml, expand_tilde, image_preset_endpoint,
-    list_background_images, load_config, load_quotes, pick_background_image_with_mode,
-    pick_quote_with_mode, presets_catalog_json, quote_preset_endpoint, settings_schema_json,
-    settings_ui_blueprint_json, to_config_toml,
+    AppConfig, BUILTIN_WIDGET_TYPE_IDS, WidgetInstanceConfig, WidgetPlugin, WidgetRegistry,
+    WidgetResolvedPayload, WidgetRuntimeContext, build_doctor_report, builtin_image_presets,
+    builtin_quote_presets, cycle_index, default_config_path, default_config_toml,
+    ensure_local_quotes_file, expand_tilde, image_preset_endpoint, list_background_images,
+    load_config, load_quotes, pick_background_image_with_mode, pick_quote_with_mode,
+    presets_catalog_json, quote_preset_endpoint, settings_schema_json, settings_ui_blueprint_json,
+    to_config_toml,
 };
 use wc_render::{PreviewText, render_preview_to_file};
 use wc_source::{ImageProvider, QuoteProvider, fetch_remote_image, fetch_remote_quote};
 
 const MAX_STORED_HISTORY: usize = 64;
-const BUNDLED_LOCAL_QUOTES: &str = include_str!("../../../assets/quotes/local/local-quotes.md");
 const WEATHER_GEO_CACHE_MAX_AGE_SECS: u64 = 7 * 24 * 60 * 60;
 const WEATHER_PAYLOAD_CACHE_MAX_AGE_SECS: u64 = 6 * 60 * 60;
+const NEWS_WIDGET_CACHE_MAX_AGE_SECS: u64 = 24 * 60 * 60;
+const CAMS_WIDGET_CACHE_MAX_AGE_SECS: u64 = 24 * 60 * 60;
+const WIDGET_REGISTRY_STAGE_B_ENV: &str = "WC_WIDGET_REGISTRY_STAGE_B";
 
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
@@ -102,7 +107,7 @@ fn main() -> Result<()> {
         }
         Commands::RenderPreview { config } => {
             let config_path = resolve_config_path(config)?;
-            let cfg = load_config(&config_path)?;
+            let cfg = load_config_with_quote_recovery(&config_path)?;
             validate_config(&cfg)?;
             let cycle = determine_cycle(&cfg, master_rotation_interval(&cfg), "rotation")?;
             run_cycle(&cfg, cycle, cycle)?;
@@ -122,13 +127,19 @@ fn main() -> Result<()> {
 
             fs::write(&config_path, default_config_toml())?;
             println!("created config: {}", config_path.display());
-            if let Some(quotes_path) = ensure_default_local_quotes(&config_path)? {
-                println!("created local quotes: {}", quotes_path.display());
+            match ensure_default_local_quotes(&config_path) {
+                Ok(Some(quotes_path)) => {
+                    println!("created local quotes: {}", quotes_path.display());
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    eprintln!("warning: could not create local quotes automatically: {err}");
+                }
             }
         }
         Commands::Validate { config } => {
             let config_path = resolve_config_path(config)?;
-            let cfg = load_config(&config_path)?;
+            let cfg = load_config_with_quote_recovery(&config_path)?;
             validate_config(&cfg)?;
             println!("config_valid: {}", config_path.display());
         }
@@ -145,7 +156,7 @@ fn main() -> Result<()> {
             };
             loop {
                 let tick_started = Instant::now();
-                let cfg = load_config(&config_path)?;
+                let cfg = load_config_with_quote_recovery(&config_path)?;
                 validate_config(&cfg)?;
                 let cycle = determine_cycle(&cfg, master_rotation_interval(&cfg), "rotation")?;
                 run_cycle(&cfg, cycle, cycle)?;
@@ -174,7 +185,7 @@ fn main() -> Result<()> {
         }
         Commands::Migrate { config } => {
             let config_path = resolve_config_path(config)?;
-            let cfg = load_config(&config_path)?;
+            let cfg = load_config_with_quote_recovery(&config_path)?;
             let backup_path = backup_path_for(&config_path);
             fs::copy(&config_path, &backup_path)?;
             fs::write(&config_path, to_config_toml(&cfg))?;
@@ -189,54 +200,15 @@ fn main() -> Result<()> {
 fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> {
     let output_path = expand_tilde(&cfg.output_image)?;
     let source_image = resolve_source_image(cfg, image_cycle)?;
-    let quote = if cfg.show_quote_layer {
-        resolve_quote(cfg, quote_cycle)?
-    } else {
-        String::new()
-    };
-    let clock = if cfg.show_clock_layer {
-        chrono::Local::now().format(&cfg.time_format).to_string()
-    } else {
-        String::new()
-    };
-    let weather_payload = if cfg.show_weather_layer {
-        resolve_weather_widget(cfg).unwrap_or_else(|e| WeatherWidgetPayload {
-            text: format!(
-                "⚠ {}",
-                compact_news_line(&format!("weather unavailable ({e})"))
-            ),
-            minimap_image: None,
-        })
-    } else {
-        WeatherWidgetPayload {
-            text: String::new(),
-            minimap_image: None,
-        }
-    };
+    let widget_bundle = resolve_widgets_for_cycle(cfg, image_cycle, quote_cycle)?;
+    let quote = widget_bundle.quote;
+    let clock = widget_bundle.clock;
+    let weather_payload = widget_bundle.weather;
     let weather = weather_payload.text.clone();
-    let news_payload = if cfg.show_news_layer {
-        resolve_news_widget(cfg, image_cycle).unwrap_or_else(|e| NewsWidgetPayload {
-            text: format!("News unavailable ({e})"),
-            preview_image: None,
-        })
-    } else {
-        NewsWidgetPayload {
-            text: String::new(),
-            preview_image: None,
-        }
-    };
+    let news_payload = widget_bundle.news;
     let news = news_payload.text.clone();
-    let cams_payload = if cfg.show_cams_layer {
-        resolve_cams_widget(cfg, image_cycle).unwrap_or_else(|e| CamsWidgetPayload {
-            text: format!("CAMS ◆ unavailable ({e})"),
-            preview_image: None,
-        })
-    } else {
-        CamsWidgetPayload {
-            text: String::new(),
-            preview_image: None,
-        }
-    };
+    let news_ticker2 = widget_bundle.news_ticker2;
+    let cams_payload = widget_bundle.cams;
     let cams = cams_payload.text.clone();
     let (canvas_width, canvas_height) = detect_canvas_size();
     let (image_pool_size, quote_pool_size) = detect_local_pool_sizes(cfg);
@@ -252,6 +224,10 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
             weather_map_image: weather_payload.minimap_image.as_deref(),
             news: &news,
             news_image: news_payload.preview_image.as_deref(),
+            news_ticker2: &news_ticker2,
+            news_ticker2_pos_x: cfg.news_ticker2_pos_x,
+            news_ticker2_pos_y: cfg.news_ticker2_pos_y,
+            news_ticker2_width: cfg.news_ticker2_width,
             cams: &cams,
             cams_image: cams_payload.preview_image.as_deref(),
             quote_font_size: cfg.quote_font_size,
@@ -312,6 +288,7 @@ fn run_cycle(cfg: &AppConfig, image_cycle: u64, quote_cycle: u64) -> Result<()> 
     println!("clock: {}", clock);
     println!("weather: {}", weather);
     println!("news: {}", news);
+    println!("news_ticker2: {}", news_ticker2);
     println!("cams: {}", cams);
     if let Some(path) = &news_payload.preview_image {
         println!("news_preview_image: {}", path.display());
@@ -433,13 +410,42 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     if !(0.05..=30.0).contains(&cfg.news_fps) {
         anyhow::bail!("news_fps must be between 0.05 and 30.0");
     }
+    if cfg.news_refresh_seconds < 10 {
+        anyhow::bail!("news_refresh_seconds must be >= 10");
+    }
     if cfg.news_source.trim().eq_ignore_ascii_case("custom")
         && cfg.news_custom_url.trim().is_empty()
     {
         anyhow::bail!("news_custom_url is required when news_source=custom");
     }
+    if cfg
+        .news_ticker2_source
+        .trim()
+        .eq_ignore_ascii_case("custom")
+        && cfg.news_ticker2_custom_url.trim().is_empty()
+    {
+        anyhow::bail!("news_ticker2_custom_url is required when news_ticker2_source=custom");
+    }
     if is_camera_like_url(cfg.news_custom_url.trim()) && cfg.news_fps > 1.0 {
         anyhow::bail!("camera-like custom news URLs are limited to max 1.0 FPS");
+    }
+    if is_camera_like_url(cfg.news_ticker2_custom_url.trim()) && cfg.news_ticker2_fps > 1.0 {
+        anyhow::bail!("camera-like custom news ticker2 URLs are limited to max 1.0 FPS");
+    }
+    if !(220..=1920).contains(&cfg.news_ticker2_width) {
+        anyhow::bail!("news_ticker2_width must be between 220 and 1920");
+    }
+    if !(0.05..=30.0).contains(&cfg.news_ticker2_fps) {
+        anyhow::bail!("news_ticker2_fps must be between 0.05 and 30.0");
+    }
+    if cfg.news_ticker2_refresh_seconds < 10 {
+        anyhow::bail!("news_ticker2_refresh_seconds must be >= 10");
+    }
+    if cfg.cams_refresh_seconds < 10 {
+        anyhow::bail!("cams_refresh_seconds must be >= 10");
+    }
+    if !(0.05..=10.0).contains(&cfg.cams_fps) {
+        anyhow::bail!("cams_fps must be between 0.05 and 10.0");
     }
     if !(120..=1920).contains(&cfg.weather_widget_width) {
         anyhow::bail!("weather_widget_width must be between 120 and 1920");
@@ -839,18 +845,18 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<WeatherWidgetPayload> {
     };
     let minimap_image = resolve_weather_minimap(geo.lat, geo.lon, wind_deg)
         .or_else(|| resolve_weather_minimap_raw(geo.lat, geo.lon));
-    let text = format_weather_compact(
-        weather_code_icon(code),
-        t,
+    let text = format_weather_compact(&WeatherCompactInput {
+        condition_icon: weather_code_icon(code),
+        temp: t,
         feels,
         rain_prob,
         wind_arrow,
         wind_dir,
-        wind,
+        wind_speed: wind,
         humidity,
         temp_unit,
         wind_unit,
-    );
+    });
 
     let payload = WeatherWidgetPayload {
         text,
@@ -954,18 +960,18 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
         ),
     };
     Ok(WeatherWidgetPayload {
-        text: format_weather_compact(
-            compact_condition_symbol(desc),
+        text: format_weather_compact(&WeatherCompactInput {
+            condition_icon: compact_condition_symbol(desc),
             temp,
             feels,
-            rain,
+            rain_prob: rain,
             wind_arrow,
             wind_dir,
-            wind,
+            wind_speed: wind,
             humidity,
             temp_unit,
             wind_unit,
-        ),
+        }),
         minimap_image: None,
     })
 }
@@ -977,34 +983,595 @@ struct NewsWidgetPayload {
 }
 
 #[derive(Debug, Clone)]
+struct NewsCachedPayload {
+    raw_line: String,
+    preview_image: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
 struct CamsWidgetPayload {
     text: String,
     preview_image: Option<PathBuf>,
 }
 
-fn resolve_news_widget(cfg: &AppConfig, cycle: u64) -> Result<NewsWidgetPayload> {
-    let (label, stream_url, feed_url) = news_source_profile(cfg);
-    let headline = if let Some(feed) = feed_url {
-        fetch_rss_ticker(feed).unwrap_or_else(|| "live feed".to_string())
-    } else {
-        "live source".to_string()
-    };
-    let subtitle_hint = fetch_stream_title_hint(&stream_url).unwrap_or_default();
-    let preview_image = resolve_news_preview_image(cfg, &stream_url, cycle);
-    let raw_line = if subtitle_hint.is_empty() {
-        compact_news_line(&format!("{label} ◆ {headline}"))
-    } else {
-        compact_news_line(&format!("{label} ◆ {headline} ◆ {subtitle_hint}"))
-    };
-    let line = news_ticker_frame(&raw_line, ticker_cycle_for_fps(cfg.news_fps.max(8.0)));
-    Ok(NewsWidgetPayload {
-        text: line,
-        preview_image,
+#[derive(Debug, Clone)]
+struct CamsCachedPayload {
+    base_line: String,
+    preview_image: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+struct WidgetRenderBundle {
+    quote: String,
+    clock: String,
+    weather: WeatherWidgetPayload,
+    news: NewsWidgetPayload,
+    news_ticker2: String,
+    cams: CamsWidgetPayload,
+}
+
+fn widget_registry_stage_b_enabled() -> bool {
+    std::env::var(WIDGET_REGISTRY_STAGE_B_ENV).map_or(true, |raw| {
+        let normalized = raw.trim().to_ascii_lowercase();
+        !(normalized == "0" || normalized == "false" || normalized == "off")
     })
 }
 
-fn resolve_cams_widget(cfg: &AppConfig, cycle: u64) -> Result<CamsWidgetPayload> {
-    let mut urls = cams_source_urls(cfg, cycle);
+fn weather_unavailable_payload(err: impl std::fmt::Display) -> WeatherWidgetPayload {
+    WeatherWidgetPayload {
+        text: format!(
+            "⚠ {}",
+            compact_news_line(&format!("weather unavailable ({err})"))
+        ),
+        minimap_image: None,
+    }
+}
+
+fn news_unavailable_payload(err: impl std::fmt::Display) -> NewsWidgetPayload {
+    NewsWidgetPayload {
+        text: format!("News unavailable ({err})"),
+        preview_image: None,
+    }
+}
+
+fn cams_unavailable_payload(err: impl std::fmt::Display) -> CamsWidgetPayload {
+    CamsWidgetPayload {
+        text: format!("CAMS ◆ unavailable ({err})"),
+        preview_image: None,
+    }
+}
+
+fn resolve_widgets_for_cycle(
+    cfg: &AppConfig,
+    image_cycle: u64,
+    quote_cycle: u64,
+) -> Result<WidgetRenderBundle> {
+    if widget_registry_stage_b_enabled() {
+        match resolve_widgets_via_registry(cfg, image_cycle, quote_cycle) {
+            Ok(bundle) => Ok(bundle),
+            Err(err) => {
+                eprintln!(
+                    "warning: widget registry stage-B path failed, falling back to legacy path: {err}"
+                );
+                resolve_widgets_legacy(cfg, image_cycle, quote_cycle)
+            }
+        }
+    } else {
+        resolve_widgets_legacy(cfg, image_cycle, quote_cycle)
+    }
+}
+
+fn resolve_widgets_legacy(
+    cfg: &AppConfig,
+    image_cycle: u64,
+    quote_cycle: u64,
+) -> Result<WidgetRenderBundle> {
+    let quote = if cfg.show_quote_layer {
+        resolve_quote(cfg, quote_cycle)?
+    } else {
+        String::new()
+    };
+    let clock = if cfg.show_clock_layer {
+        chrono::Local::now().format(&cfg.time_format).to_string()
+    } else {
+        String::new()
+    };
+    let weather = if cfg.show_weather_layer {
+        resolve_weather_widget(cfg).unwrap_or_else(weather_unavailable_payload)
+    } else {
+        WeatherWidgetPayload {
+            text: String::new(),
+            minimap_image: None,
+        }
+    };
+    let news = if cfg.show_news_layer {
+        resolve_news_widget(cfg, image_cycle).unwrap_or_else(news_unavailable_payload)
+    } else {
+        NewsWidgetPayload {
+            text: String::new(),
+            preview_image: None,
+        }
+    };
+    let news_ticker2 = if cfg.show_news_ticker2 {
+        resolve_secondary_news_ticker(cfg)
+    } else {
+        String::new()
+    };
+    let cams = if cfg.show_cams_layer {
+        resolve_cams_widget(cfg).unwrap_or_else(cams_unavailable_payload)
+    } else {
+        CamsWidgetPayload {
+            text: String::new(),
+            preview_image: None,
+        }
+    };
+
+    Ok(WidgetRenderBundle {
+        quote,
+        clock,
+        weather,
+        news,
+        news_ticker2,
+        cams,
+    })
+}
+
+fn resolve_widgets_via_registry(
+    cfg: &AppConfig,
+    image_cycle: u64,
+    quote_cycle: u64,
+) -> Result<WidgetRenderBundle> {
+    let registry = build_builtin_widget_registry(cfg, image_cycle, quote_cycle)?;
+    let cache_dir =
+        expand_tilde("~/.cache/wallpaper-composer").unwrap_or_else(|_| std::env::temp_dir());
+    let mut resolved = BTreeMap::<String, WidgetResolvedPayload>::new();
+
+    for plugin in registry.all() {
+        let instance = widget_instance_from_config(cfg, plugin.type_id())?;
+        if !instance.enabled {
+            continue;
+        }
+        plugin.validate(&instance)?;
+        let payload = plugin.resolve(
+            &instance,
+            &WidgetRuntimeContext {
+                cycle: image_cycle,
+                cache_dir: cache_dir.clone(),
+                now_unix: now_epoch_seconds(),
+            },
+        )?;
+        resolved.insert(plugin.type_id().to_string(), payload);
+    }
+
+    Ok(WidgetRenderBundle {
+        quote: resolved_text(&resolved, "quote"),
+        clock: resolved_text(&resolved, "clock"),
+        weather: WeatherWidgetPayload {
+            text: resolved_text(&resolved, "weather"),
+            minimap_image: resolved_image(&resolved, "weather"),
+        },
+        news: NewsWidgetPayload {
+            text: resolved_text(&resolved, "news"),
+            preview_image: resolved_image(&resolved, "news"),
+        },
+        news_ticker2: resolved_text(&resolved, "news_ticker2"),
+        cams: CamsWidgetPayload {
+            text: resolved_text(&resolved, "cams"),
+            preview_image: resolved_image(&resolved, "cams"),
+        },
+    })
+}
+
+fn resolved_text(map: &BTreeMap<String, WidgetResolvedPayload>, type_id: &str) -> String {
+    map.get(type_id).map(|p| p.text.clone()).unwrap_or_default()
+}
+
+fn resolved_image(map: &BTreeMap<String, WidgetResolvedPayload>, type_id: &str) -> Option<PathBuf> {
+    map.get(type_id).and_then(|p| p.image_path.clone())
+}
+
+fn build_builtin_widget_registry(
+    cfg: &AppConfig,
+    image_cycle: u64,
+    quote_cycle: u64,
+) -> Result<WidgetRegistry> {
+    let mut registry = WidgetRegistry::new();
+    registry.register(Box::new(QuoteWidgetPlugin {
+        cfg: cfg.clone(),
+        quote_cycle,
+    }))?;
+    registry.register(Box::new(ClockWidgetPlugin { cfg: cfg.clone() }))?;
+    registry.register(Box::new(WeatherWidgetPlugin { cfg: cfg.clone() }))?;
+    registry.register(Box::new(NewsWidgetPlugin {
+        cfg: cfg.clone(),
+        image_cycle,
+    }))?;
+    registry.register(Box::new(NewsTicker2WidgetPlugin { cfg: cfg.clone() }))?;
+    registry.register(Box::new(CamsWidgetPlugin { cfg: cfg.clone() }))?;
+
+    if registry.len() != BUILTIN_WIDGET_TYPE_IDS.len() {
+        anyhow::bail!(
+            "builtin widget registry mismatch: registered={}, expected={}",
+            registry.len(),
+            BUILTIN_WIDGET_TYPE_IDS.len()
+        );
+    }
+    Ok(registry)
+}
+
+fn widget_instance_from_config(cfg: &AppConfig, widget_type: &str) -> Result<WidgetInstanceConfig> {
+    match widget_type {
+        "quote" => {
+            let mut instance = WidgetInstanceConfig::new("quote", "quote_main");
+            instance.enabled = cfg.show_quote_layer;
+            instance.layer_z = cfg.layer_z_quote;
+            instance.pos_x = cfg.quote_pos_x;
+            instance.pos_y = cfg.quote_pos_y;
+            instance.width =
+                ((1920_u64 * cfg.text_box_width_pct.min(100) as u64) / 100).max(1) as u32;
+            instance.height =
+                ((1080_u64 * cfg.text_box_height_pct.min(100) as u64) / 100).max(1) as u32;
+            instance.refresh_seconds = cfg.quote_refresh_seconds.max(1);
+            instance.fps_cap = 1.0;
+            Ok(instance)
+        }
+        "clock" => {
+            let mut instance = WidgetInstanceConfig::new("clock", "clock_main");
+            instance.enabled = cfg.show_clock_layer;
+            instance.layer_z = cfg.layer_z_clock;
+            instance.pos_x = cfg.clock_pos_x;
+            instance.pos_y = cfg.clock_pos_y;
+            instance.width = 180;
+            instance.height = 64;
+            instance.refresh_seconds = 1;
+            instance.fps_cap = 1.0;
+            Ok(instance)
+        }
+        "weather" => {
+            let mut instance = WidgetInstanceConfig::new("weather", "weather_main");
+            instance.enabled = cfg.show_weather_layer;
+            instance.layer_z = cfg.layer_z_weather;
+            instance.pos_x = cfg.weather_pos_x;
+            instance.pos_y = cfg.weather_pos_y;
+            instance.width = cfg.weather_widget_width;
+            instance.height = cfg.weather_widget_height;
+            instance.refresh_seconds = cfg.weather_refresh_seconds.max(60);
+            instance.fps_cap = 1.0;
+            Ok(instance)
+        }
+        "news" => {
+            let mut instance = WidgetInstanceConfig::new("news", "news_main");
+            instance.enabled = cfg.show_news_layer;
+            instance.layer_z = cfg.layer_z_news;
+            instance.pos_x = cfg.news_pos_x;
+            instance.pos_y = cfg.news_pos_y;
+            instance.width = cfg.news_widget_width;
+            instance.height = cfg.news_widget_height;
+            instance.refresh_seconds = cfg.news_refresh_seconds.max(10);
+            instance.fps_cap = cfg.news_fps;
+            Ok(instance)
+        }
+        "news_ticker2" => {
+            let mut instance = WidgetInstanceConfig::new("news_ticker2", "news_ticker2_main");
+            instance.enabled = cfg.show_news_ticker2;
+            instance.layer_z = cfg.layer_z_news;
+            instance.pos_x = cfg.news_ticker2_pos_x;
+            instance.pos_y = cfg.news_ticker2_pos_y;
+            instance.width = cfg.news_ticker2_width;
+            instance.height = 56;
+            instance.refresh_seconds = cfg.news_ticker2_refresh_seconds.max(10);
+            instance.fps_cap = cfg.news_ticker2_fps;
+            Ok(instance)
+        }
+        "cams" => {
+            let mut instance = WidgetInstanceConfig::new("cams", "cams_main");
+            instance.enabled = cfg.show_cams_layer;
+            instance.layer_z = cfg.layer_z_cams;
+            instance.pos_x = cfg.cams_pos_x;
+            instance.pos_y = cfg.cams_pos_y;
+            instance.width = cfg.cams_widget_width;
+            instance.height = cfg.cams_widget_height;
+            instance.refresh_seconds = cfg.cams_refresh_seconds.max(10);
+            instance.fps_cap = cfg.cams_fps;
+            Ok(instance)
+        }
+        other => anyhow::bail!("unsupported widget type for stage-B registry: {other}"),
+    }
+}
+
+struct QuoteWidgetPlugin {
+    cfg: AppConfig,
+    quote_cycle: u64,
+}
+
+impl WidgetPlugin for QuoteWidgetPlugin {
+    fn type_id(&self) -> &'static str {
+        "quote"
+    }
+
+    fn display_name(&self) -> &'static str {
+        "Quote"
+    }
+
+    fn default_instance(&self) -> WidgetInstanceConfig {
+        widget_instance_from_config(&self.cfg, "quote")
+            .unwrap_or_else(|_| WidgetInstanceConfig::new("quote", "quote_main"))
+    }
+
+    fn validate(&self, _instance: &WidgetInstanceConfig) -> Result<()> {
+        Ok(())
+    }
+
+    fn resolve(
+        &self,
+        _instance: &WidgetInstanceConfig,
+        _ctx: &WidgetRuntimeContext,
+    ) -> Result<WidgetResolvedPayload> {
+        Ok(WidgetResolvedPayload {
+            text: resolve_quote(&self.cfg, self.quote_cycle)?,
+            image_path: None,
+        })
+    }
+}
+
+struct ClockWidgetPlugin {
+    cfg: AppConfig,
+}
+
+impl WidgetPlugin for ClockWidgetPlugin {
+    fn type_id(&self) -> &'static str {
+        "clock"
+    }
+
+    fn display_name(&self) -> &'static str {
+        "Clock"
+    }
+
+    fn default_instance(&self) -> WidgetInstanceConfig {
+        widget_instance_from_config(&self.cfg, "clock")
+            .unwrap_or_else(|_| WidgetInstanceConfig::new("clock", "clock_main"))
+    }
+
+    fn validate(&self, _instance: &WidgetInstanceConfig) -> Result<()> {
+        Ok(())
+    }
+
+    fn resolve(
+        &self,
+        _instance: &WidgetInstanceConfig,
+        _ctx: &WidgetRuntimeContext,
+    ) -> Result<WidgetResolvedPayload> {
+        Ok(WidgetResolvedPayload {
+            text: chrono::Local::now()
+                .format(&self.cfg.time_format)
+                .to_string(),
+            image_path: None,
+        })
+    }
+}
+
+struct WeatherWidgetPlugin {
+    cfg: AppConfig,
+}
+
+impl WidgetPlugin for WeatherWidgetPlugin {
+    fn type_id(&self) -> &'static str {
+        "weather"
+    }
+
+    fn display_name(&self) -> &'static str {
+        "Weather"
+    }
+
+    fn default_instance(&self) -> WidgetInstanceConfig {
+        widget_instance_from_config(&self.cfg, "weather")
+            .unwrap_or_else(|_| WidgetInstanceConfig::new("weather", "weather_main"))
+    }
+
+    fn validate(&self, _instance: &WidgetInstanceConfig) -> Result<()> {
+        Ok(())
+    }
+
+    fn resolve(
+        &self,
+        _instance: &WidgetInstanceConfig,
+        _ctx: &WidgetRuntimeContext,
+    ) -> Result<WidgetResolvedPayload> {
+        let payload = resolve_weather_widget(&self.cfg).unwrap_or_else(weather_unavailable_payload);
+        Ok(WidgetResolvedPayload {
+            text: payload.text,
+            image_path: payload.minimap_image,
+        })
+    }
+}
+
+struct NewsWidgetPlugin {
+    cfg: AppConfig,
+    image_cycle: u64,
+}
+
+impl WidgetPlugin for NewsWidgetPlugin {
+    fn type_id(&self) -> &'static str {
+        "news"
+    }
+
+    fn display_name(&self) -> &'static str {
+        "News"
+    }
+
+    fn default_instance(&self) -> WidgetInstanceConfig {
+        widget_instance_from_config(&self.cfg, "news")
+            .unwrap_or_else(|_| WidgetInstanceConfig::new("news", "news_main"))
+    }
+
+    fn validate(&self, _instance: &WidgetInstanceConfig) -> Result<()> {
+        Ok(())
+    }
+
+    fn resolve(
+        &self,
+        _instance: &WidgetInstanceConfig,
+        _ctx: &WidgetRuntimeContext,
+    ) -> Result<WidgetResolvedPayload> {
+        let payload = resolve_news_widget(&self.cfg, self.image_cycle)
+            .unwrap_or_else(news_unavailable_payload);
+        Ok(WidgetResolvedPayload {
+            text: payload.text,
+            image_path: payload.preview_image,
+        })
+    }
+}
+
+struct NewsTicker2WidgetPlugin {
+    cfg: AppConfig,
+}
+
+impl WidgetPlugin for NewsTicker2WidgetPlugin {
+    fn type_id(&self) -> &'static str {
+        "news_ticker2"
+    }
+
+    fn display_name(&self) -> &'static str {
+        "News Ticker 2"
+    }
+
+    fn default_instance(&self) -> WidgetInstanceConfig {
+        widget_instance_from_config(&self.cfg, "news_ticker2")
+            .unwrap_or_else(|_| WidgetInstanceConfig::new("news_ticker2", "news_ticker2_main"))
+    }
+
+    fn validate(&self, _instance: &WidgetInstanceConfig) -> Result<()> {
+        Ok(())
+    }
+
+    fn resolve(
+        &self,
+        _instance: &WidgetInstanceConfig,
+        _ctx: &WidgetRuntimeContext,
+    ) -> Result<WidgetResolvedPayload> {
+        Ok(WidgetResolvedPayload {
+            text: resolve_secondary_news_ticker(&self.cfg),
+            image_path: None,
+        })
+    }
+}
+
+struct CamsWidgetPlugin {
+    cfg: AppConfig,
+}
+
+impl WidgetPlugin for CamsWidgetPlugin {
+    fn type_id(&self) -> &'static str {
+        "cams"
+    }
+
+    fn display_name(&self) -> &'static str {
+        "Cams"
+    }
+
+    fn default_instance(&self) -> WidgetInstanceConfig {
+        widget_instance_from_config(&self.cfg, "cams")
+            .unwrap_or_else(|_| WidgetInstanceConfig::new("cams", "cams_main"))
+    }
+
+    fn validate(&self, _instance: &WidgetInstanceConfig) -> Result<()> {
+        Ok(())
+    }
+
+    fn resolve(
+        &self,
+        _instance: &WidgetInstanceConfig,
+        _ctx: &WidgetRuntimeContext,
+    ) -> Result<WidgetResolvedPayload> {
+        let payload = resolve_cams_widget(&self.cfg).unwrap_or_else(cams_unavailable_payload);
+        Ok(WidgetResolvedPayload {
+            text: payload.text,
+            image_path: payload.preview_image,
+        })
+    }
+}
+
+fn resolve_news_widget(cfg: &AppConfig, cycle: u64) -> Result<NewsWidgetPayload> {
+    let (label, stream_url, feed_url) = news_source_profile(cfg);
+    let cache_id = format!(
+        "news-main-{}",
+        stable_hash(&format!(
+            "{}|{}|{}|{}",
+            cfg.news_source, cfg.news_custom_url, cfg.news_refresh_seconds, cfg.news_fps
+        ))
+    );
+    let cached = load_cached_news_payload(&cache_id, cfg.news_refresh_seconds)?;
+    let payload = if let Some(fresh) = cached {
+        fresh
+    } else {
+        match fetch_news_payload(label, &stream_url, feed_url, Some((cfg, cycle))) {
+            Ok(fetched) => {
+                store_cached_news_payload(&cache_id, &fetched)?;
+                fetched
+            }
+            Err(e) => {
+                if let Some(stale) =
+                    load_cached_news_payload(&cache_id, NEWS_WIDGET_CACHE_MAX_AGE_SECS)?
+                {
+                    stale
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    };
+    let line = news_ticker_frame(
+        &payload.raw_line,
+        ticker_cycle_for_fps(cfg.news_fps.max(8.0)),
+    );
+    Ok(NewsWidgetPayload {
+        text: line,
+        preview_image: payload.preview_image,
+    })
+}
+
+fn resolve_secondary_news_ticker(cfg: &AppConfig) -> String {
+    let (label, stream_url, feed_url) =
+        news_source_profile_raw(&cfg.news_ticker2_source, &cfg.news_ticker2_custom_url);
+    let cache_id = format!(
+        "news-ticker2-{}",
+        stable_hash(&format!(
+            "{}|{}|{}|{}",
+            cfg.news_ticker2_source,
+            cfg.news_ticker2_custom_url,
+            cfg.news_ticker2_refresh_seconds,
+            cfg.news_ticker2_fps
+        ))
+    );
+    let payload = load_cached_news_payload(&cache_id, cfg.news_ticker2_refresh_seconds)
+        .ok()
+        .flatten()
+        .or_else(|| {
+            fetch_news_payload(label, &stream_url, feed_url, None)
+                .ok()
+                .inspect(|fetched| {
+                    let _ = store_cached_news_payload(&cache_id, fetched);
+                })
+        })
+        .or_else(|| {
+            load_cached_news_payload(&cache_id, NEWS_WIDGET_CACHE_MAX_AGE_SECS)
+                .ok()
+                .flatten()
+        })
+        .unwrap_or_else(|| NewsCachedPayload {
+            raw_line: compact_news_line("Custom ◆ live source"),
+            preview_image: None,
+        });
+
+    news_ticker_frame(
+        &payload.raw_line,
+        ticker_cycle_for_fps(cfg.news_ticker2_fps.max(8.0)),
+    )
+}
+
+fn resolve_cams_widget(cfg: &AppConfig) -> Result<CamsWidgetPayload> {
+    let source_cycle = now_epoch_seconds() / cfg.cams_refresh_seconds.max(10);
+    let mut urls = cams_source_urls(cfg, source_cycle);
     if urls.is_empty() {
         anyhow::bail!("no camera URLs available");
     }
@@ -1014,27 +1581,82 @@ fn resolve_cams_widget(cfg: &AppConfig, cycle: u64) -> Result<CamsWidgetPayload>
         urls.truncate(count);
     }
 
-    let mut frames = Vec::<PathBuf>::new();
-    for url in &urls {
-        if let Some(frame) = capture_stream_preview(url, 1.0) {
-            frames.push(frame);
+    let cache_id = format!(
+        "cams-{}",
+        stable_hash(&format!(
+            "{}|{}|{}|{}|{}|{}",
+            cfg.cams_source,
+            cfg.cams_custom_urls,
+            cfg.cams_count,
+            cfg.cams_columns,
+            cfg.cams_refresh_seconds,
+            source_cycle
+        ))
+    );
+    let cached = load_cached_cams_payload(&cache_id, cfg.cams_refresh_seconds)?;
+    let payload = if let Some(fresh) = cached {
+        fresh
+    } else {
+        let mut frames = Vec::<PathBuf>::new();
+        for url in &urls {
+            if let Some(frame) = capture_stream_preview(url, cfg.cams_fps) {
+                frames.push(frame);
+            }
         }
-    }
-    let preview_image = compose_cams_grid(&frames, cfg.cams_columns.clamp(1, 4))
-        .or_else(|| frames.first().cloned());
-
-    let short = urls
-        .iter()
-        .map(|u| summarize_source_label(u))
-        .collect::<Vec<_>>()
-        .join(" ◆ ");
+        let preview_image = compose_cams_grid(&frames, cfg.cams_columns.clamp(1, 4))
+            .or_else(|| frames.first().cloned());
+        let short = urls
+            .iter()
+            .map(|u| summarize_source_label(u))
+            .collect::<Vec<_>>()
+            .join(" ◆ ");
+        let built = CamsCachedPayload {
+            base_line: compact_news_line(&format!("CAMS ◆ {short}")),
+            preview_image,
+        };
+        store_cached_cams_payload(&cache_id, &built)?;
+        if built.preview_image.is_some() {
+            built
+        } else if let Some(stale) =
+            load_cached_cams_payload(&cache_id, CAMS_WIDGET_CACHE_MAX_AGE_SECS)?
+        {
+            stale
+        } else {
+            built
+        }
+    };
     let text = news_ticker_frame(
-        &compact_news_line(&format!("CAMS ◆ {short}")),
-        ticker_cycle_for_fps(1.2),
+        &payload.base_line,
+        ticker_cycle_for_fps(cfg.cams_fps.max(8.0)),
     );
 
     Ok(CamsWidgetPayload {
         text,
+        preview_image: payload.preview_image,
+    })
+}
+
+fn fetch_news_payload(
+    label: &str,
+    stream_url: &str,
+    feed_url: Option<&str>,
+    with_preview: Option<(&AppConfig, u64)>,
+) -> Result<NewsCachedPayload> {
+    let headline = if let Some(feed) = feed_url {
+        fetch_rss_ticker(feed).unwrap_or_else(|| "live feed".to_string())
+    } else {
+        "live source".to_string()
+    };
+    let subtitle_hint = fetch_stream_title_hint(stream_url).unwrap_or_default();
+    let raw_line = if subtitle_hint.is_empty() {
+        compact_news_line(&format!("{label} ◆ {headline}"))
+    } else {
+        compact_news_line(&format!("{label} ◆ {headline} ◆ {subtitle_hint}"))
+    };
+    let preview_image =
+        with_preview.and_then(|(cfg, cycle)| resolve_news_preview_image(cfg, stream_url, cycle));
+    Ok(NewsCachedPayload {
+        raw_line,
         preview_image,
     })
 }
@@ -1172,8 +1794,15 @@ fn compose_cams_grid(frames: &[PathBuf], columns: u32) -> Option<PathBuf> {
     frames.first().cloned()
 }
 
-fn news_source_profile(cfg: &AppConfig) -> (&str, String, Option<&'static str>) {
-    match cfg.news_source.as_str() {
+fn news_source_profile(cfg: &AppConfig) -> (&'static str, String, Option<&'static str>) {
+    news_source_profile_raw(&cfg.news_source, &cfg.news_custom_url)
+}
+
+fn news_source_profile_raw(
+    source: &str,
+    custom_url: &str,
+) -> (&'static str, String, Option<&'static str>) {
+    match source {
         "euronews" => (
             "Euronews",
             "https://www.youtube.com/watch?v=pykpO5kQJ98".to_string(),
@@ -1224,7 +1853,7 @@ fn news_source_profile(cfg: &AppConfig) -> (&str, String, Option<&'static str>) 
             "https://documentaryheaven.com/".to_string(),
             Some("https://documentaryheaven.com/feed/"),
         ),
-        _ => ("Custom", cfg.news_custom_url.trim().to_string(), None),
+        _ => ("Custom", custom_url.trim().to_string(), None),
     }
 }
 
@@ -1243,7 +1872,8 @@ fn fetch_rss_ticker(url: &str) -> Option<String> {
         .ok()?;
     let mut titles = extract_rss_item_titles(&body, 4);
     if titles.is_empty()
-        && let Some(single) = extract_first_rss_item_title(&body).or_else(|| extract_first_xml_tag(&body, "title"))
+        && let Some(single) =
+            extract_first_rss_item_title(&body).or_else(|| extract_first_xml_tag(&body, "title"))
     {
         titles.push(single);
     }
@@ -1276,31 +1906,33 @@ fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str, cycle: u64) -> 
     None
 }
 
-fn format_weather_compact(
-    condition_icon: &str,
+struct WeatherCompactInput<'a> {
+    condition_icon: &'a str,
     temp: f64,
     feels: f64,
     rain_prob: f64,
-    wind_arrow: &str,
-    wind_dir: &str,
+    wind_arrow: &'a str,
+    wind_dir: &'a str,
     wind_speed: f64,
     humidity: f64,
-    temp_unit: &str,
-    wind_unit: &str,
-) -> String {
+    temp_unit: &'a str,
+    wind_unit: &'a str,
+}
+
+fn format_weather_compact(input: &WeatherCompactInput<'_>) -> String {
     format!(
         "{}  ◉ {:.1}{}  ◇  ◍ {:.1}{}  ◇  ☂ {:.0}%\n⌖ {} {}  ◇  ➤ {:.1} {}  ◇  ◒ {:.0}%",
-        condition_icon,
-        temp,
-        temp_unit,
-        feels,
-        temp_unit,
-        rain_prob,
-        wind_arrow,
-        wind_dir,
-        wind_speed,
-        wind_unit,
-        humidity
+        input.condition_icon,
+        input.temp,
+        input.temp_unit,
+        input.feels,
+        input.temp_unit,
+        input.rain_prob,
+        input.wind_arrow,
+        input.wind_dir,
+        input.wind_speed,
+        input.wind_unit,
+        input.humidity
     )
 }
 
@@ -2170,17 +2802,29 @@ fn resolve_config_path(config: Option<PathBuf>) -> Result<PathBuf> {
     default_config_path().map_err(|_| anyhow::anyhow!("HOME is not set; pass --config explicitly"))
 }
 
+fn load_config_with_quote_recovery(config_path: &Path) -> Result<AppConfig> {
+    let mut cfg = load_config(config_path)?;
+    let recovered = ensure_local_quotes_file(&mut cfg)?;
+    if let Some(path) = recovered {
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(config_path, to_config_toml(&cfg))?;
+        println!("recovered_local_quotes: {}", path.display());
+    }
+    Ok(cfg)
+}
+
 fn ensure_default_local_quotes(config_path: &Path) -> Result<Option<PathBuf>> {
-    let cfg = load_config(config_path)?;
-    let quotes_path = expand_tilde(&cfg.quotes_path)?;
-    if quotes_path.exists() {
-        return Ok(None);
+    let mut cfg = load_config(config_path)?;
+    let recovered = ensure_local_quotes_file(&mut cfg)?;
+    if recovered.is_some() {
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(config_path, to_config_toml(&cfg))?;
     }
-    if let Some(parent) = quotes_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&quotes_path, BUNDLED_LOCAL_QUOTES)?;
-    Ok(Some(quotes_path))
+    Ok(recovered)
 }
 
 fn ensure_parent_dir(path: &Path) -> Result<()> {
@@ -2295,6 +2939,14 @@ fn loop_tick_duration(cfg: &AppConfig) -> Duration {
         let news_step = 1.0 / cfg.news_fps.clamp(0.05, 30.0) as f64;
         seconds = seconds.min(news_step.max(0.033));
     }
+    if cfg.show_news_ticker2 {
+        let ticker_step = 1.0 / cfg.news_ticker2_fps.clamp(0.05, 30.0) as f64;
+        seconds = seconds.min(ticker_step.max(0.033));
+    }
+    if cfg.show_cams_layer {
+        let cams_step = 1.0 / cfg.cams_fps.clamp(0.05, 10.0) as f64;
+        seconds = seconds.min(cams_step.max(0.033));
+    }
     let millis = (seconds * 1000.0).round().clamp(33.0, 60_000.0) as u64;
     Duration::from_millis(millis)
 }
@@ -2313,6 +2965,118 @@ fn now_epoch_millis() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+fn widget_payload_cache_path(name: &str) -> Option<PathBuf> {
+    let p = expand_tilde(&format!("~/.cache/wallpaper-composer/{name}.json")).ok()?;
+    if let Some(parent) = p.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    Some(p)
+}
+
+fn load_cached_widget_json(path: &Path, max_age_secs: u64) -> Result<Option<Value>> {
+    let modified = match fs::metadata(path).and_then(|m| m.modified()) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let age = SystemTime::now()
+        .duration_since(modified)
+        .ok()
+        .map(|d| d.as_secs())
+        .unwrap_or(max_age_secs.saturating_add(1));
+    if age > max_age_secs {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(path)?;
+    let parsed = serde_json::from_str::<Value>(&raw)?;
+    Ok(Some(parsed))
+}
+
+fn load_cached_news_payload(
+    cache_id: &str,
+    max_age_secs: u64,
+) -> Result<Option<NewsCachedPayload>> {
+    let Some(path) = widget_payload_cache_path(&format!("news-{cache_id}")) else {
+        return Ok(None);
+    };
+    let Some(payload) = load_cached_widget_json(&path, max_age_secs)? else {
+        return Ok(None);
+    };
+    let raw_line = payload
+        .get("raw_line")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if raw_line.is_empty() {
+        return Ok(None);
+    }
+    let preview_image = payload
+        .get("preview_image")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .filter(|p| p.exists());
+    Ok(Some(NewsCachedPayload {
+        raw_line,
+        preview_image,
+    }))
+}
+
+fn store_cached_news_payload(cache_id: &str, payload: &NewsCachedPayload) -> Result<()> {
+    let Some(path) = widget_payload_cache_path(&format!("news-{cache_id}")) else {
+        return Ok(());
+    };
+    let json = serde_json::json!({
+        "raw_line": payload.raw_line,
+        "preview_image": payload.preview_image.as_ref().map(|p| p.display().to_string()),
+        "updated_unix": now_epoch_seconds(),
+    });
+    fs::write(path, json.to_string())?;
+    Ok(())
+}
+
+fn load_cached_cams_payload(
+    cache_id: &str,
+    max_age_secs: u64,
+) -> Result<Option<CamsCachedPayload>> {
+    let Some(path) = widget_payload_cache_path(&format!("cams-{cache_id}")) else {
+        return Ok(None);
+    };
+    let Some(payload) = load_cached_widget_json(&path, max_age_secs)? else {
+        return Ok(None);
+    };
+    let base_line = payload
+        .get("base_line")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if base_line.is_empty() {
+        return Ok(None);
+    }
+    let preview_image = payload
+        .get("preview_image")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .filter(|p| p.exists());
+    Ok(Some(CamsCachedPayload {
+        base_line,
+        preview_image,
+    }))
+}
+
+fn store_cached_cams_payload(cache_id: &str, payload: &CamsCachedPayload) -> Result<()> {
+    let Some(path) = widget_payload_cache_path(&format!("cams-{cache_id}")) else {
+        return Ok(());
+    };
+    let json = serde_json::json!({
+        "base_line": payload.base_line,
+        "preview_image": payload.preview_image.as_ref().map(|p| p.display().to_string()),
+        "updated_unix": now_epoch_seconds(),
+    });
+    fs::write(path, json.to_string())?;
+    Ok(())
 }
 
 fn weather_payload_cache_path() -> Option<PathBuf> {
@@ -2519,10 +3283,13 @@ fn fetch_stream_title_hint(url: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{determine_cycle, loop_tick_duration, read_recent_indices, write_recent_indices};
+    use super::{
+        build_builtin_widget_registry, determine_cycle, loop_tick_duration, read_recent_indices,
+        widget_instance_from_config, write_recent_indices,
+    };
     use std::fs;
     use std::time::Duration;
-    use wc_core::{default_config_toml, load_config};
+    use wc_core::{BUILTIN_WIDGET_TYPE_IDS, default_config_toml, load_config};
 
     #[test]
     fn loop_tick_is_capped_to_keep_clock_current() {
@@ -2538,6 +3305,16 @@ mod tests {
         cfg.show_news_layer = true;
         cfg.news_fps = 10.0;
         assert!(loop_tick_duration(&cfg) <= Duration::from_millis(100));
+
+        cfg.show_news_layer = false;
+        cfg.show_news_ticker2 = true;
+        cfg.news_ticker2_fps = 12.0;
+        assert!(loop_tick_duration(&cfg) <= Duration::from_millis(90));
+
+        cfg.show_news_ticker2 = false;
+        cfg.show_cams_layer = true;
+        cfg.cams_fps = 9.0;
+        assert!(loop_tick_duration(&cfg) <= Duration::from_millis(120));
     }
 
     #[test]
@@ -2572,5 +3349,41 @@ mod tests {
         let got = read_recent_indices(&state_path);
         assert_eq!(got, vec![2, 7, 5]);
         let _ = fs::remove_file(state_path);
+    }
+
+    #[test]
+    fn stage_b_registry_builds_all_builtin_plugins() {
+        let cfg_path = std::env::temp_dir().join("wc-cli-stage-b-registry.toml");
+        fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
+        let cfg = load_config(&cfg_path).expect("default config should parse");
+
+        let registry =
+            build_builtin_widget_registry(&cfg, 3, 3).expect("registry should build cleanly");
+        assert_eq!(registry.len(), BUILTIN_WIDGET_TYPE_IDS.len());
+        for type_id in BUILTIN_WIDGET_TYPE_IDS {
+            assert!(
+                registry.get(type_id).is_some(),
+                "registry should contain builtin widget type {type_id}"
+            );
+        }
+    }
+
+    #[test]
+    fn stage_b_instance_mapping_reflects_widget_caps() {
+        let cfg_path = std::env::temp_dir().join("wc-cli-stage-b-instance.toml");
+        fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
+        let mut cfg = load_config(&cfg_path).expect("default config should parse");
+        cfg.news_refresh_seconds = 123;
+        cfg.news_fps = 7.5;
+        cfg.cams_refresh_seconds = 75;
+        cfg.cams_fps = 1.25;
+
+        let news = widget_instance_from_config(&cfg, "news").expect("news instance");
+        assert_eq!(news.refresh_seconds, 123);
+        assert!((news.fps_cap - 7.5).abs() < f32::EPSILON);
+
+        let cams = widget_instance_from_config(&cfg, "cams").expect("cams instance");
+        assert_eq!(cams.refresh_seconds, 75);
+        assert!((cams.fps_cap - 1.25).abs() < f32::EPSILON);
     }
 }

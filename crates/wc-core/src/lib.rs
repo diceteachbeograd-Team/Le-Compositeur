@@ -3,6 +3,13 @@ use chrono::Local;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub mod widget_registry;
+
+pub use widget_registry::{
+    BUILTIN_WIDGET_TYPE_IDS, WidgetInstanceConfig, WidgetPlugin, WidgetRegistry,
+    WidgetResolvedPayload, WidgetRuntimeContext, WidgetTypeId,
+};
+
 #[derive(Debug, Clone)]
 pub struct DoctorReport {
     pub project: String,
@@ -21,6 +28,12 @@ pub fn build_doctor_report() -> DoctorReport {
 }
 
 pub const DEFAULT_CONFIG_RELATIVE_PATH: &str = ".config/wallpaper-composer/config.toml";
+pub const DEFAULT_LOCAL_QUOTES_PATH: &str = "~/Documents/wallpaper-composer/quotes.md";
+const PACKAGED_LOCAL_QUOTES_PATHS: [&str; 2] = [
+    "/usr/share/le-compositeur/quotes/local-quotes.md",
+    "/usr/share/wallpaper-composer/quotes/local-quotes.md",
+];
+const BUNDLED_LOCAL_QUOTES: &str = include_str!("../../../assets/quotes/local/local-quotes.md");
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -75,6 +88,11 @@ pub struct AppConfig {
     pub show_weather_layer: bool,
     pub show_news_layer: bool,
     pub show_cams_layer: bool,
+    pub layer_z_quote: i32,
+    pub layer_z_clock: i32,
+    pub layer_z_weather: i32,
+    pub layer_z_news: i32,
+    pub layer_z_cams: i32,
     pub weather_pos_x: i32,
     pub weather_pos_y: i32,
     pub weather_widget_width: u32,
@@ -95,13 +113,24 @@ pub struct AppConfig {
     pub news_source: String,
     pub news_custom_url: String,
     pub news_fps: f32,
+    pub news_refresh_seconds: u64,
     pub news_audio_enabled: bool,
+    pub show_news_ticker2: bool,
+    pub news_ticker2_pos_x: i32,
+    pub news_ticker2_pos_y: i32,
+    pub news_ticker2_width: u32,
+    pub news_ticker2_source: String,
+    pub news_ticker2_custom_url: String,
+    pub news_ticker2_fps: f32,
+    pub news_ticker2_refresh_seconds: u64,
     pub cams_pos_x: i32,
     pub cams_pos_y: i32,
     pub cams_widget_width: u32,
     pub cams_widget_height: u32,
     pub cams_source: String,
     pub cams_custom_urls: String,
+    pub cams_refresh_seconds: u64,
+    pub cams_fps: f32,
     pub cams_count: u32,
     pub cams_columns: u32,
     pub login_screen_integration: bool,
@@ -161,6 +190,11 @@ show_clock_layer = true
 show_weather_layer = false
 show_news_layer = false
 show_cams_layer = false
+layer_z_quote = 40
+layer_z_clock = 50
+layer_z_weather = 60
+layer_z_news = 70
+layer_z_cams = 80
 weather_pos_x = 120
 weather_pos_y = 120
 weather_widget_width = 640
@@ -181,13 +215,24 @@ weather_location_override = ""
 news_source = "euronews"
 news_custom_url = ""
 news_fps = 1.0
+news_refresh_seconds = 90
 news_audio_enabled = false
+show_news_ticker2 = false
+news_ticker2_pos_x = 120
+news_ticker2_pos_y = 980
+news_ticker2_width = 1280
+news_ticker2_source = "techcrunch"
+news_ticker2_custom_url = ""
+news_ticker2_fps = 1.2
+news_ticker2_refresh_seconds = 120
 cams_pos_x = 980
 cams_pos_y = 640
 cams_widget_width = 760
 cams_widget_height = 428
 cams_source = "auto_local"
 cams_custom_urls = ""
+cams_refresh_seconds = 75
+cams_fps = 1.0
 cams_count = 2
 cams_columns = 2
 login_screen_integration = false
@@ -198,7 +243,7 @@ boot_screen_integration = false
 
 pub fn to_config_toml(cfg: &AppConfig) -> String {
     format!(
-        "# Le Compositeur config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\nshow_background_layer = {}\nshow_quote_layer = {}\nshow_clock_layer = {}\nshow_weather_layer = {}\nshow_news_layer = {}\nshow_cams_layer = {}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_widget_width = {}\nweather_widget_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_widget_width = {}\nnews_widget_height = {}\nweather_refresh_seconds = {}\nweather_use_system_location = {}\nweather_location_override = {:?}\nnews_source = {:?}\nnews_custom_url = {:?}\nnews_fps = {}\nnews_audio_enabled = {}\ncams_pos_x = {}\ncams_pos_y = {}\ncams_widget_width = {}\ncams_widget_height = {}\ncams_source = {:?}\ncams_custom_urls = {:?}\ncams_count = {}\ncams_columns = {}\nlogin_screen_integration = {}\nboot_screen_integration = {}\n",
+        "# Le Compositeur config\nconfig_version = {}\nimage_dir = {:?}\nquotes_path = {:?}\nimage_source = {:?}\nimage_source_url = {:?}\nimage_source_preset = {:?}\nquote_source = {:?}\nquote_source_url = {:?}\nquote_source_preset = {:?}\nquote_format = {:?}\nimage_order_mode = {:?}\nimage_avoid_repeat = {}\nquote_order_mode = {:?}\nquote_avoid_repeat = {}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\nrotation_use_persistent_state = {}\nrotation_state_file = {:?}\noutput_image = {:?}\nrefresh_seconds = {}\nimage_refresh_seconds = {}\nquote_refresh_seconds = {}\ntime_format = {:?}\napply_wallpaper = {}\nwallpaper_backend = {:?}\nwallpaper_fit_mode = {:?}\nshow_background_layer = {}\nshow_quote_layer = {}\nshow_clock_layer = {}\nshow_weather_layer = {}\nshow_news_layer = {}\nshow_cams_layer = {}\nlayer_z_quote = {}\nlayer_z_clock = {}\nlayer_z_weather = {}\nlayer_z_news = {}\nlayer_z_cams = {}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_widget_width = {}\nweather_widget_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_widget_width = {}\nnews_widget_height = {}\nweather_refresh_seconds = {}\nweather_use_system_location = {}\nweather_location_override = {:?}\nnews_source = {:?}\nnews_custom_url = {:?}\nnews_fps = {}\nnews_refresh_seconds = {}\nnews_audio_enabled = {}\nshow_news_ticker2 = {}\nnews_ticker2_pos_x = {}\nnews_ticker2_pos_y = {}\nnews_ticker2_width = {}\nnews_ticker2_source = {:?}\nnews_ticker2_custom_url = {:?}\nnews_ticker2_fps = {}\nnews_ticker2_refresh_seconds = {}\ncams_pos_x = {}\ncams_pos_y = {}\ncams_widget_width = {}\ncams_widget_height = {}\ncams_source = {:?}\ncams_custom_urls = {:?}\ncams_refresh_seconds = {}\ncams_fps = {}\ncams_count = {}\ncams_columns = {}\nlogin_screen_integration = {}\nboot_screen_integration = {}\n",
         cfg.config_version,
         cfg.image_dir,
         cfg.quotes_path,
@@ -250,6 +295,11 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.show_weather_layer,
         cfg.show_news_layer,
         cfg.show_cams_layer,
+        cfg.layer_z_quote,
+        cfg.layer_z_clock,
+        cfg.layer_z_weather,
+        cfg.layer_z_news,
+        cfg.layer_z_cams,
         cfg.weather_pos_x,
         cfg.weather_pos_y,
         cfg.weather_widget_width,
@@ -270,13 +320,24 @@ pub fn to_config_toml(cfg: &AppConfig) -> String {
         cfg.news_source,
         cfg.news_custom_url,
         cfg.news_fps,
+        cfg.news_refresh_seconds,
         cfg.news_audio_enabled,
+        cfg.show_news_ticker2,
+        cfg.news_ticker2_pos_x,
+        cfg.news_ticker2_pos_y,
+        cfg.news_ticker2_width,
+        cfg.news_ticker2_source,
+        cfg.news_ticker2_custom_url,
+        cfg.news_ticker2_fps,
+        cfg.news_ticker2_refresh_seconds,
         cfg.cams_pos_x,
         cfg.cams_pos_y,
         cfg.cams_widget_width,
         cfg.cams_widget_height,
         cfg.cams_source,
         cfg.cams_custom_urls,
+        cfg.cams_refresh_seconds,
+        cfg.cams_fps,
         cfg.cams_count,
         cfg.cams_columns,
         cfg.login_screen_integration,
@@ -352,6 +413,11 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"show_weather_layer","group":"wallpaper","label":"Show Weather Layer","type":"bool","required":false,"default":false},
     {"key":"show_news_layer","group":"wallpaper","label":"Show News Layer","type":"bool","required":false,"default":false},
     {"key":"show_cams_layer","group":"wallpaper","label":"Show Cams Layer","type":"bool","required":false,"default":false},
+    {"key":"layer_z_quote","group":"wallpaper","label":"Layer Z Quote","type":"i32","required":false,"default":40},
+    {"key":"layer_z_clock","group":"wallpaper","label":"Layer Z Clock","type":"i32","required":false,"default":50},
+    {"key":"layer_z_weather","group":"wallpaper","label":"Layer Z Weather","type":"i32","required":false,"default":60},
+    {"key":"layer_z_news","group":"wallpaper","label":"Layer Z News","type":"i32","required":false,"default":70},
+    {"key":"layer_z_cams","group":"wallpaper","label":"Layer Z Cams","type":"i32","required":false,"default":80},
     {"key":"weather_pos_x","group":"wallpaper","label":"Weather X","type":"i32","required":false,"default":120},
     {"key":"weather_pos_y","group":"wallpaper","label":"Weather Y","type":"i32","required":false,"default":120},
     {"key":"weather_widget_width","group":"wallpaper","label":"Weather Widget Width","type":"u32","required":false,"default":640},
@@ -372,13 +438,24 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"news_source","group":"wallpaper","label":"News Source","type":"string","required":false,"default":"euronews"},
     {"key":"news_custom_url","group":"wallpaper","label":"News Custom URL","type":"string","required":false,"default":"","visible_when":{"field":"news_source","equals":"custom"},"enabled_when":{"field":"news_source","equals":"custom"}},
     {"key":"news_fps","group":"wallpaper","label":"News FPS","type":"f32","required":false,"default":1.0},
+    {"key":"news_refresh_seconds","group":"wallpaper","label":"News Refresh Seconds","type":"u64","required":false,"default":90},
     {"key":"news_audio_enabled","group":"wallpaper","label":"News Audio Enabled","type":"bool","required":false,"default":false},
+    {"key":"show_news_ticker2","group":"wallpaper","label":"Show Secondary News Ticker","type":"bool","required":false,"default":false},
+    {"key":"news_ticker2_pos_x","group":"wallpaper","label":"News Ticker 2 X","type":"i32","required":false,"default":120},
+    {"key":"news_ticker2_pos_y","group":"wallpaper","label":"News Ticker 2 Y","type":"i32","required":false,"default":980},
+    {"key":"news_ticker2_width","group":"wallpaper","label":"News Ticker 2 Width","type":"u32","required":false,"default":1280},
+    {"key":"news_ticker2_source","group":"wallpaper","label":"News Ticker 2 Source","type":"string","required":false,"default":"techcrunch"},
+    {"key":"news_ticker2_custom_url","group":"wallpaper","label":"News Ticker 2 Custom URL","type":"string","required":false,"default":"","visible_when":{"field":"news_ticker2_source","equals":"custom"},"enabled_when":{"field":"news_ticker2_source","equals":"custom"}},
+    {"key":"news_ticker2_fps","group":"wallpaper","label":"News Ticker 2 FPS","type":"f32","required":false,"default":1.2},
+    {"key":"news_ticker2_refresh_seconds","group":"wallpaper","label":"News Ticker 2 Refresh Seconds","type":"u64","required":false,"default":120},
     {"key":"cams_pos_x","group":"wallpaper","label":"Cams X","type":"i32","required":false,"default":980},
     {"key":"cams_pos_y","group":"wallpaper","label":"Cams Y","type":"i32","required":false,"default":640},
     {"key":"cams_widget_width","group":"wallpaper","label":"Cams Widget Width","type":"u32","required":false,"default":760},
     {"key":"cams_widget_height","group":"wallpaper","label":"Cams Widget Height","type":"u32","required":false,"default":428},
     {"key":"cams_source","group":"wallpaper","label":"Cams Source","type":"enum","required":false,"default":"auto_local","options":["auto_local","city_public","custom"]},
     {"key":"cams_custom_urls","group":"wallpaper","label":"Cams Custom URLs","type":"string","required":false,"default":"","visible_when":{"field":"cams_source","equals":"custom"},"enabled_when":{"field":"cams_source","equals":"custom"}},
+    {"key":"cams_refresh_seconds","group":"wallpaper","label":"Cams Refresh Seconds","type":"u64","required":false,"default":75},
+    {"key":"cams_fps","group":"wallpaper","label":"Cams FPS","type":"f32","required":false,"default":1.0},
     {"key":"cams_count","group":"wallpaper","label":"Cams Count","type":"u32","required":false,"default":2,"min":1,"max":9},
     {"key":"cams_columns","group":"wallpaper","label":"Cams Columns","type":"u32","required":false,"default":2,"min":1,"max":4},
     {"key":"login_screen_integration","group":"wallpaper","label":"Login Screen Integration","type":"bool","required":false,"default":false},
@@ -453,7 +530,7 @@ pub fn settings_ui_blueprint_json() -> &'static str {
       {
         "id": "wallpaper",
         "title": "Wallpaper",
-        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode", "show_background_layer", "show_quote_layer", "show_clock_layer", "show_weather_layer", "show_news_layer", "show_cams_layer", "weather_pos_x", "weather_pos_y", "weather_widget_width", "weather_widget_height", "weather_font_size", "weather_font_family", "weather_color", "weather_undercolor", "weather_stroke_color", "weather_stroke_width", "news_pos_x", "news_pos_y", "news_widget_width", "news_widget_height", "weather_refresh_seconds", "weather_use_system_location", "weather_location_override", "news_source", "news_custom_url", "news_fps", "news_audio_enabled", "cams_pos_x", "cams_pos_y", "cams_widget_width", "cams_widget_height", "cams_source", "cams_custom_urls", "cams_count", "cams_columns", "login_screen_integration", "boot_screen_integration"]
+        "fields": ["apply_wallpaper", "wallpaper_backend", "wallpaper_fit_mode", "show_background_layer", "show_quote_layer", "show_clock_layer", "show_weather_layer", "show_news_layer", "show_cams_layer", "layer_z_quote", "layer_z_clock", "layer_z_weather", "layer_z_news", "layer_z_cams", "weather_pos_x", "weather_pos_y", "weather_widget_width", "weather_widget_height", "weather_font_size", "weather_font_family", "weather_color", "weather_undercolor", "weather_stroke_color", "weather_stroke_width", "news_pos_x", "news_pos_y", "news_widget_width", "news_widget_height", "weather_refresh_seconds", "weather_use_system_location", "weather_location_override", "news_source", "news_custom_url", "news_fps", "news_refresh_seconds", "news_audio_enabled", "show_news_ticker2", "news_ticker2_pos_x", "news_ticker2_pos_y", "news_ticker2_width", "news_ticker2_source", "news_ticker2_custom_url", "news_ticker2_fps", "news_ticker2_refresh_seconds", "cams_pos_x", "cams_pos_y", "cams_widget_width", "cams_widget_height", "cams_source", "cams_custom_urls", "cams_refresh_seconds", "cams_fps", "cams_count", "cams_columns", "login_screen_integration", "boot_screen_integration"]
       }
     ]
   },
@@ -478,6 +555,7 @@ pub fn settings_ui_blueprint_json() -> &'static str {
     {"field":"show_cams_layer"},
     {"field":"weather_location_override","visible_when":{"field":"weather_use_system_location","equals":false},"enabled_when":{"field":"weather_use_system_location","equals":false}},
     {"field":"news_custom_url","visible_when":{"field":"news_source","equals":"custom"},"enabled_when":{"field":"news_source","equals":"custom"}},
+    {"field":"news_ticker2_custom_url","visible_when":{"field":"news_ticker2_source","equals":"custom"},"enabled_when":{"field":"news_ticker2_source","equals":"custom"}},
     {"field":"cams_custom_urls","visible_when":{"field":"cams_source","equals":"custom"},"enabled_when":{"field":"cams_source","equals":"custom"}},
     {"field":"login_screen_integration"},
     {"field":"boot_screen_integration"}
@@ -550,6 +628,11 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut show_weather_layer = None::<bool>;
     let mut show_news_layer = None::<bool>;
     let mut show_cams_layer = None::<bool>;
+    let mut layer_z_quote = None::<i32>;
+    let mut layer_z_clock = None::<i32>;
+    let mut layer_z_weather = None::<i32>;
+    let mut layer_z_news = None::<i32>;
+    let mut layer_z_cams = None::<i32>;
     let mut weather_pos_x = None::<i32>;
     let mut weather_pos_y = None::<i32>;
     let mut weather_widget_width = None::<u32>;
@@ -570,13 +653,24 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
     let mut news_source = None::<String>;
     let mut news_custom_url = None::<String>;
     let mut news_fps = None::<f32>;
+    let mut news_refresh_seconds = None::<u64>;
     let mut news_audio_enabled = None::<bool>;
+    let mut show_news_ticker2 = None::<bool>;
+    let mut news_ticker2_pos_x = None::<i32>;
+    let mut news_ticker2_pos_y = None::<i32>;
+    let mut news_ticker2_width = None::<u32>;
+    let mut news_ticker2_source = None::<String>;
+    let mut news_ticker2_custom_url = None::<String>;
+    let mut news_ticker2_fps = None::<f32>;
+    let mut news_ticker2_refresh_seconds = None::<u64>;
     let mut cams_pos_x = None::<i32>;
     let mut cams_pos_y = None::<i32>;
     let mut cams_widget_width = None::<u32>;
     let mut cams_widget_height = None::<u32>;
     let mut cams_source = None::<String>;
     let mut cams_custom_urls = None::<String>;
+    let mut cams_refresh_seconds = None::<u64>;
+    let mut cams_fps = None::<f32>;
     let mut cams_count = None::<u32>;
     let mut cams_columns = None::<u32>;
     let mut login_screen_integration = None::<bool>;
@@ -645,6 +739,11 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "show_weather_layer" => show_weather_layer = parse_bool(value),
             "show_news_layer" => show_news_layer = parse_bool(value),
             "show_cams_layer" => show_cams_layer = parse_bool(value),
+            "layer_z_quote" => layer_z_quote = parse_i32(value),
+            "layer_z_clock" => layer_z_clock = parse_i32(value),
+            "layer_z_weather" => layer_z_weather = parse_i32(value),
+            "layer_z_news" => layer_z_news = parse_i32(value),
+            "layer_z_cams" => layer_z_cams = parse_i32(value),
             "weather_pos_x" => weather_pos_x = parse_i32(value),
             "weather_pos_y" => weather_pos_y = parse_i32(value),
             "weather_widget_width" => weather_widget_width = parse_u32(value),
@@ -665,13 +764,26 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
             "news_source" => news_source = parse_string(value),
             "news_custom_url" => news_custom_url = parse_string(value),
             "news_fps" => news_fps = value.parse::<f32>().ok(),
+            "news_refresh_seconds" => news_refresh_seconds = value.parse::<u64>().ok(),
             "news_audio_enabled" => news_audio_enabled = parse_bool(value),
+            "show_news_ticker2" => show_news_ticker2 = parse_bool(value),
+            "news_ticker2_pos_x" => news_ticker2_pos_x = parse_i32(value),
+            "news_ticker2_pos_y" => news_ticker2_pos_y = parse_i32(value),
+            "news_ticker2_width" => news_ticker2_width = parse_u32(value),
+            "news_ticker2_source" => news_ticker2_source = parse_string(value),
+            "news_ticker2_custom_url" => news_ticker2_custom_url = parse_string(value),
+            "news_ticker2_fps" => news_ticker2_fps = value.parse::<f32>().ok(),
+            "news_ticker2_refresh_seconds" => {
+                news_ticker2_refresh_seconds = value.parse::<u64>().ok()
+            }
             "cams_pos_x" => cams_pos_x = parse_i32(value),
             "cams_pos_y" => cams_pos_y = parse_i32(value),
             "cams_widget_width" => cams_widget_width = parse_u32(value),
             "cams_widget_height" => cams_widget_height = parse_u32(value),
             "cams_source" => cams_source = parse_string(value),
             "cams_custom_urls" => cams_custom_urls = parse_string(value),
+            "cams_refresh_seconds" => cams_refresh_seconds = value.parse::<u64>().ok(),
+            "cams_fps" => cams_fps = value.parse::<f32>().ok(),
             "cams_count" => cams_count = parse_u32(value),
             "cams_columns" => cams_columns = parse_u32(value),
             "login_screen_integration" => login_screen_integration = parse_bool(value),
@@ -739,6 +851,11 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         show_weather_layer: show_weather_layer.unwrap_or(false),
         show_news_layer: show_news_layer.unwrap_or(false),
         show_cams_layer: show_cams_layer.unwrap_or(false),
+        layer_z_quote: layer_z_quote.unwrap_or(40).clamp(0, 100),
+        layer_z_clock: layer_z_clock.unwrap_or(50).clamp(0, 100),
+        layer_z_weather: layer_z_weather.unwrap_or(60).clamp(0, 100),
+        layer_z_news: layer_z_news.unwrap_or(70).clamp(0, 100),
+        layer_z_cams: layer_z_cams.unwrap_or(80).clamp(0, 100),
         weather_pos_x: weather_pos_x.unwrap_or(120),
         weather_pos_y: weather_pos_y.unwrap_or(120),
         weather_widget_width: weather_widget_width.unwrap_or(640).clamp(120, 1920),
@@ -759,13 +876,24 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         news_source: news_source.unwrap_or_else(|| "euronews".to_string()),
         news_custom_url: news_custom_url.unwrap_or_default(),
         news_fps: news_fps.unwrap_or(1.0).clamp(0.05, 30.0),
+        news_refresh_seconds: news_refresh_seconds.unwrap_or(90).max(10),
         news_audio_enabled: news_audio_enabled.unwrap_or(false),
+        show_news_ticker2: show_news_ticker2.unwrap_or(false),
+        news_ticker2_pos_x: news_ticker2_pos_x.unwrap_or(120),
+        news_ticker2_pos_y: news_ticker2_pos_y.unwrap_or(980),
+        news_ticker2_width: news_ticker2_width.unwrap_or(1280).clamp(220, 1920),
+        news_ticker2_source: news_ticker2_source.unwrap_or_else(|| "techcrunch".to_string()),
+        news_ticker2_custom_url: news_ticker2_custom_url.unwrap_or_default(),
+        news_ticker2_fps: news_ticker2_fps.unwrap_or(1.2).clamp(0.05, 30.0),
+        news_ticker2_refresh_seconds: news_ticker2_refresh_seconds.unwrap_or(120).max(10),
         cams_pos_x: cams_pos_x.unwrap_or(980),
         cams_pos_y: cams_pos_y.unwrap_or(640),
         cams_widget_width: cams_widget_width.unwrap_or(760).clamp(180, 1920),
         cams_widget_height: cams_widget_height.unwrap_or(428).clamp(120, 1080),
         cams_source: cams_source.unwrap_or_else(|| "auto_local".to_string()),
         cams_custom_urls: cams_custom_urls.unwrap_or_default(),
+        cams_refresh_seconds: cams_refresh_seconds.unwrap_or(75).max(10),
+        cams_fps: cams_fps.unwrap_or(1.0).clamp(0.05, 10.0),
         cams_count: cams_count.unwrap_or(2).clamp(1, 9),
         cams_columns: cams_columns.unwrap_or(2).clamp(1, 4),
         login_screen_integration: login_screen_integration.unwrap_or(false),
@@ -831,6 +959,68 @@ pub fn expand_tilde(input: &str) -> Result<PathBuf> {
         return Ok(PathBuf::from(home).join(rest));
     }
     Ok(PathBuf::from(input))
+}
+
+pub fn ensure_local_quotes_file(cfg: &mut AppConfig) -> Result<Option<PathBuf>> {
+    if !cfg.quote_source.trim().eq_ignore_ascii_case("local") {
+        return Ok(None);
+    }
+
+    let configured_path = expand_tilde(&cfg.quotes_path)?;
+    if configured_path.is_file() {
+        return Ok(None);
+    }
+
+    let seed = load_seed_local_quotes();
+    if !configured_path.exists() && write_local_quotes_file(&configured_path, &seed).is_ok() {
+        return Ok(Some(configured_path));
+    }
+
+    for candidate in packaged_local_quotes_paths() {
+        if !candidate.is_file() {
+            continue;
+        }
+        let candidate_raw = candidate.display().to_string();
+        if cfg.quotes_path != candidate_raw {
+            cfg.quotes_path = candidate_raw;
+            return Ok(Some(candidate));
+        }
+        return Ok(None);
+    }
+
+    let fallback_path = expand_tilde(DEFAULT_LOCAL_QUOTES_PATH)?;
+    write_local_quotes_file(&fallback_path, &seed)?;
+    let fallback_raw = fallback_path.display().to_string();
+    if cfg.quotes_path != fallback_raw {
+        cfg.quotes_path = fallback_raw;
+    }
+    Ok(Some(fallback_path))
+}
+
+fn packaged_local_quotes_paths() -> Vec<PathBuf> {
+    PACKAGED_LOCAL_QUOTES_PATHS
+        .iter()
+        .map(PathBuf::from)
+        .collect::<Vec<_>>()
+}
+
+fn load_seed_local_quotes() -> String {
+    for path in packaged_local_quotes_paths() {
+        if let Ok(raw) = fs::read_to_string(&path)
+            && !raw.trim().is_empty()
+        {
+            return raw;
+        }
+    }
+    BUNDLED_LOCAL_QUOTES.to_string()
+}
+
+fn write_local_quotes_file(path: &Path, content: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, content)?;
+    Ok(())
 }
 
 pub fn list_background_images(image_dir: &Path) -> Result<Vec<PathBuf>> {
@@ -1271,8 +1461,8 @@ fn indent_block(input: &str, spaces: usize) -> String {
 mod tests {
     use crate::{
         build_doctor_report, builtin_image_presets, builtin_quote_presets, default_config_toml,
-        expand_tilde, load_config, load_quotes, parse_bool, parse_i32, parse_u32,
-        presets_catalog_json, sanitize_optional_string, settings_schema_json,
+        ensure_local_quotes_file, expand_tilde, load_config, load_quotes, parse_bool, parse_i32,
+        parse_u32, presets_catalog_json, sanitize_optional_string, settings_schema_json,
         settings_ui_blueprint_json, to_config_toml,
     };
     use std::fs;
@@ -1417,6 +1607,34 @@ mod tests {
         assert_eq!(quotes[0], "Text eins\n- Autor A");
         assert_eq!(quotes[1], "Text zwei\n- Autor B");
         let _ = fs::remove_file(quotes_path);
+    }
+
+    #[test]
+    fn ensure_local_quotes_file_creates_missing_path() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        let temp_root = std::env::temp_dir().join(format!("wc-core-quotes-recover-{nonce}"));
+        let cfg_path = temp_root.join("config.toml");
+        fs::create_dir_all(&temp_root).expect("temp root should be creatable");
+        fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
+
+        let mut cfg = load_config(&cfg_path).expect("config should parse");
+        let broken_quotes_path = temp_root.join("missing/sub/local-quotes.md");
+        cfg.quotes_path = broken_quotes_path.display().to_string();
+        cfg.quote_source = "local".to_string();
+
+        let recovered = ensure_local_quotes_file(&mut cfg).expect("recovery should work");
+        assert!(recovered.is_some());
+        assert!(broken_quotes_path.is_file());
+        assert!(
+            !load_quotes(&broken_quotes_path)
+                .expect("recovered quotes should parse")
+                .is_empty()
+        );
+
+        let _ = fs::remove_dir_all(temp_root);
     }
 
     #[test]

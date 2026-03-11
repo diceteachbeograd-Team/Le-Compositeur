@@ -10,6 +10,10 @@ pub struct PreviewText<'a> {
     pub weather_map_image: Option<&'a Path>,
     pub news: &'a str,
     pub news_image: Option<&'a Path>,
+    pub news_ticker2: &'a str,
+    pub news_ticker2_pos_x: i32,
+    pub news_ticker2_pos_y: i32,
+    pub news_ticker2_width: u32,
     pub cams: &'a str,
     pub cams_image: Option<&'a Path>,
     pub quote_font_size: u32,
@@ -83,7 +87,7 @@ pub fn render_preview_to_file(
 
     let meta_path = metadata_path_for(output_image);
     let metadata = format!(
-        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nweather = {:?}\nweather_map_image = {:?}\nnews = {:?}\nnews_image = {:?}\ncams = {:?}\ncams_image = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_width = {}\nweather_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_width = {}\nnews_height = {}\ncams_pos_x = {}\ncams_pos_y = {}\ncams_width = {}\ncams_height = {}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
+        "preview_mode = {:?}\nquote = {:?}\nclock = {:?}\nweather = {:?}\nweather_map_image = {:?}\nnews = {:?}\nnews_image = {:?}\nnews_ticker2 = {:?}\nnews_ticker2_pos_x = {}\nnews_ticker2_pos_y = {}\nnews_ticker2_width = {}\ncams = {:?}\ncams_image = {:?}\nquote_font_size = {}\nquote_pos_x = {}\nquote_pos_y = {}\nquote_auto_fit = {}\nquote_min_font_size = {}\nfont_family = {:?}\nquote_color = {:?}\nclock_font_size = {}\nclock_pos_x = {}\nclock_pos_y = {}\nclock_color = {:?}\nweather_pos_x = {}\nweather_pos_y = {}\nweather_width = {}\nweather_height = {}\nweather_font_size = {}\nweather_font_family = {:?}\nweather_color = {:?}\nweather_undercolor = {:?}\nweather_stroke_color = {:?}\nweather_stroke_width = {}\nnews_pos_x = {}\nnews_pos_y = {}\nnews_width = {}\nnews_height = {}\ncams_pos_x = {}\ncams_pos_y = {}\ncams_width = {}\ncams_height = {}\ntext_stroke_color = {:?}\ntext_stroke_width = {}\ntext_undercolor = {:?}\ntext_shadow_enabled = {}\ntext_shadow_color = {:?}\ntext_shadow_offset_x = {}\ntext_shadow_offset_y = {}\ntext_box_size = {:?}\ntext_box_width_pct = {}\ntext_box_height_pct = {}\ncanvas_width = {}\ncanvas_height = {}\nsource_image = {:?}\n",
         render_mode,
         text.quote,
         text.clock,
@@ -95,6 +99,10 @@ pub fn render_preview_to_file(
         text.news_image
             .map(|p| p.display().to_string())
             .unwrap_or_default(),
+        text.news_ticker2,
+        text.news_ticker2_pos_x,
+        text.news_ticker2_pos_y,
+        text.news_ticker2_width,
         text.cams,
         text.cams_image
             .map(|p| p.display().to_string())
@@ -474,7 +482,7 @@ fn render_with_imagemagick(
         }
 
         let news_size = (text.clock_font_size.saturating_mul(58) / 100).max(14);
-        let news_line = text.news.replace('\n', " ").replace('\r', " ");
+        let news_line = text.news.replace(['\n', '\r'], " ");
         args.push("(".to_string());
         args.push("-size".to_string());
         args.push(format!("{news_box_w}x{news_text_h}"));
@@ -523,6 +531,55 @@ fn render_with_imagemagick(
         args.push("-composite".to_string());
     }
 
+    if !text.news_ticker2.trim().is_empty() {
+        let ticker_w = text.news_ticker2_width.clamp(220, canvas_w.max(220));
+        let ticker_h = (text.clock_font_size.saturating_mul(7) / 5).clamp(44, 92);
+        let ticker_size = (text.clock_font_size.saturating_mul(58) / 100).max(14);
+        let ticker_line = text.news_ticker2.replace(['\n', '\r'], " ");
+        args.push("(".to_string());
+        args.push("-size".to_string());
+        args.push(format!("{ticker_w}x{ticker_h}"));
+        args.push("xc:none".to_string());
+        args.push("-background".to_string());
+        args.push("none".to_string());
+        args.push("-fill".to_string());
+        args.push("#001108D9".to_string());
+        args.push("-stroke".to_string());
+        args.push("none".to_string());
+        args.push("-draw".to_string());
+        args.push(format!(
+            "rectangle 0,0 {},{}",
+            ticker_w.saturating_sub(1),
+            ticker_h.saturating_sub(1)
+        ));
+        args.push("-fill".to_string());
+        args.push("#39FF14".to_string());
+        args.push("-stroke".to_string());
+        args.push("#062200".to_string());
+        args.push("-strokewidth".to_string());
+        args.push("1".to_string());
+        args.push("-undercolor".to_string());
+        args.push("#001108D9".to_string());
+        args.push("-gravity".to_string());
+        args.push("West".to_string());
+        args.push("-font".to_string());
+        args.push("DejaVu-Sans-Mono".to_string());
+        args.push("-pointsize".to_string());
+        args.push(ticker_size.to_string());
+        args.push("-annotate".to_string());
+        args.push("+12+0".to_string());
+        args.push(ticker_line);
+        args.push(")".to_string());
+        args.push("-gravity".to_string());
+        args.push("NorthWest".to_string());
+        args.push("-geometry".to_string());
+        args.push(format!(
+            "+{}+{}",
+            text.news_ticker2_pos_x, text.news_ticker2_pos_y
+        ));
+        args.push("-composite".to_string());
+    }
+
     if !text.cams.trim().is_empty() {
         let cams_box_w = text.cams_width.clamp(240, canvas_w.max(240));
         let cams_box_h = text.cams_height.clamp(140, canvas_h.max(140));
@@ -549,7 +606,7 @@ fn render_with_imagemagick(
         }
 
         let cams_size = (text.clock_font_size.saturating_mul(55) / 100).max(12);
-        let cams_line = text.cams.replace('\n', " ").replace('\r', " ");
+        let cams_line = text.cams.replace(['\n', '\r'], " ");
         args.push("(".to_string());
         args.push("-size".to_string());
         args.push(format!("{cams_box_w}x{cams_text_h}"));
@@ -590,7 +647,9 @@ fn render_with_imagemagick(
         args.push(format!(
             "+{}+{}",
             text.cams_pos_x,
-            text.cams_pos_y.saturating_add(cams_box_h as i32).saturating_add(8)
+            text.cams_pos_y
+                .saturating_add(cams_box_h as i32)
+                .saturating_add(8)
         ));
         args.push("-composite".to_string());
     }
@@ -1060,6 +1119,10 @@ mod tests {
                 weather_map_image: None,
                 news: "LIVE: Euronews",
                 news_image: None,
+                news_ticker2: "▮ second ticker ▮",
+                news_ticker2_pos_x: 30,
+                news_ticker2_pos_y: 960,
+                news_ticker2_width: 1200,
                 cams: "CAMS ◆ Downtown",
                 cams_image: None,
                 quote_font_size: 24,
@@ -1135,6 +1198,10 @@ mod tests {
                 weather_map_image: None,
                 news: "LIVE",
                 news_image: None,
+                news_ticker2: "T2",
+                news_ticker2_pos_x: 2,
+                news_ticker2_pos_y: 98,
+                news_ticker2_width: 300,
                 cams: "CAMS",
                 cams_image: None,
                 quote_font_size: 24,
@@ -1190,6 +1257,85 @@ mod tests {
     }
 
     #[test]
+    fn native_bmp_overlay_output_hash_is_stable() {
+        let src = std::env::temp_dir().join("wc-render-native-hash-src.bmp");
+        let dst = std::env::temp_dir().join("wc-render-native-hash-dst.bmp");
+        fs::write(&src, bmp24_solid(64, 48, 12, 22, 32)).expect("bmp source should be writable");
+
+        let ok = render_with_native_bmp(
+            &src,
+            &dst,
+            &PreviewText {
+                quote: "SNAPSHOT",
+                clock: "09:42",
+                weather: "☀ 14C",
+                weather_map_image: None,
+                news: "NEWS-LINE",
+                news_image: None,
+                news_ticker2: "T2",
+                news_ticker2_pos_x: 4,
+                news_ticker2_pos_y: 96,
+                news_ticker2_width: 320,
+                cams: "CAMS",
+                cams_image: None,
+                quote_font_size: 22,
+                quote_pos_x: 3,
+                quote_pos_y: 3,
+                quote_auto_fit: true,
+                quote_min_font_size: 14,
+                font_family: "DejaVu-Sans",
+                quote_color: "#FFFFFF",
+                clock_font_size: 22,
+                clock_pos_x: 3,
+                clock_pos_y: 22,
+                clock_color: "#FFD700",
+                weather_pos_x: 3,
+                weather_pos_y: 41,
+                weather_width: 640,
+                weather_height: 180,
+                weather_font_size: 30,
+                weather_font_family: "DejaVu-Sans",
+                weather_color: "#00F5FF",
+                weather_undercolor: "#0B0014B3",
+                weather_stroke_color: "#001A22",
+                weather_stroke_width: 1,
+                news_pos_x: 3,
+                news_pos_y: 58,
+                news_width: 760,
+                news_height: 240,
+                cams_pos_x: 3,
+                cams_pos_y: 90,
+                cams_width: 320,
+                cams_height: 180,
+                text_stroke_color: "#000000",
+                text_stroke_width: 1,
+                text_undercolor: "#00000066",
+                text_shadow_enabled: true,
+                text_shadow_color: "#00000099",
+                text_shadow_offset_x: 2,
+                text_shadow_offset_y: 2,
+                text_box_size: "quarter",
+                text_box_width_pct: 50,
+                text_box_height_pct: 50,
+                canvas_width: 1920,
+                canvas_height: 1080,
+            },
+        )
+        .expect("native bmp render should return status");
+
+        assert!(ok, "native renderer should handle 24-bit BMP");
+        let bytes = fs::read(&dst).expect("output bmp should be readable");
+        let hash = fnv1a64(&bytes);
+        assert_eq!(
+            hash, 0x4a45_10d8_14e1_50fb,
+            "native bmp output changed; update baseline intentionally if expected"
+        );
+
+        let _ = fs::remove_file(src);
+        let _ = fs::remove_file(dst);
+    }
+
+    #[test]
     fn split_quote_and_author_extracts_signature_line() {
         let (body, author) = split_quote_and_author("Line one\nLine two\n- Boris");
         assert_eq!(body, "Line one\nLine two");
@@ -1228,5 +1374,14 @@ mod tests {
             }
         }
         out
+    }
+
+    fn fnv1a64(bytes: &[u8]) -> u64 {
+        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+        for b in bytes {
+            hash ^= *b as u64;
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        hash
     }
 }
