@@ -19,15 +19,15 @@ Last updated: 2026-03-11
 ## Now (Active Sprint)
 
 - [ ] `P0` Reproduce and fix packaged GUI freeze after `Render Preview` / action buttons on Fedora VM installs.
-  Status: synchronous GUI action calls were moved to background workers with periodic repaint polling; Fedora package/VM validation is still pending.
+  Status: synchronous GUI action calls were moved to background workers with periodic repaint polling; Fedora VM source and packaged CLI validation now finish instead of blocking on stream capture, but direct GUI click-through validation on the packaged app is still pending.
   Done when: packaged GUI remains clickable during and after `Validate` / `Render Preview` / `Run Once`, and no hard VM reset is required to recover.
 
 - [ ] `P0` Rework GUI self-update flow for packaged Fedora installs.
-  Status: updater now targets GitHub release package assets for local package installation instead of relying on `dnf upgrade le-compositeur`; Fedora VM verification is still pending.
+  Status: updater now targets GitHub release package assets for local package installation instead of relying on `dnf upgrade le-compositeur`; package install path was validated manually on Fedora VM with a locally built `2026.03.11-8` RPM, but the actual GUI `Update Now` click path still needs one end-to-end check against a published newer release.
   Done when: `Check Updates` + `Update Now` either complete the package upgrade end-to-end or surface a deterministic success/failure state instead of hanging after password/auth prompts.
 
 - [ ] `P0` Disable widget runtime work when widget is disabled in `Ordering`.
-  Status: `News` ordering now also suppresses secondary ticker timing/fetch/validation paths; explicit runtime verification for packaged Fedora installs is still pending.
+  Status: `News` ordering now also suppresses secondary ticker timing/fetch/validation paths; Fedora VM packaged CLI validation shows disabled `Weather` / `News` / `Cams` run path dropping from ~13.6s to ~3.0s with empty widget outputs.
   Done when: disabled `Weather` / `News` / `Cams` widgets do not keep fetching network data, spawning stream capture, or rendering hidden overlays.
 
 - [ ] `P1` Add packaged-install regression coverage for GUI actions and updater flow.
@@ -108,6 +108,8 @@ Last updated: 2026-03-11
 - [x] Moved GUI one-shot CLI actions (`Validate`, `Render Preview`, `Run Once`, `Migrate`, `Apply Now`) off the UI thread and added repaint polling so long renders no longer freeze the settings window.
 - [x] Reworked Linux self-update logic to download the matching GitHub release package asset (`.rpm` / `.deb`) before invoking privileged local installation.
 - [x] Bound secondary news ticker runtime enablement to the main `News` ordering toggle so disabled news no longer keeps ticker timing/fetch activity alive.
+- [x] Validated Fedora VM source branch and locally built RPM against real user config:
+  `run --once` with `apply_wallpaper=false` now completes instead of timing out; packaged CLI with all dynamic widgets enabled completed in ~13.6s, and with `Weather`/`News`/`Cams` disabled in ~3.0s.
 - [x] Added single-instance run locking and `--replace-existing`.
 - [x] Hardened autostart install/remove behavior and legacy cleanup.
 - [x] Added weather/news rendering improvements and cams controls.
