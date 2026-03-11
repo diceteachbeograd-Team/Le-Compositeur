@@ -2426,7 +2426,7 @@ impl WcGuiApp {
                     ui.add(
                         egui::DragValue::new(&mut self.cfg.cams_fps)
                             .speed(0.1)
-                            .range(0.05..=10.0),
+                            .range(0.05..=30.0),
                     );
                     ui.label("Refresh sec");
                     ui.add(
@@ -2846,7 +2846,7 @@ impl WcGuiApp {
                     ui.add(
                         egui::DragValue::new(&mut self.cfg.cams_fps)
                             .speed(0.1)
-                            .range(0.05..=10.0),
+                            .range(0.05..=30.0),
                     );
                     ui.label("Refresh sec");
                     ui.add(
@@ -3915,15 +3915,17 @@ impl eframe::App for WcGuiApp {
             ui.heading(self.active_tab_title());
             ui.label(self.active_tab_hint());
             ui.separator();
-            egui::ScrollArea::vertical().show(ui, |ui| match self.active_tab {
-                GuiTab::Ordering => self.render_ordering_tab(ui),
-                GuiTab::Images => self.render_images_tab(ui, ctx),
-                GuiTab::Quotes => self.render_quotes_tab(ui),
-                GuiTab::Weather => self.render_weather_tab(ui),
-                GuiTab::News => self.render_news_tab(ui),
-                GuiTab::Cams => self.render_cams_tab(ui),
-                GuiTab::System => self.render_system_tab(ui),
-            });
+            egui::ScrollArea::both()
+                .auto_shrink([false, false])
+                .show(ui, |ui| match self.active_tab {
+                    GuiTab::Ordering => self.render_ordering_tab(ui),
+                    GuiTab::Images => self.render_images_tab(ui, ctx),
+                    GuiTab::Quotes => self.render_quotes_tab(ui),
+                    GuiTab::Weather => self.render_weather_tab(ui),
+                    GuiTab::News => self.render_news_tab(ui),
+                    GuiTab::Cams => self.render_cams_tab(ui),
+                    GuiTab::System => self.render_system_tab(ui),
+                });
         });
 
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
@@ -4095,20 +4097,20 @@ fn default_cfg() -> AppConfig {
 fn cams_public_preset_urls(id: &str) -> String {
     let urls: &[&str] = match id {
         "europe_mix" => &[
-            "https://www.youtube.com/watch?v=wccRif2DaGs",
             "https://www.youtube.com/watch?v=GE_SfNVNyqk",
             "https://www.youtube.com/watch?v=l8PMl7tUDIE",
+            "https://www.youtube.com/watch?v=pykpO5kQJ98",
         ],
         "world_mix" => &[
             "https://www.youtube.com/watch?v=1-iS7LArMPA",
-            "https://www.youtube.com/watch?v=AdUw5RdyZxI",
             "https://www.youtube.com/watch?v=21X5lGlDOfg",
+            "https://www.youtube.com/watch?v=gCNeDWCI0vo",
             "https://www.youtube.com/watch?v=pykpO5kQJ98",
         ],
         _ => &[
-            "https://www.youtube.com/watch?v=wccRif2DaGs",
             "https://www.youtube.com/watch?v=GE_SfNVNyqk",
             "https://www.youtube.com/watch?v=1-iS7LArMPA",
+            "https://www.youtube.com/watch?v=l8PMl7tUDIE",
         ],
     };
     urls.join("\n")

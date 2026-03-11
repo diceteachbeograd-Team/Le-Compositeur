@@ -893,7 +893,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         cams_source: cams_source.unwrap_or_else(|| "auto_local".to_string()),
         cams_custom_urls: cams_custom_urls.unwrap_or_default(),
         cams_refresh_seconds: cams_refresh_seconds.unwrap_or(75).max(10),
-        cams_fps: cams_fps.unwrap_or(1.0).clamp(0.05, 10.0),
+        cams_fps: cams_fps.unwrap_or(1.0).clamp(0.05, 30.0),
         cams_count: cams_count.unwrap_or(2).clamp(1, 9),
         cams_columns: cams_columns.unwrap_or(2).clamp(1, 4),
         login_screen_integration: login_screen_integration.unwrap_or(false),

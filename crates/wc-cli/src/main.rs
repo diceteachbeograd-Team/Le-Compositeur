@@ -692,6 +692,12 @@ fn resolve_source_image(cfg: &AppConfig, cycle: u64) -> Result<PathBuf> {
         }
         "url" | "remote_url" => {
             let endpoint = resolve_image_endpoint_from_url(cfg, cycle)?;
+            if stream_like_endpoint(&endpoint) {
+                let bg_fps = (1.0 / cfg.image_refresh_seconds.max(1) as f32).clamp(0.05, 30.0);
+                if let Some(frame) = capture_stream_preview(&endpoint, bg_fps) {
+                    return Ok(frame);
+                }
+            }
             fetch_remote_image(endpoint, ImageProvider::Generic)
                 .map_err(|e| anyhow::anyhow!("failed to fetch custom image source: {e}"))
         }
@@ -843,8 +849,8 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<WeatherWidgetPayload> {
         UnitSystem::Metric => "km/h",
         UnitSystem::Imperial => "mph",
     };
-    let minimap_image = resolve_weather_minimap(geo.lat, geo.lon, wind_deg)
-        .or_else(|| resolve_weather_minimap_raw(geo.lat, geo.lon));
+    let minimap_image = resolve_weather_minimap(geo.lat, geo.lon, wind_deg, wind, wind_unit)
+        .or_else(|| fallback_weather_minimap(wind_deg, wind, wind_unit));
     let text = format_weather_compact(&WeatherCompactInput {
         condition_icon: weather_code_icon(code),
         temp: t,
@@ -922,7 +928,20 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
         .get("winddir16Point")
         .and_then(Value::as_str)
         .unwrap_or("N");
+    let wind_deg = current
+        .get("winddirDegree")
+        .and_then(Value::as_str)
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or_else(|| compass_degrees_for_name(wind_dir));
     let wind_arrow = compass_arrow_for_name(wind_dir);
+    let area_lat = area
+        .and_then(|a| a.get("latitude"))
+        .and_then(Value::as_str)
+        .and_then(|v| v.parse::<f64>().ok());
+    let area_lon = area
+        .and_then(|a| a.get("longitude"))
+        .and_then(Value::as_str)
+        .and_then(|v| v.parse::<f64>().ok());
     let units = unit_system_for_country(match country {
         "United States" | "Liberia" | "Myanmar" => Some("US"),
         _ => None,
@@ -959,6 +978,10 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
             "km/h",
         ),
     };
+    let minimap_image = area_lat
+        .zip(area_lon)
+        .and_then(|(lat, lon)| resolve_weather_minimap(lat, lon, wind_deg, wind, wind_unit))
+        .or_else(|| fallback_weather_minimap(wind_deg, wind, wind_unit));
     Ok(WeatherWidgetPayload {
         text: format_weather_compact(&WeatherCompactInput {
             condition_icon: compact_condition_symbol(desc),
@@ -972,7 +995,7 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
             temp_unit,
             wind_unit,
         }),
-        minimap_image: None,
+        minimap_image,
     })
 }
 
@@ -1025,7 +1048,7 @@ fn weather_unavailable_payload(err: impl std::fmt::Display) -> WeatherWidgetPayl
             "⚠ {}",
             compact_news_line(&format!("weather unavailable ({err})"))
         ),
-        minimap_image: None,
+        minimap_image: fallback_weather_minimap(0.0, 0.0, "km/h"),
     }
 }
 
@@ -1680,28 +1703,31 @@ fn cams_source_urls(cfg: &AppConfig, cycle: u64) -> Vec<String> {
 }
 
 fn auto_local_cam_urls(cycle: u64) -> Vec<String> {
-    // Public live-cam feeds (YouTube) used as default sources.
-    // We rotate candidates so users in different regions don't always see the same feed.
-    let mut base = vec![
-        "https://www.youtube.com/watch?v=1-iS7LArMPA".to_string(), // Times Square
-        "https://www.youtube.com/watch?v=AdUw5RdyZxI".to_string(), // Earth/City cam
-        "https://www.youtube.com/watch?v=wccRif2DaGs".to_string(), // City stream
-        "https://www.youtube.com/watch?v=21X5lGlDOfg".to_string(), // NASA live earth view
-        "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(), // DW live feed
-    ];
-    base = rotate_urls(base, cycle);
-    base
+    // Fallback-friendly list: YouTube links are resolved via yt-dlp when available,
+    // otherwise we still fetch their live thumbnail snapshots.
+    rotate_urls(
+        vec![
+            "https://www.youtube.com/watch?v=1-iS7LArMPA".to_string(), // New York / Times Square
+            "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(), // Berlin / DW skyline feed
+            "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(), // Paris / France24 feed
+            "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(), // Doha / Al Jazeera
+            "https://www.youtube.com/watch?v=pykpO5kQJ98".to_string(), // Euronews live
+            "https://www.youtube.com/watch?v=21X5lGlDOfg".to_string(), // Earth/NASA view
+        ],
+        cycle,
+    )
 }
 
 fn city_public_cam_urls(cycle: u64) -> Vec<String> {
-    let mut city_urls = vec![
-        "https://www.youtube.com/watch?v=1-iS7LArMPA".to_string(),
-        "https://www.youtube.com/watch?v=wccRif2DaGs".to_string(),
-        "https://www.youtube.com/watch?v=AdUw5RdyZxI".to_string(),
-        "https://www.youtube.com/watch?v=21X5lGlDOfg".to_string(),
-    ];
-    city_urls = rotate_urls(city_urls, cycle);
-    city_urls
+    rotate_urls(
+        vec![
+            "https://www.youtube.com/watch?v=1-iS7LArMPA".to_string(), // New York
+            "https://www.youtube.com/watch?v=GE_SfNVNyqk".to_string(), // Berlin
+            "https://www.youtube.com/watch?v=l8PMl7tUDIE".to_string(), // Paris
+            "https://www.youtube.com/watch?v=gCNeDWCI0vo".to_string(), // Doha
+        ],
+        cycle,
+    )
 }
 
 fn rotate_urls(urls: Vec<String>, cycle: u64) -> Vec<String> {
@@ -1718,7 +1744,11 @@ fn rotate_urls(urls: Vec<String>, cycle: u64) -> Vec<String> {
 
 fn summarize_source_label(url: &str) -> String {
     if let Some(id) = extract_youtube_video_id(url) {
-        return format!("YT:{id}");
+        if let Some(label) = known_youtube_source_label(&id) {
+            return label.to_string();
+        }
+        let short = id.chars().take(6).collect::<String>();
+        return format!("YouTube:{short}");
     }
     let trimmed = url.trim();
     let without_scheme = trimmed
@@ -1730,6 +1760,20 @@ fn summarize_source_label(url: &str) -> String {
         .next()
         .unwrap_or(without_scheme)
         .to_string()
+}
+
+fn known_youtube_source_label(id: &str) -> Option<&'static str> {
+    match id {
+        "1-iS7LArMPA" => Some("New York"),
+        "GE_SfNVNyqk" => Some("Berlin"),
+        "l8PMl7tUDIE" => Some("Paris"),
+        "gCNeDWCI0vo" => Some("Doha"),
+        "pykpO5kQJ98" => Some("Euronews"),
+        "21X5lGlDOfg" => Some("NASA"),
+        "dp8PhLsUcFE" => Some("Bloomberg"),
+        "9Auq9mYxFEE" => Some("Yahoo"),
+        _ => None,
+    }
 }
 
 fn compose_cams_grid(frames: &[PathBuf], columns: u32) -> Option<PathBuf> {
@@ -1950,9 +1994,15 @@ fn unit_system_for_country(country_code: Option<&str>) -> UnitSystem {
     }
 }
 
-fn resolve_weather_minimap(lat: f64, lon: f64, wind_deg: f64) -> Option<PathBuf> {
+fn resolve_weather_minimap(
+    lat: f64,
+    lon: f64,
+    wind_deg: f64,
+    wind_speed: f64,
+    wind_unit: &str,
+) -> Option<PathBuf> {
     let raw_map = resolve_weather_minimap_raw(lat, lon)?;
-    stylize_weather_minimap(&raw_map, lat, lon, wind_deg)
+    stylize_weather_minimap(&raw_map, lat, lon, wind_deg, wind_speed, wind_unit)
 }
 
 fn resolve_weather_minimap_raw(lat: f64, lon: f64) -> Option<PathBuf> {
@@ -2000,6 +2050,28 @@ fn compass_arrow_for_name(dir: &str) -> &'static str {
         "W" => "←",
         "WNW" | "NW" | "NNW" => "↖",
         _ => "•",
+    }
+}
+
+fn compass_degrees_for_name(dir: &str) -> f64 {
+    match dir.trim().to_ascii_uppercase().as_str() {
+        "N" => 0.0,
+        "NNE" => 22.5,
+        "NE" => 45.0,
+        "ENE" => 67.5,
+        "E" => 90.0,
+        "ESE" => 112.5,
+        "SE" => 135.0,
+        "SSE" => 157.5,
+        "S" => 180.0,
+        "SSW" => 202.5,
+        "SW" => 225.0,
+        "WSW" => 247.5,
+        "W" => 270.0,
+        "WNW" => 292.5,
+        "NW" => 315.0,
+        "NNW" => 337.5,
+        _ => 0.0,
     }
 }
 
@@ -2052,15 +2124,23 @@ fn capture_stream_preview(stream_url: &str, fps: f32) -> Option<PathBuf> {
     {
         return Some(path);
     }
-
-    let lower = raw.to_ascii_lowercase();
-    if is_camera_like_url(stream_url)
-        || lower.ends_with(".m3u8")
-        || lower.ends_with(".mp4")
-        || lower.ends_with(".webm")
-        || lower.ends_with(".mkv")
-        || lower.contains("stream")
+    if is_youtube_url(raw)
+        && let Some(video_id) = extract_youtube_video_id(raw)
     {
+        let ts = now_epoch_seconds() / 2;
+        for still in [
+            format!("https://img.youtube.com/vi/{video_id}/maxresdefault_live.jpg?t={ts}"),
+            format!("https://img.youtube.com/vi/{video_id}/hqdefault_live.jpg?t={ts}"),
+            format!("https://img.youtube.com/vi/{video_id}/maxresdefault.jpg?t={ts}"),
+            format!("https://img.youtube.com/vi/{video_id}/hqdefault.jpg?t={ts}"),
+        ] {
+            if let Ok(path) = fetch_remote_image(still, ImageProvider::Generic) {
+                return Some(path);
+            }
+        }
+    }
+
+    if !is_youtube_url(stream_url) && stream_like_endpoint(stream_url) {
         return capture_news_frame(raw, raw, fps);
     }
     None
@@ -2449,6 +2529,17 @@ fn is_camera_like_url(url: &str) -> bool {
         || l.contains("webcam")
 }
 
+fn stream_like_endpoint(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    is_youtube_url(url)
+        || is_camera_like_url(url)
+        || lower.ends_with(".mp4")
+        || lower.ends_with(".webm")
+        || lower.ends_with(".mkv")
+        || lower.ends_with(".mpd")
+        || lower.contains("stream")
+}
+
 fn is_youtube_url(url: &str) -> bool {
     let l = url.to_ascii_lowercase();
     l.contains("youtube.com") || l.contains("youtu.be")
@@ -2486,19 +2577,19 @@ fn capture_frame_with_ffmpeg(
     let hash = stable_hash(cache_key);
     let target = cache_dir.join(format!("{prefix}-{hash}.jpg"));
     let stamp = cache_dir.join(format!("{prefix}-{hash}.stamp"));
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    let now_ms = now_epoch_millis();
     let fps = fps.clamp(0.05, 30.0);
     let min_interval = if enforce_camera_floor {
         1.0_f32.max(1.0 / fps)
     } else {
         (1.0 / fps).max(0.05)
     };
-    let min_secs = min_interval.ceil() as u64;
-    let last = fs::read_to_string(&stamp)
+    let min_ms = (min_interval * 1000.0).ceil() as u64;
+    let last_ms = fs::read_to_string(&stamp)
         .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
+        .and_then(|v| parse_cache_stamp_millis(v.trim()))
         .unwrap_or(0);
-    if now.saturating_sub(last) < min_secs && target.exists() {
+    if now_ms.saturating_sub(last_ms) < min_ms && target.exists() {
         return Some(target);
     }
 
@@ -2525,8 +2616,18 @@ fn capture_frame_with_ffmpeg(
     if !status.success() || !target.exists() {
         return None;
     }
-    let _ = fs::write(stamp, format!("{now}\n"));
+    let _ = fs::write(stamp, format!("{now_ms}\n"));
     Some(target)
+}
+
+fn parse_cache_stamp_millis(raw: &str) -> Option<u64> {
+    let parsed = raw.trim().parse::<u64>().ok()?;
+    // Backward compatibility for old second-based stamps.
+    if parsed < 10_000_000_000 {
+        Some(parsed.saturating_mul(1000))
+    } else {
+        Some(parsed)
+    }
 }
 
 fn resolve_youtube_playback_url(url: &str) -> Option<String> {
@@ -2766,7 +2867,12 @@ fn parse_endpoint_list(raw: &str) -> Vec<String> {
 
 fn looks_like_endpoint(value: &str) -> bool {
     let v = value.trim().to_ascii_lowercase();
-    v.starts_with("https://") || v.starts_with("http://") || v.starts_with("file://")
+    v.starts_with("https://")
+        || v.starts_with("http://")
+        || v.starts_with("file://")
+        || v.starts_with("rtsp://")
+        || v.starts_with("rtmp://")
+        || v.starts_with("mms://")
 }
 
 fn print_presets() {
@@ -2946,7 +3052,7 @@ fn loop_tick_duration(cfg: &AppConfig) -> Duration {
         seconds = seconds.min(ticker_step.max(0.033));
     }
     if cfg.show_cams_layer {
-        let cams_step = 1.0 / cfg.cams_fps.clamp(0.05, 10.0) as f64;
+        let cams_step = 1.0 / cfg.cams_fps.clamp(0.05, 30.0) as f64;
         seconds = seconds.min(cams_step.max(0.033));
     }
     let millis = (seconds * 1000.0).round().clamp(33.0, 60_000.0) as u64;
@@ -3143,21 +3249,24 @@ fn store_cached_weather_widget(payload: &WeatherWidgetPayload) -> Result<()> {
     Ok(())
 }
 
-fn stylize_weather_minimap(input: &Path, lat: f64, lon: f64, wind_deg: f64) -> Option<PathBuf> {
-    let (cmd, use_magick_subcommand) = if command_exists("magick") {
-        ("magick", true)
-    } else if command_exists("convert") {
-        ("convert", false)
-    } else {
-        return Some(input.to_path_buf());
-    };
+fn stylize_weather_minimap(
+    input: &Path,
+    lat: f64,
+    lon: f64,
+    wind_deg: f64,
+    wind_speed: f64,
+    wind_unit: &str,
+) -> Option<PathBuf> {
+    let (cmd, use_magick_subcommand) = weather_image_magick_command()?;
 
     let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
     fs::create_dir_all(&cache_dir).ok()?;
     let hash = stable_hash(&format!(
-        "{}-{lat:.3}-{lon:.3}-{}",
+        "{}-{lat:.3}-{lon:.3}-{}-{}-{}",
         input.display(),
-        (wind_deg / 5.0).round() as i32
+        (wind_deg / 5.0).round() as i32,
+        (wind_speed * 2.0).round() as i32,
+        wind_unit
     ));
     let output = cache_dir.join(format!("weather-map-{hash}.png"));
     if output.exists() {
@@ -3176,6 +3285,8 @@ fn stylize_weather_minimap(input: &Path, lat: f64, lon: f64, wind_deg: f64) -> O
     let left_y = ey - (dy * 10.0) + (dx * 8.0);
     let right_x = ex - (dx * 10.0) + (dy * 8.0);
     let right_y = ey - (dy * 10.0) - (dx * 8.0);
+    let (_, wind_dir) = compass_arrow(wind_deg);
+    let wind_text = format!("{wind_dir} {wind_speed:.1} {wind_unit}");
 
     let mut args = Vec::<String>::new();
     if use_magick_subcommand {
@@ -3193,11 +3304,11 @@ fn stylize_weather_minimap(input: &Path, lat: f64, lon: f64, wind_deg: f64) -> O
         "-colorspace".to_string(),
         "Gray".to_string(),
         "-fill".to_string(),
-        "#00111A66".to_string(),
+        "#11141888".to_string(),
         "-colorize".to_string(),
-        "22".to_string(),
+        "28".to_string(),
         "-stroke".to_string(),
-        "#007C8A88".to_string(),
+        "#8A8F9566".to_string(),
         "-strokewidth".to_string(),
         "2".to_string(),
         "-fill".to_string(),
@@ -3208,21 +3319,21 @@ fn stylize_weather_minimap(input: &Path, lat: f64, lon: f64, wind_deg: f64) -> O
             center_y - 92.0
         ),
         "-stroke".to_string(),
-        "#00E7FFDD".to_string(),
+        "#FF4A4ADD".to_string(),
         "-strokewidth".to_string(),
         "4".to_string(),
         "-draw".to_string(),
         format!("line {center_x:.1},{center_y:.1} {ex:.1},{ey:.1}"),
         "-fill".to_string(),
-        "#00F5FFEE".to_string(),
+        "#FF3B30EE".to_string(),
         "-stroke".to_string(),
-        "#003640".to_string(),
+        "#4A0D0D".to_string(),
         "-strokewidth".to_string(),
         "1".to_string(),
         "-draw".to_string(),
         format!("polygon {ex:.1},{ey:.1} {left_x:.1},{left_y:.1} {right_x:.1},{right_y:.1}"),
         "-fill".to_string(),
-        "#00F5FF".to_string(),
+        "#FF6B6B".to_string(),
         "-stroke".to_string(),
         "none".to_string(),
         "-draw".to_string(),
@@ -3230,6 +3341,17 @@ fn stylize_weather_minimap(input: &Path, lat: f64, lon: f64, wind_deg: f64) -> O
             "circle {center_x:.1},{center_y:.1} {center_x:.1},{:.1}",
             center_y - 4.0
         ),
+        "-gravity".to_string(),
+        "NorthWest".to_string(),
+        "-pointsize".to_string(),
+        "28".to_string(),
+        "-fill".to_string(),
+        "#FF3B30".to_string(),
+        "-stroke".to_string(),
+        "none".to_string(),
+        "-annotate".to_string(),
+        "+22+34".to_string(),
+        wind_text,
         output.display().to_string(),
     ]);
 
@@ -3243,6 +3365,125 @@ fn stylize_weather_minimap(input: &Path, lat: f64, lon: f64, wind_deg: f64) -> O
         Some(output)
     } else {
         Some(input.to_path_buf())
+    }
+}
+
+fn fallback_weather_minimap(wind_deg: f64, wind_speed: f64, wind_unit: &str) -> Option<PathBuf> {
+    let (cmd, use_magick_subcommand) = weather_image_magick_command()?;
+    let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
+    fs::create_dir_all(&cache_dir).ok()?;
+    let hash = stable_hash(&format!(
+        "weather-fallback-{}-{}-{wind_unit}",
+        (wind_deg / 5.0).round() as i32,
+        (wind_speed * 2.0).round() as i32
+    ));
+    let output = cache_dir.join(format!("weather-map-fallback-{hash}.png"));
+    if output.exists() {
+        return Some(output);
+    }
+
+    let center_x = 320.0_f64;
+    let center_y = 180.0_f64;
+    let radius = 82.0_f64;
+    let rad = wind_deg.to_radians();
+    let dx = rad.sin();
+    let dy = -rad.cos();
+    let ex = center_x + dx * radius;
+    let ey = center_y + dy * radius;
+    let left_x = ex - (dx * 10.0) - (dy * 8.0);
+    let left_y = ey - (dy * 10.0) + (dx * 8.0);
+    let right_x = ex - (dx * 10.0) + (dy * 8.0);
+    let right_y = ey - (dy * 10.0) - (dx * 8.0);
+    let (_, wind_dir) = compass_arrow(wind_deg);
+    let wind_text = format!("{wind_dir} {wind_speed:.1} {wind_unit}");
+
+    let mut args = Vec::<String>::new();
+    if use_magick_subcommand {
+        args.push("convert".to_string());
+    }
+    args.extend([
+        "-size".to_string(),
+        "640x360".to_string(),
+        "xc:#161A1F".to_string(),
+        "-stroke".to_string(),
+        "#2D333A88".to_string(),
+        "-strokewidth".to_string(),
+        "1".to_string(),
+        "-fill".to_string(),
+        "none".to_string(),
+        "-draw".to_string(),
+        "rectangle 8,8 632,352".to_string(),
+        "-stroke".to_string(),
+        "#8A8F9566".to_string(),
+        "-strokewidth".to_string(),
+        "2".to_string(),
+        "-draw".to_string(),
+        format!(
+            "circle {center_x:.1},{center_y:.1} {center_x:.1},{:.1}",
+            center_y - 92.0
+        ),
+        "-stroke".to_string(),
+        "#FF4A4ADD".to_string(),
+        "-strokewidth".to_string(),
+        "4".to_string(),
+        "-draw".to_string(),
+        format!("line {center_x:.1},{center_y:.1} {ex:.1},{ey:.1}"),
+        "-fill".to_string(),
+        "#FF3B30EE".to_string(),
+        "-stroke".to_string(),
+        "#4A0D0D".to_string(),
+        "-strokewidth".to_string(),
+        "1".to_string(),
+        "-draw".to_string(),
+        format!("polygon {ex:.1},{ey:.1} {left_x:.1},{left_y:.1} {right_x:.1},{right_y:.1}"),
+        "-fill".to_string(),
+        "#FF6B6B".to_string(),
+        "-stroke".to_string(),
+        "none".to_string(),
+        "-draw".to_string(),
+        format!(
+            "circle {center_x:.1},{center_y:.1} {center_x:.1},{:.1}",
+            center_y - 4.0
+        ),
+        "-gravity".to_string(),
+        "NorthWest".to_string(),
+        "-pointsize".to_string(),
+        "28".to_string(),
+        "-fill".to_string(),
+        "#FF3B30".to_string(),
+        "-annotate".to_string(),
+        "+22+34".to_string(),
+        wind_text,
+        "-pointsize".to_string(),
+        "19".to_string(),
+        "-fill".to_string(),
+        "#A6AFBA".to_string(),
+        "-annotate".to_string(),
+        "+22+66".to_string(),
+        "map unavailable".to_string(),
+        output.display().to_string(),
+    ]);
+
+    let ok = Command::new(cmd)
+        .args(args)
+        .status()
+        .ok()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if ok && output.exists() {
+        Some(output)
+    } else {
+        None
+    }
+}
+
+fn weather_image_magick_command() -> Option<(&'static str, bool)> {
+    if command_exists("magick") {
+        Some(("magick", true))
+    } else if command_exists("convert") {
+        Some(("convert", false))
+    } else {
+        None
     }
 }
 

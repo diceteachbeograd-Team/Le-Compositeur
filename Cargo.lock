@@ -4559,11 +4559,11 @@ dependencies = [
 
 [[package]]
 name = "wc-backend"
-version = "2026.3.11-3"
+version = "2026.3.11-4"
 
 [[package]]
 name = "wc-cli"
-version = "2026.3.11-3"
+version = "2026.3.11-4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4579,7 +4579,7 @@ dependencies = [
 
 [[package]]
 name = "wc-core"
-version = "2026.3.11-3"
+version = "2026.3.11-4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4587,7 +4587,7 @@ dependencies = [
 
 [[package]]
 name = "wc-gui"
-version = "2026.3.11-3"
+version = "2026.3.11-4"
 dependencies = [
  "eframe",
  "egui",
@@ -4600,11 +4600,11 @@ dependencies = [
 
 [[package]]
 name = "wc-render"
-version = "2026.3.11-3"
+version = "2026.3.11-4"
 
 [[package]]
 name = "wc-source"
-version = "2026.3.11-3"
+version = "2026.3.11-4"
 
 [[package]]
 name = "web-sys"

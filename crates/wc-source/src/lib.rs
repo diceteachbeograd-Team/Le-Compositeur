@@ -119,7 +119,18 @@ fn ensure_curl_available() -> Result<(), String> {
 
 fn fetch_text_via_curl(url: &str) -> Result<String, String> {
     let output = Command::new("curl")
-        .args(["-fsSL", "--connect-timeout", "8", "--max-time", "25", url])
+        .args([
+            "-fsSL",
+            "--connect-timeout",
+            "8",
+            "--max-time",
+            "25",
+            "-H",
+            "Cache-Control: no-cache",
+            "-H",
+            "Pragma: no-cache",
+            url,
+        ])
         .output()
         .map_err(|e| format!("failed to run curl: {e}"))?;
 
@@ -136,7 +147,18 @@ fn fetch_text_via_curl(url: &str) -> Result<String, String> {
 
 fn download_file_via_curl(url: &str, target: &Path) -> Result<(), String> {
     let status = Command::new("curl")
-        .args(["-fsSL", "--connect-timeout", "8", "--max-time", "30", "-o"])
+        .args([
+            "-fsSL",
+            "--connect-timeout",
+            "8",
+            "--max-time",
+            "30",
+            "-H",
+            "Cache-Control: no-cache",
+            "-H",
+            "Pragma: no-cache",
+            "-o",
+        ])
         .arg(target)
         .arg(url)
         .status()

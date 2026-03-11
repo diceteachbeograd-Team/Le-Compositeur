@@ -34,7 +34,7 @@ Pass criteria:
 
 ```bash
 sudo dnf install -y rust cargo rpm-build rpmdevtools desktop-file-utils rsync
-./scripts/build-alpha-rpm.sh 2026.03.11-3
+./scripts/build-alpha-rpm.sh 2026.03.11-4
 ```
 
 Then execute the standard automated smoke suite.
@@ -43,7 +43,7 @@ Then execute the standard automated smoke suite.
 
 ```bash
 sudo dnf install -y rust cargo rpm-build rpmdevtools desktop-file-utils rsync
-./scripts/build-alpha-rpm.sh 2026.03.11-3
+./scripts/build-alpha-rpm.sh 2026.03.11-4
 ```
 
 Then execute the standard automated smoke suite.
@@ -53,7 +53,7 @@ Then execute the standard automated smoke suite.
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-3
+./scripts/build-alpha-deb.sh 2026.03.11-4
 ```
 
 Then execute the standard automated smoke suite.
@@ -63,7 +63,7 @@ Then execute the standard automated smoke suite.
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-3
+./scripts/build-alpha-deb.sh 2026.03.11-4
 ```
 
 Then execute the standard automated smoke suite.

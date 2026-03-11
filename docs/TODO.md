@@ -10,8 +10,8 @@ Last updated: 2026-03-11
 
 ## Current Snapshot
 - Repo branch: `main`
-- Latest published tag: `2026.03.11-3`
-- Next hotfix target tag: `TBD (next VM feedback cycle)`
+- Latest published tag: `2026.03.11-4`
+- Next hotfix target tag: `2026.03.11-4 (pending VM validation + tag)`
 - Local tests: passing (`cargo test --all`)
 - GUI tabs implemented: `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline
@@ -42,6 +42,9 @@ Last updated: 2026-03-11
 - [x] `P1` Multiple independent ticker instances (not only one News line).
   Done when: at least 2 separate ticker widgets can be configured and rendered independently.
 
+- [x] `P0` Restore compact-screen reachability and runtime smoothness in tabs/widgets.
+  Done when: all workspace tabs remain reachable in compact GUI mode, stream/ticker updates are not forced to 1 FPS, and image-tab BG cadence is respected again.
+
 ## Next (After Active Sprint)
 
 - [x] `P1` Per-widget enable/disable + z-order + collision-safe placement rules in `Ordering`.
@@ -55,6 +58,9 @@ Last updated: 2026-03-11
 
 - [x] `P2` Add screenshot-based regression checks for overlay visibility.
   Done when: render changes can be validated against known baseline snapshots.
+
+- [ ] `P1` Curated capitals cam catalog from external directories/APIs.
+  Done when: ship a maintained capital-priority preset list sourced from live webcam catalogs (with health checks and fallback ranking).
 
 ## Later
 
@@ -92,6 +98,11 @@ Last updated: 2026-03-11
 - [x] Added compact-mode defaults (compact ON, preview panel OFF) to improve low-height/low-width GUI usability.
 - [x] Hardened GUI CLI launcher path resolution and release-mode cargo-fallback guard.
 - [x] Updated release workflow to package CLI+quotes with Linux/Windows/macOS bundles.
+- [x] Restored full tab reachability via bidirectional scroll in central workspace panel.
+- [x] Fixed ffmpeg frame-cache timing resolution (ms stamp) to remove accidental 1 FPS cap.
+- [x] Added stream-aware background URL handling tied to `image_refresh_seconds`.
+- [x] Redesigned weather minimap wind overlay (red arrow + red speed) with generated fallback map.
+- [x] Improved cams source fallback: YouTube thumbnail fallback without `yt-dlp` and richer source labels.
 
 ## Restart Checklist (Operator)
 

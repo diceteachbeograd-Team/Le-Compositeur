@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026.03.11-4 - 2026-03-11
+- Fixed central GUI workspace scrolling ergonomics for compact screens:
+  - switched tab content viewport to two-axis scroll with disabled auto-shrink
+  - restores access to long/wide settings rows in `QTE`/`WTH`/`NWS`/`CAM`/`SYS`
+- Fixed frame-capture timing granularity bug causing stutter:
+  - ffmpeg frame cache now uses millisecond stamps (with legacy second-stamp compatibility)
+  - removes implicit 1 FPS ceiling from higher configured widget FPS values
+- Improved background-source behavior:
+  - `image_source=url` can now treat stream-like endpoints as independent background streams
+  - refresh cadence follows `image_refresh_seconds` for background stream snapshots
+  - remote image fetch uses no-cache request headers to better honor refresh cadence
+- Improved weather minimap presentation and resilience:
+  - minimap wind overlay now uses red direction arrow and red speed annotation
+  - added generated minimap fallback when remote map fetch is unavailable
+  - added minimap generation for wttr fallback payload when coordinates exist
+- Improved camera source usability:
+  - expanded/defaulted camera source rotation set and human-readable source labels
+  - YouTube sources now have thumbnail fallback when `yt-dlp` is unavailable
+  - custom camera endpoint validator now accepts `rtsp://`, `rtmp://`, `mms://`
+- Increased cams FPS upper limit from `10` to `30` in core config and GUI controls.
+
 ## 2026.03.11-3 - 2026-03-11
 - Fixed CI macOS release packaging regression introduced in `2026.03.11-2`:
   - moved bundled quotes seed inside app bundle resources (`Le Compositeur.app/Contents/Resources/quotes/local-quotes.md`)
