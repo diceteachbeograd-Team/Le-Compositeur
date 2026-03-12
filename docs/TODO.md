@@ -11,8 +11,8 @@ Last updated: 2026-03-12
 ## Current Snapshot
 - Repo branch: `main`
 - Experimental live-media branch: `codex/live-media-rnd`
-- Latest published tag: `2026.03.12-1`
-- Next hotfix target tag: `2026.03.12-2`
+- Latest published tag: `2026.03.12-2`
+- Next hotfix target tag: `2026.03.12-3`
 - Local tests: passing (`cargo test --all`)
 - GUI tabs implemented: `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline

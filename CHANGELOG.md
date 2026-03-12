@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026.03.12-2 - 2026-03-12
+- Stabilized `main` for normal use while live-media work continues separately:
+  - force-disabled experimental `News` / `Cams` behavior on `main`
+  - grayed out the corresponding GUI tabs/ordering controls with an explicit branch note
+  - kept the live-overlay R&D path isolated on branch `codex/live-media-rnd`
+- Restored the previous fitted Weather widget rendering on `main`:
+  - reverted the overflowing panel redesign
+  - returned to the more compact readable weather layout used before the failed redesign pass
+- Synced release prep/docs for `2026.03.12-2` while keeping the temporary README warning that `Weather`, `News`, and `Cams` remain under active rework until explicit functionality approval.
+
 ## 2026.03.12-1 - 2026-03-12
 - Simplified live-media architecture for `News` and `Cams`:
   - removed the broken `wallpaper` render-target path from defaults and GUI controls

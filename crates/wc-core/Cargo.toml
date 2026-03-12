@@ -1,6 +1,6 @@
 [package]
 name = "wc-core"
-version = "2026.3.12-1"
+version = "2026.3.12-2"
 edition.workspace = true
 license.workspace = true
 
