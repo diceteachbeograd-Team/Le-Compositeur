@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026.03.12-3 - 2026-03-12
+- Kept `main` on a stable operator path while live-media development continues separately:
+  - `News` / `Cams` remain grayed out on `main`
+  - `LAY Ordering` now explicitly keeps those disabled features out of the active layout flow as well
+  - stable GUI startup now reapplies the feature gates immediately after config load
+- Clarified operator documentation for the split workflow:
+  - `README.md` now explains that `main` is the stable line for features that currently work
+  - live-media work continues only on branch `codex/live-media-rnd` until it is fit to merge
+- Removed the XRP support address from the public docs/UI and kept the single Litecoin support path.
+
 ## 2026.03.12-2 - 2026-03-12
 - Stabilized `main` for normal use while live-media work continues separately:
   - force-disabled experimental `News` / `Cams` behavior on `main`

@@ -10,23 +10,18 @@ Important: hobby project, use at your own risk ("auf eigene Gefahr"). Bugs can b
 ## Support / Unterstutzung / Podrska / 支持
 
 EN: If you like the project, you can support diceteachbeograd-Team via:
-- XRP: `raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5`
 - Litecoin: `LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt`
 
 DE: Wenn dir das Projekt gefallt, kannst du diceteachbeograd-Team unterstutzen:
-- XRP: `raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5`
 - Litecoin: `LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt`
 
 SR: Ako ti se projekat dopada, mozes podrzati diceteachbeograd-Team:
-- XRP: `raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5`
 - Litecoin: `LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt`
 
 中文: 如果你喜欢这个项目，也可以支持 diceteachbeograd-Team：
-- XRP: `raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5`
 - Litecoin: `LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt`
 
 QR:
-- XRP: [open QR](https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5)
 - LTC: [open QR](https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt)
 
 ## Update 2026-03-08 (EN/DE/SR/中文)

@@ -467,6 +467,7 @@ impl WcGuiApp {
         if let Some(msg) = app.recover_local_quotes(loaded_from_disk) {
             app.status = msg;
         }
+        app.enforce_stable_feature_gates();
         app.start_update_check();
         app
     }
@@ -3112,17 +3113,8 @@ impl WcGuiApp {
         ui.add_space(8.0);
         settings_section(ui, "Support the Team", "", |ui| {
             ui.label("If Le Compositeur helps you, you can support diceteachbeograd-Team.");
-            ui.label("XRP/Monero-style address:");
-            ui.monospace("raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5");
             ui.label("Litecoin address:");
             ui.monospace("LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt");
-            ui.horizontal(|ui| {
-                ui.label("QR (XRP):");
-                ui.hyperlink_to(
-                    "open",
-                    "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5",
-                );
-            });
             ui.horizontal(|ui| {
                 ui.label("QR (LTC):");
                 ui.hyperlink_to(
@@ -4689,10 +4681,45 @@ fn parse_rgb_triplet(raw: &str) -> Option<egui::Color32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ReleaseAsset, install_args_for_backend, is_newer_release, numeric_version_parts,
+        AppConfig, GuiTab, LayoutElement, ReleaseAsset, WcGuiApp, default_cfg,
+        install_args_for_backend, is_newer_release, numeric_version_parts,
         select_release_asset_by_suffix,
     };
     use std::path::Path;
+    use std::time::Instant;
+
+    fn test_app() -> WcGuiApp {
+        WcGuiApp {
+            config_path: "/tmp/test-config.toml".to_string(),
+            cfg: AppConfig {
+                show_news_layer: true,
+                show_cams_layer: true,
+                show_news_ticker2: true,
+                ..default_cfg()
+            },
+            status: String::new(),
+            thumbnails: Vec::new(),
+            thumbnails_for_dir: String::new(),
+            quote_preview: Vec::new(),
+            runner: None,
+            active_tab: GuiTab::News,
+            ui_lang: super::UiLang::En,
+            selected_element: LayoutElement::Cams,
+            weather_status: String::new(),
+            weather_details: Vec::new(),
+            weather_last_refresh: Some(Instant::now()),
+            autostart_toggle: false,
+            ordering_bg_texture: None,
+            update_status: String::new(),
+            update_release: None,
+            update_check_rx: None,
+            self_update_rx: None,
+            cli_command_rx: None,
+            ui_compact_mode: true,
+            show_preview_panel: false,
+            ui_style_compact_applied: None,
+        }
+    }
 
     #[test]
     fn numeric_version_parts_parses_common_formats() {
@@ -4737,5 +4764,19 @@ mod tests {
         let args = install_args_for_backend("dnf", Path::new("/tmp/le-compositeur.rpm"));
         assert!(args.iter().any(|arg| arg == "/tmp/le-compositeur.rpm"));
         assert!(args.iter().any(|arg| arg == "--nogpgcheck"));
+    }
+
+    #[test]
+    fn stable_feature_gates_disable_live_media_ui_state() {
+        let mut app = test_app();
+        app.enforce_stable_feature_gates();
+
+        assert!(!app.cfg.show_news_layer);
+        assert!(!app.cfg.show_cams_layer);
+        assert!(!app.cfg.show_news_ticker2);
+        assert_eq!(app.cfg.news_render_mode, "overlay");
+        assert_eq!(app.cfg.cams_render_mode, "overlay");
+        assert_eq!(app.active_tab, GuiTab::Weather);
+        assert_eq!(app.selected_element, LayoutElement::Weather);
     }
 }

@@ -4,10 +4,12 @@ Dynamic desktop compositor (Rust) by diceteachbeograd-Team.
 
 Status: active hobby project (use at your own risk).
 
-Temporary note for release line `2026.03.12-2`:
+Temporary note for release line `2026.03.12-3`:
 - `Weather`, `News`, and `Cams` are still under active rework and are not yet considered fully reliable or visually finalized.
 - This note should be removed again after explicit functionality approval.
+- `main` is the stable operator line.
 - On `main`, `News` and `Cams` are temporarily disabled while live-overlay development continues on branch `codex/live-media-rnd`.
+- Disabled `News` / `Cams` tabs are also unavailable in `LAY Ordering`: they cannot be toggled there and no placement boxes are shown while the tabs stay grayed out.
 
 ## Download (Latest)
 - Direct link: [github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest](https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest)
@@ -24,8 +26,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.12-2
-sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.12-2*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.12-3
+sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.12-3*.rpm
 le-compositeur
 ```
 
@@ -33,8 +35,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.12-2
-sudo apt install ./dist/le-compositeur_2026.03.12-2_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.12-3
+sudo apt install ./dist/le-compositeur_2026.03.12-3_amd64.deb
 le-compositeur
 ```
 
@@ -48,16 +50,17 @@ cargo run -p wc-gui
 - `Images`: background sources and wallpaper backend
 - `Quotes`: quote source and quote text settings
 - `Weather`: weather widget settings
-- `News`: temporarily disabled on `main`
-- `Cams`: temporarily disabled on `main`
+- `News`: grayed out on `main` until live-overlay work is ready
+- `Cams`: grayed out on `main` until live-overlay work is ready
 - `System`: runtime, startup, integrations, and script-fed overlay ticker settings
 
 ## Notes
-- Weather + News widgets are disabled by default after first install.
+- Weather, News, and Cams widgets are disabled by default after first install.
 - Default background preset for new configs is now `PlaceCats 1920x1080` (`https://placecats.com/1920/1080`).
 - Some widgets require internet access (`Weather`, `News`, remote image/quote sources).
 - Weather panel on `main` stays on the stable fitted layout while the more ambitious visual/icon rework continues separately.
 - `News` / `Cams` are intentionally disabled on `main` until the live-overlay branch solves windowing, feed health, and visible playback correctly.
+- While they are disabled, `LAY Ordering` also keeps their toggles inactive and removes their placement boxes from the position preview.
 - Live-media R&D continues on branch `codex/live-media-rnd`; it is not considered production-ready for normal desktop use yet.
 - System tab includes an independent overlay ticker that can be filled by any shell command; the first non-empty stdout line is rendered as the scrolling text.
 - Example script ticker command: `printf 'Build %s | %s\n' "$(date +%H:%M)" "$(cat /tmp/le-compositeur-ticker.txt 2>/dev/null)"`.
@@ -80,5 +83,4 @@ cargo run -p wc-gui
 - [docs/USER_CONTENT_FORMAT.md](docs/USER_CONTENT_FORMAT.md)
 
 ## Support
-- XRP: `raRPBVcyRzfs4QsVMUK4UczYM4SaepuMr5`
 - Litecoin: `LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt`

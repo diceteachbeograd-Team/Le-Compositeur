@@ -19,6 +19,7 @@ Active focus:
 
 Current branch state:
 - `main` now force-disables `News` / `Cams` again so unfinished live-overlay work does not break normal desktop use.
+- On `main`, `LAY Ordering` also keeps `News` / `Cams` unavailable: no active toggles there and no placement boxes in the position preview while the tabs remain grayed out.
 - Experimental live-media work is preserved on branch `codex/live-media-rnd`.
 - `System` tab now exposes a script-fed overlay ticker; runtime uses the first non-empty stdout line from the configured command.
 - Schema/blueprint metadata were updated so the new overlay fields round-trip cleanly and are visible to contract consumers.

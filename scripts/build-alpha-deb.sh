@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-2026.03.12-2}"
+VERSION="${1:-2026.03.12-3}"
 PKG_DIR="${ROOT_DIR}/dist/deb-root"
 
 need_cmd() {

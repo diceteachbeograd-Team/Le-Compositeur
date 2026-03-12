@@ -11,8 +11,8 @@ Last updated: 2026-03-12
 ## Current Snapshot
 - Repo branch: `main`
 - Experimental live-media branch: `codex/live-media-rnd`
-- Latest published tag: `2026.03.12-2`
-- Next hotfix target tag: `2026.03.12-3`
+- Latest published tag: `2026.03.12-3`
+- Next hotfix target tag: `2026.03.12-4`
 - Local tests: passing (`cargo test --all`)
 - GUI tabs implemented: `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline
@@ -20,7 +20,7 @@ Last updated: 2026-03-12
 ## Now (Active Sprint)
 
 - [ ] `P0` Split `News` / `Cams` out of wallpaper rendering into a separate overlay runtime.
-  Status: live-media work is now isolated on branch `codex/live-media-rnd`. On `main`, `News` / `Cams` are intentionally disabled again so the rest of the application stays usable while overlay/windowing/feed problems are fixed separately.
+  Status: live-media work is now isolated on branch `codex/live-media-rnd`. On `main`, `News` / `Cams` are intentionally disabled again so the rest of the application stays usable while overlay/windowing/feed problems are fixed separately; the grayed tabs are also locked out of `LAY Ordering`, and their preview boxes stay hidden there while disabled.
   Done when: the experimental branch no longer creates dock/taskbar app windows, healthy sources render visibly instead of falling back to ticker-only output, and the result is good enough to merge back into `main`.
 
 - [ ] `P0` Add overlay ticker layers that can be filled dynamically by scripts.
