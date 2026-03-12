@@ -4,7 +4,7 @@ Dynamic desktop compositor (Rust) by diceteachbeograd-Team.
 
 Status: active hobby project (use at your own risk).
 
-Temporary note for release line `2026.03.11-9`:
+Temporary note for release line `2026.03.12-1`:
 - `Weather`, `News`, and `Cams` are still under active rework and are not yet considered fully reliable or visually finalized.
 - This note should be removed again after explicit functionality approval.
 
@@ -23,8 +23,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.11-9
-sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-9*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.12-1
+sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.12-1*.rpm
 le-compositeur
 ```
 
@@ -32,8 +32,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-9
-sudo apt install ./dist/le-compositeur_2026.03.11-9_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.12-1
+sudo apt install ./dist/le-compositeur_2026.03.12-1_amd64.deb
 le-compositeur
 ```
 
@@ -47,17 +47,18 @@ cargo run -p wc-gui
 - `Images`: background sources and wallpaper backend
 - `Quotes`: quote source and quote text settings
 - `Weather`: weather widget settings
-- `News`: news/video widget settings, including `wallpaper` vs `desktop overlay` render target
-- `Cams`: camera/webcam source and grid settings, including `wallpaper` vs `desktop overlay` render target
+- `News`: overlay-only live-news source, placement, and ticker settings
+- `Cams`: overlay-only camera source, grid, and placement settings
 - `System`: runtime, startup, integrations, and script-fed overlay ticker settings
 
 ## Notes
 - Weather + News widgets are disabled by default after first install.
 - Default background preset for new configs is now `PlaceCats 1920x1080` (`https://placecats.com/1920/1080`).
 - Some widgets require internet access (`Weather`, `News`, remote image/quote sources).
+- Weather panel now renders the minimap as a dedicated left block with separate metric tiles on the right; iconography is still under active refinement.
 - News widget size uses fixed 16:9 presets (dropdown).
 - News supports a secondary independent ticker (`show_news_ticker2`) with separate source/FPS/position/width.
-- News and Cams can now be moved out of the static wallpaper render path into a separate desktop overlay runtime.
+- News and Cams now run only as separate desktop overlays; the broken wallpaper render-target path was removed.
 - News now ships with a larger built-in world catalog: curated live channels plus region/country feed sources across Europe, the Americas, Africa, Asia, and Oceania.
 - News tab now includes a catalog filter so region/country/source can be searched directly in the GUI.
 - Feed-only sources are now treated honestly: in overlay mode they render as headline/ticker sources, not fake live video.

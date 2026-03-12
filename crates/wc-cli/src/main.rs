@@ -443,15 +443,11 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     if cfg.weather_refresh_seconds < 60 {
         anyhow::bail!("weather_refresh_seconds must be >= 60");
     }
-    if !["wallpaper", "overlay"]
-        .contains(&cfg.news_render_mode.trim().to_ascii_lowercase().as_str())
-    {
-        anyhow::bail!("news_render_mode must be wallpaper or overlay");
+    if !cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay") {
+        anyhow::bail!("news_render_mode must be overlay");
     }
-    if !["wallpaper", "overlay"]
-        .contains(&cfg.cams_render_mode.trim().to_ascii_lowercase().as_str())
-    {
-        anyhow::bail!("cams_render_mode must be wallpaper or overlay");
+    if !cfg.cams_render_mode.trim().eq_ignore_ascii_case("overlay") {
+        anyhow::bail!("cams_render_mode must be overlay");
     }
     if !(0.05..=30.0).contains(&cfg.news_fps) {
         anyhow::bail!("news_fps must be between 0.05 and 30.0");
@@ -459,7 +455,7 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     if cfg.news_refresh_seconds < 10 {
         anyhow::bail!("news_refresh_seconds must be >= 10");
     }
-    if news_widget_enabled(cfg)
+    if news_overlay_enabled(cfg)
         && cfg.news_source.trim().eq_ignore_ascii_case("custom")
         && cfg.news_custom_url.trim().is_empty()
     {
@@ -3251,23 +3247,25 @@ fn is_youtube_url(url: &str) -> bool {
 }
 
 fn news_widget_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_news_layer && !news_overlay_enabled(cfg)
+    let _ = cfg;
+    false
 }
 
 fn news_ticker2_enabled(cfg: &AppConfig) -> bool {
-    news_widget_enabled(cfg) && cfg.show_news_ticker2
+    cfg.show_news_layer && cfg.show_news_ticker2
 }
 
 fn news_overlay_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_news_layer && cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay")
+    cfg.show_news_layer
 }
 
 fn cams_widget_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_cams_layer && !cams_overlay_enabled(cfg)
+    let _ = cfg;
+    false
 }
 
 fn cams_overlay_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_cams_layer && cfg.cams_render_mode.trim().eq_ignore_ascii_case("overlay")
+    cfg.show_cams_layer
 }
 
 fn command_exists(cmd: &str) -> bool {
@@ -4239,14 +4237,15 @@ fn draw_weather_frame(img: &mut RgbaImage) {
 }
 
 fn draw_weather_pointer(img: &mut RgbaImage, cx: i32, cy: i32, wind_deg: f64, wind_speed: f64) {
-    let radius = 80.0_f64;
+    let radius = 88.0_f64;
+    let tip_offset = 18.0_f64;
     let rad = wind_deg.to_radians();
     let dx = rad.sin();
     let dy = -rad.cos();
     let sx = cx as f64 + dx * radius;
     let sy = cy as f64 + dy * radius;
-    let ex = cx as f64;
-    let ey = cy as f64;
+    let ex = cx as f64 + dx * tip_offset;
+    let ey = cy as f64 + dy * tip_offset;
     let lx = ex + (dx * 14.0) - (dy * 10.0);
     let ly = ey + (dy * 14.0) + (dx * 10.0);
     let rx = ex + (dx * 14.0) + (dy * 10.0);
@@ -4461,7 +4460,7 @@ mod tests {
     use wc_core::{BUILTIN_WIDGET_TYPE_IDS, default_config_toml, load_config};
 
     #[test]
-    fn loop_tick_follows_master_interval_and_animation_caps() {
+    fn loop_tick_follows_master_interval_when_live_media_is_overlay_only() {
         let cfg_path = std::env::temp_dir().join("wc-cli-loop-tick-test.toml");
         fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
         let mut cfg = load_config(&cfg_path).expect("default config should parse");
@@ -4473,7 +4472,7 @@ mod tests {
 
         cfg.show_news_layer = true;
         cfg.news_fps = 10.0;
-        assert!(loop_tick_duration(&cfg) <= Duration::from_millis(100));
+        assert_eq!(loop_tick_duration(&cfg), Duration::from_secs(15));
 
         cfg.show_news_layer = false;
         cfg.show_news_ticker2 = true;
@@ -4483,7 +4482,7 @@ mod tests {
         cfg.show_news_ticker2 = false;
         cfg.show_cams_layer = true;
         cfg.cams_fps = 9.0;
-        assert!(loop_tick_duration(&cfg) <= Duration::from_millis(120));
+        assert_eq!(loop_tick_duration(&cfg), Duration::from_secs(15));
     }
 
     #[test]

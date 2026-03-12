@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026.03.12-1 - 2026-03-12
+- Simplified live-media architecture for `News` and `Cams`:
+  - removed the broken `wallpaper` render-target path from defaults and GUI controls
+  - made `News` / `Cams` overlay-only so live media is no longer degraded into misleading still/ticker fallback inside wallpaper rendering
+  - aligned CLI validation, runtime gating, and loop-timing tests with the overlay-only model
+- Reworked the `Weather` wallpaper widget so changes are visually obvious:
+  - replaced the old monolithic text block with a structured panel layout
+  - added a larger minimap area with on-map city label
+  - split the right side into separate metric tiles for condition, temperature, feels-like, rain, wind, and humidity
+  - adjusted the wind-pointer drawing so source direction reads more clearly on the map
+- Synced release prep/docs for `2026.03.12-1` while keeping the temporary README warning that `Weather`, `News`, and `Cams` remain under active rework until explicit functionality approval.
+
 ## 2026.03.11-9 - 2026-03-11
 - Expanded shipped source selection for world news:
   - moved built-in news sources into a shared `wc-core` catalog used by both GUI and CLI

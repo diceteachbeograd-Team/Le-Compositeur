@@ -1,6 +1,6 @@
 # TODO and Progress
 
-Last updated: 2026-03-11
+Last updated: 2026-03-12
 
 ## Working Rules (must stay current)
 - Update this file in every feature/fix commit.
@@ -10,8 +10,8 @@ Last updated: 2026-03-11
 
 ## Current Snapshot
 - Repo branch: `main`
-- Latest published tag: `2026.03.11-9`
-- Next hotfix target tag: `2026.03.11-10`
+- Latest published tag: `2026.03.12-1`
+- Next hotfix target tag: `2026.03.12-2`
 - Local tests: passing (`cargo test --all`)
 - GUI tabs implemented: `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline
@@ -19,8 +19,8 @@ Last updated: 2026-03-11
 ## Now (Active Sprint)
 
 - [ ] `P0` Split `News` / `Cams` out of wallpaper rendering into a separate overlay runtime.
-  Status: config model, GUI render-target controls, CLI overlay runtime plan, helper-process spawning, and package/runtime player hints are wired on branch `codex/video-layout-hotfix`; remaining work is visual/runtime validation of smooth playback, real stream health, and release packaging on the Fedora VM.
-  Done when: `News` / `Cams` can run in overlay mode without being baked into the wallpaper image, and the GUI controls which mode is active.
+  Status: `wallpaper` mode has now been removed from config defaults and GUI for `News` / `Cams`; the live-media path is overlay-only, which removes the misleading still-image fallback. Remaining work is Fedora VM validation of real live playback plus a stronger verified source list for stable channels/cams.
+  Done when: `News` / `Cams` are overlay-only everywhere, the GUI no longer offers wallpaper mode, and the Fedora packaged build shows visible live video instead of ticker-only degradation for healthy sources.
 
 - [ ] `P0` Add overlay ticker layers that can be filled dynamically by scripts.
   Status: an independent overlay ticker is now configurable in `System`, writes JSON overlay state, and can render the first non-empty stdout line of a shell command; remaining work is runtime UX tuning and packaged-VM verification.
@@ -31,8 +31,8 @@ Last updated: 2026-03-11
   Done when: multiple configured cameras produce a visible grid distribution with source labels, and missing feeds degrade per-tile instead of collapsing to one large still.
 
 - [ ] `P1` Improve Weather widget metric layout and replace text-only pseudo-icons.
-  Status: minimap zoom and incoming wind-arrow logic are wired in code for the current branch, but the right-hand metrics still need compact icon-based layout and Fedora VM user validation of the map framing.
-  Done when: the map shows roughly city-scale coverage (~50 km radius), the wind arrow indicates source direction correctly, and the metrics fit beside the minimap with readable iconography rather than plain text rows.
+  Status: the weather panel now renders the minimap as a dedicated left block with visible metric tiles on the right, a city label on the map, and a clearer incoming-wind arrow placement. Remaining work is better iconography/art direction plus Fedora VM validation of the final proportions.
+  Done when: the map shows roughly city-scale coverage (~50 km radius), the wind arrow is visually unambiguous for source direction, and the right-side metrics read like a finished compact dashboard rather than a text fallback.
 
 - [ ] `P1` Improve ticker readability and motion smoothness.
   Status: the ticker currently advances as character-level text rotation, which makes movement readable enough for static snapshots but still visually jumpy in desktop use.
@@ -159,6 +159,8 @@ Last updated: 2026-03-11
 - [x] Fixed ffmpeg frame-cache timing resolution (ms stamp) to remove accidental 1 FPS cap.
 - [x] Added stream-aware background URL handling tied to `image_refresh_seconds`.
 - [x] Redesigned weather minimap wind overlay (red arrow + red speed) with generated fallback map.
+- [x] Removed `News` / `Cams` wallpaper mode from defaults + GUI so live media is overlay-only instead of pretending to work inside wallpaper rendering.
+- [x] Reworked the weather renderer from one caption block into a map-plus-metric-tile panel with explicit location/temperature/feels/rain/wind/humidity slots.
 - [x] Improved cams source fallback: YouTube thumbnail fallback without `yt-dlp` and richer source labels.
 - [x] Added capital-oriented cam presets with labeled custom-entry format (`Label => URL`) for meaningful CAM ticker names.
 - [x] Added async self-update process tracking in GUI (no more fire-and-forget update hang state).

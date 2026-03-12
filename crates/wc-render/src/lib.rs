@@ -377,6 +377,7 @@ fn render_with_imagemagick(
         let weather_size = text.weather_font_size.clamp(10, 220);
         let weather_box_w = text.weather_width.clamp(120, canvas_w.max(120));
         let weather_box_h = text.weather_height.clamp(80, canvas_h.max(80));
+        let weather_panel = parse_weather_panel_text(text.weather);
 
         // Cyber panel background behind weather minimap + metrics.
         args.push("(".to_string());
@@ -390,12 +391,12 @@ fn render_with_imagemagick(
         args.push(format!("+{}+{}", text.weather_pos_x, text.weather_pos_y));
         args.push("-composite".to_string());
 
-        let mut weather_text_x = text.weather_pos_x;
-        let mut weather_text_w = weather_box_w;
+        let mut weather_text_x = text.weather_pos_x.saturating_add(8);
+        let mut weather_text_w = weather_box_w.saturating_sub(16);
         if let Some(map_img) = text.weather_map_image
             && map_img.exists()
         {
-            let map_w = (weather_box_w.saturating_mul(42) / 100)
+            let map_w = (weather_box_w.saturating_mul(48) / 100)
                 .max(120)
                 .min(weather_box_w.saturating_sub(80));
             let map_h = weather_box_h.saturating_sub(16).max(64);
@@ -427,34 +428,160 @@ fn render_with_imagemagick(
                 .saturating_add(map_w as i32)
                 .saturating_add(16);
             weather_text_w = weather_box_w.saturating_sub(map_w).saturating_sub(22);
+
+            push_weather_badge(
+                &mut args,
+                text.weather_pos_x.saturating_add(16),
+                text.weather_pos_y
+                    .saturating_add(weather_box_h as i32)
+                    .saturating_sub(42),
+                map_w.saturating_sub(16).max(96),
+                26,
+                &weather_panel.location,
+                "DejaVu-Sans-Mono",
+                15,
+                "#FF6565",
+                "#08161EE6",
+            );
         }
 
-        args.push("(".to_string());
-        args.push("-background".to_string());
-        args.push("none".to_string());
-        args.push("-size".to_string());
-        args.push(format!("{}x{}", weather_text_w, weather_box_h));
-        args.push("-fill".to_string());
-        args.push(text.weather_color.to_string());
-        args.push("-stroke".to_string());
-        args.push(text.weather_stroke_color.to_string());
-        args.push("-strokewidth".to_string());
-        args.push(text.weather_stroke_width.min(20).to_string());
-        args.push("-undercolor".to_string());
-        args.push(text.weather_undercolor.to_string());
-        args.push("-gravity".to_string());
-        args.push("West".to_string());
-        args.push("-font".to_string());
-        args.push(text.weather_font_family.to_string());
-        args.push("-pointsize".to_string());
-        args.push(weather_size.to_string());
-        args.push(format!("caption:{}", text.weather));
-        args.push(")".to_string());
-        args.push("-gravity".to_string());
-        args.push("NorthWest".to_string());
-        args.push("-geometry".to_string());
-        args.push(format!("+{}+{}", weather_text_x, text.weather_pos_y));
-        args.push("-composite".to_string());
+        let inner_h = weather_box_h.saturating_sub(16);
+        let gap = 8_i32;
+        let location_h = ((inner_h as f32) * 0.20).round() as u32;
+        let row1_h = ((inner_h as f32) * 0.28).round() as u32;
+        let row2_h = ((inner_h as f32) * 0.24).round() as u32;
+        let location_h = location_h.clamp(26, 42);
+        let row1_h = row1_h.clamp(34, 64);
+        let row2_h = row2_h.clamp(30, 56);
+        let used_h = location_h
+            .saturating_add(row1_h)
+            .saturating_add(row2_h)
+            .saturating_add((gap * 3) as u32);
+        let row3_h = inner_h.saturating_sub(used_h).max(26);
+        let col_gap = 8_u32;
+        let col_w = weather_text_w
+            .saturating_sub(col_gap)
+            .saturating_div(2)
+            .max(88);
+        let right_col_w = weather_text_w.saturating_sub(col_w).saturating_sub(col_gap);
+        let tile_bg = "#081A24D8";
+        let tile_border = "#133040DD";
+        let title_size = ((weather_size as f32) * 0.42).round() as u32;
+        let title_size = title_size.clamp(10, 20);
+        let value_large = weather_size.clamp(16, 64);
+        let value_medium = ((weather_size as f32) * 0.72).round() as u32;
+        let value_medium = value_medium.clamp(14, 40);
+        let value_small = ((weather_size as f32) * 0.62).round() as u32;
+        let value_small = value_small.clamp(12, 32);
+        let mut row_y = text.weather_pos_y.saturating_add(8);
+
+        push_weather_badge(
+            &mut args,
+            weather_text_x,
+            row_y,
+            weather_text_w,
+            location_h,
+            &weather_panel.location,
+            text.weather_font_family,
+            value_small,
+            "#DCEBFF",
+            "#071B25D9",
+        );
+        row_y = row_y.saturating_add(location_h as i32).saturating_add(gap);
+
+        push_weather_tile(
+            &mut args,
+            weather_text_x,
+            row_y,
+            col_w,
+            row1_h,
+            &weather_panel.condition,
+            &weather_panel.temp,
+            text.weather_font_family,
+            title_size,
+            value_large,
+            text.weather_color,
+            text.weather_stroke_color,
+            text.weather_stroke_width.min(20),
+            tile_bg,
+            tile_border,
+        );
+        push_weather_tile(
+            &mut args,
+            weather_text_x
+                .saturating_add(col_w as i32)
+                .saturating_add(col_gap as i32),
+            row_y,
+            right_col_w,
+            row1_h,
+            "FEELS",
+            &weather_panel.feels,
+            text.weather_font_family,
+            title_size,
+            value_large,
+            "#FFD88A",
+            text.weather_stroke_color,
+            text.weather_stroke_width.min(20),
+            tile_bg,
+            tile_border,
+        );
+        row_y = row_y.saturating_add(row1_h as i32).saturating_add(gap);
+
+        push_weather_tile(
+            &mut args,
+            weather_text_x,
+            row_y,
+            col_w,
+            row2_h,
+            "RAIN",
+            &weather_panel.rain,
+            text.weather_font_family,
+            title_size,
+            value_medium,
+            "#8DE6FF",
+            text.weather_stroke_color,
+            text.weather_stroke_width.min(20),
+            tile_bg,
+            tile_border,
+        );
+        push_weather_tile(
+            &mut args,
+            weather_text_x
+                .saturating_add(col_w as i32)
+                .saturating_add(col_gap as i32),
+            row_y,
+            right_col_w,
+            row2_h,
+            "WIND",
+            &weather_panel.wind,
+            text.weather_font_family,
+            title_size,
+            value_medium,
+            "#FF7A7A",
+            text.weather_stroke_color,
+            text.weather_stroke_width.min(20),
+            tile_bg,
+            tile_border,
+        );
+        row_y = row_y.saturating_add(row2_h as i32).saturating_add(gap);
+
+        push_weather_tile(
+            &mut args,
+            weather_text_x,
+            row_y,
+            weather_text_w,
+            row3_h,
+            "HUMIDITY",
+            &weather_panel.humidity,
+            text.weather_font_family,
+            title_size,
+            value_medium,
+            "#9EFFF1",
+            text.weather_stroke_color,
+            text.weather_stroke_width.min(20),
+            tile_bg,
+            tile_border,
+        );
     }
 
     if !text.news.trim().is_empty() {
@@ -662,6 +789,235 @@ fn render_with_imagemagick(
         .map_err(|e| format!("failed to run {cmd}: {e}"))?;
 
     Ok(status.success())
+}
+
+#[derive(Debug, Default, Clone)]
+struct WeatherPanelText {
+    location: String,
+    condition: String,
+    temp: String,
+    feels: String,
+    rain: String,
+    wind: String,
+    humidity: String,
+}
+
+fn parse_weather_panel_text(input: &str) -> WeatherPanelText {
+    let lines = input
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    let location = lines.first().copied().unwrap_or("Weather").to_string();
+    let condition_line = lines.get(1).copied().unwrap_or_default();
+    let wind_line = lines.get(2).copied().unwrap_or_default();
+    let humidity_line = lines.get(3).copied().unwrap_or_default();
+
+    let (condition, temp, feels) = parse_condition_line(condition_line);
+    let (rain, wind) = parse_wind_line(wind_line);
+    let humidity = humidity_line
+        .strip_prefix("Humidity ")
+        .unwrap_or(humidity_line)
+        .trim()
+        .to_string();
+
+    WeatherPanelText {
+        location,
+        condition,
+        temp,
+        feels,
+        rain,
+        wind,
+        humidity: if humidity.is_empty() {
+            "--".to_string()
+        } else {
+            humidity
+        },
+    }
+}
+
+fn parse_condition_line(line: &str) -> (String, String, String) {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return ("NOW".to_string(), "--".to_string(), "--".to_string());
+    }
+
+    let (left, feels) = if let Some((lhs, rhs)) = trimmed.split_once(" feels ") {
+        (lhs.trim(), rhs.trim())
+    } else {
+        (trimmed, "--")
+    };
+    let mut tokens = left.split_whitespace().collect::<Vec<_>>();
+    let temp = tokens.pop().unwrap_or("--").to_string();
+    let condition = if tokens.is_empty() {
+        "NOW".to_string()
+    } else {
+        tokens.join(" ")
+    };
+    let feels = if feels.is_empty() {
+        "--".to_string()
+    } else {
+        feels.to_string()
+    };
+    (condition, temp, feels)
+}
+
+fn parse_wind_line(line: &str) -> (String, String) {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return ("--".to_string(), "--".to_string());
+    }
+    if let Some((rain_part, wind_part)) = trimmed.split_once("Wind ") {
+        let rain = rain_part
+            .trim()
+            .strip_prefix("Rain ")
+            .unwrap_or(rain_part.trim())
+            .trim();
+        let wind = wind_part.trim();
+        return (
+            if rain.is_empty() {
+                "--".to_string()
+            } else {
+                rain.to_string()
+            },
+            if wind.is_empty() {
+                "--".to_string()
+            } else {
+                wind.to_string()
+            },
+        );
+    }
+    ("--".to_string(), trimmed.to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_weather_badge(
+    args: &mut Vec<String>,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    value: &str,
+    font: &str,
+    size: u32,
+    fill: &str,
+    background: &str,
+) {
+    if value.trim().is_empty() {
+        return;
+    }
+    args.push("(".to_string());
+    args.push("-size".to_string());
+    args.push(format!("{}x{}", w.max(32), h.max(18)));
+    args.push("xc:none".to_string());
+    args.push("-background".to_string());
+    args.push("none".to_string());
+    args.push("-fill".to_string());
+    args.push(background.to_string());
+    args.push("-stroke".to_string());
+    args.push("none".to_string());
+    args.push("-draw".to_string());
+    args.push(format!(
+        "roundrectangle 0,0 {},{} 10,10",
+        w.saturating_sub(1),
+        h.saturating_sub(1)
+    ));
+    args.push("-fill".to_string());
+    args.push(fill.to_string());
+    args.push("-stroke".to_string());
+    args.push("none".to_string());
+    args.push("-gravity".to_string());
+    args.push("West".to_string());
+    args.push("-font".to_string());
+    args.push(font.to_string());
+    args.push("-pointsize".to_string());
+    args.push(size.max(10).to_string());
+    args.push("-annotate".to_string());
+    args.push("+12+0".to_string());
+    args.push(value.replace(['\n', '\r'], " "));
+    args.push(")".to_string());
+    args.push("-gravity".to_string());
+    args.push("NorthWest".to_string());
+    args.push("-geometry".to_string());
+    args.push(format!("+{}+{}", x, y));
+    args.push("-composite".to_string());
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_weather_tile(
+    args: &mut Vec<String>,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    title: &str,
+    value: &str,
+    font: &str,
+    title_size: u32,
+    value_size: u32,
+    fill: &str,
+    stroke: &str,
+    stroke_width: u32,
+    background: &str,
+    border: &str,
+) {
+    let clean_value = if value.trim().is_empty() {
+        "--".to_string()
+    } else {
+        value.replace(['\n', '\r'], " ")
+    };
+    args.push("(".to_string());
+    args.push("-size".to_string());
+    args.push(format!("{}x{}", w.max(48), h.max(24)));
+    args.push("xc:none".to_string());
+    args.push("-background".to_string());
+    args.push("none".to_string());
+    args.push("-fill".to_string());
+    args.push(background.to_string());
+    args.push("-stroke".to_string());
+    args.push(border.to_string());
+    args.push("-strokewidth".to_string());
+    args.push("1".to_string());
+    args.push("-draw".to_string());
+    args.push(format!(
+        "roundrectangle 0,0 {},{} 12,12",
+        w.saturating_sub(1),
+        h.saturating_sub(1)
+    ));
+    args.push("-fill".to_string());
+    args.push("#93A9BA".to_string());
+    args.push("-stroke".to_string());
+    args.push("none".to_string());
+    args.push("-gravity".to_string());
+    args.push("NorthWest".to_string());
+    args.push("-font".to_string());
+    args.push("DejaVu-Sans-Mono".to_string());
+    args.push("-pointsize".to_string());
+    args.push(title_size.max(10).to_string());
+    args.push("-annotate".to_string());
+    args.push("+12+10".to_string());
+    args.push(title.to_string());
+    args.push("-fill".to_string());
+    args.push(fill.to_string());
+    args.push("-stroke".to_string());
+    args.push(stroke.to_string());
+    args.push("-strokewidth".to_string());
+    args.push(stroke_width.max(1).to_string());
+    args.push("-gravity".to_string());
+    args.push("SouthWest".to_string());
+    args.push("-font".to_string());
+    args.push(font.to_string());
+    args.push("-pointsize".to_string());
+    args.push(value_size.max(12).to_string());
+    args.push("-annotate".to_string());
+    args.push("+12+10".to_string());
+    args.push(clean_value);
+    args.push(")".to_string());
+    args.push("-gravity".to_string());
+    args.push("NorthWest".to_string());
+    args.push("-geometry".to_string());
+    args.push(format!("+{}+{}", x, y));
+    args.push("-composite".to_string());
 }
 
 fn split_quote_and_author(input: &str) -> (String, Option<String>) {

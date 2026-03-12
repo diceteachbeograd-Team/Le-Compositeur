@@ -230,7 +230,7 @@ weather_use_system_location = true
 weather_location_override = ""
 news_source = "euronews"
 news_custom_url = ""
-news_render_mode = "wallpaper"
+news_render_mode = "overlay"
 news_fps = 1.0
 news_refresh_seconds = 90
 news_audio_enabled = false
@@ -247,7 +247,7 @@ cams_pos_y = 640
 cams_widget_width = 760
 cams_widget_height = 428
 cams_source = "auto_local"
-cams_render_mode = "wallpaper"
+cams_render_mode = "overlay"
 cams_custom_urls = ""
 cams_refresh_seconds = 75
 cams_fps = 1.0
@@ -473,7 +473,7 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"weather_location_override","group":"wallpaper","label":"Weather Location Override","type":"string","required":false,"default":"","visible_when":{"field":"weather_use_system_location","equals":false},"enabled_when":{"field":"weather_use_system_location","equals":false}},
     {"key":"news_source","group":"wallpaper","label":"News Source","type":"string","required":false,"default":"euronews"},
     {"key":"news_custom_url","group":"wallpaper","label":"News Custom URL","type":"string","required":false,"default":"","visible_when":{"field":"news_source","equals":"custom"},"enabled_when":{"field":"news_source","equals":"custom"}},
-    {"key":"news_render_mode","group":"wallpaper","label":"News Render Mode","type":"enum","required":false,"default":"wallpaper","options":["wallpaper","overlay"]},
+    {"key":"news_render_mode","group":"wallpaper","label":"News Render Mode","type":"enum","required":false,"default":"overlay","options":["overlay"]},
     {"key":"news_fps","group":"wallpaper","label":"News FPS","type":"f32","required":false,"default":1.0},
     {"key":"news_refresh_seconds","group":"wallpaper","label":"News Refresh Seconds","type":"u64","required":false,"default":90},
     {"key":"news_audio_enabled","group":"wallpaper","label":"News Audio Enabled","type":"bool","required":false,"default":false},
@@ -490,7 +490,7 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"cams_widget_width","group":"wallpaper","label":"Cams Widget Width","type":"u32","required":false,"default":760},
     {"key":"cams_widget_height","group":"wallpaper","label":"Cams Widget Height","type":"u32","required":false,"default":428},
     {"key":"cams_source","group":"wallpaper","label":"Cams Source","type":"enum","required":false,"default":"auto_local","options":["auto_local","city_public","custom"]},
-    {"key":"cams_render_mode","group":"wallpaper","label":"Cams Render Mode","type":"enum","required":false,"default":"wallpaper","options":["wallpaper","overlay"]},
+    {"key":"cams_render_mode","group":"wallpaper","label":"Cams Render Mode","type":"enum","required":false,"default":"overlay","options":["overlay"]},
     {"key":"cams_custom_urls","group":"wallpaper","label":"Cams Custom URLs","type":"string","required":false,"default":"","visible_when":{"field":"cams_source","equals":"custom"},"enabled_when":{"field":"cams_source","equals":"custom"}},
     {"key":"cams_refresh_seconds","group":"wallpaper","label":"Cams Refresh Seconds","type":"u64","required":false,"default":75},
     {"key":"cams_fps","group":"wallpaper","label":"Cams FPS","type":"f32","required":false,"default":1.0},
@@ -951,7 +951,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         weather_location_override: weather_location_override.unwrap_or_default(),
         news_source: news_source.unwrap_or_else(|| "euronews".to_string()),
         news_custom_url: news_custom_url.unwrap_or_default(),
-        news_render_mode: news_render_mode.unwrap_or_else(|| "wallpaper".to_string()),
+        news_render_mode: normalize_live_media_render_mode(news_render_mode),
         news_fps: news_fps.unwrap_or(1.0).clamp(0.05, 30.0),
         news_refresh_seconds: news_refresh_seconds.unwrap_or(90).max(10),
         news_audio_enabled: news_audio_enabled.unwrap_or(false),
@@ -968,7 +968,7 @@ fn parse_config_toml_like(raw: &str) -> Result<AppConfig> {
         cams_widget_width: cams_widget_width.unwrap_or(760).clamp(180, 1920),
         cams_widget_height: cams_widget_height.unwrap_or(428).clamp(120, 1080),
         cams_source: cams_source.unwrap_or_else(|| "auto_local".to_string()),
-        cams_render_mode: cams_render_mode.unwrap_or_else(|| "wallpaper".to_string()),
+        cams_render_mode: normalize_live_media_render_mode(cams_render_mode),
         cams_custom_urls: cams_custom_urls.unwrap_or_default(),
         cams_refresh_seconds: cams_refresh_seconds.unwrap_or(75).max(10),
         cams_fps: cams_fps.unwrap_or(1.0).clamp(0.05, 30.0),
@@ -1032,6 +1032,11 @@ fn parse_bool(value: &str) -> Option<bool> {
         "false" => Some(false),
         _ => None,
     }
+}
+
+fn normalize_live_media_render_mode(input: Option<String>) -> String {
+    let _ = input;
+    "overlay".to_string()
 }
 
 fn parse_u32(value: &str) -> Option<u32> {
@@ -1651,8 +1656,8 @@ mod tests {
         assert_eq!(cfg.wallpaper_fit_mode, "zoom");
         assert_eq!(cfg.image_refresh_seconds, 300);
         assert_eq!(cfg.quote_refresh_seconds, 300);
-        assert_eq!(cfg.news_render_mode, "wallpaper");
-        assert_eq!(cfg.cams_render_mode, "wallpaper");
+        assert_eq!(cfg.news_render_mode, "overlay");
+        assert_eq!(cfg.cams_render_mode, "overlay");
         assert!(!cfg.overlay_script_ticker_enabled);
         assert_eq!(cfg.overlay_script_ticker_refresh_seconds, 30);
         assert_eq!(cfg.overlay_script_ticker_width, 1280);

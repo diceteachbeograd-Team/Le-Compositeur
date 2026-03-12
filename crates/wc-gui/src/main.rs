@@ -2855,32 +2855,17 @@ impl WcGuiApp {
     }
 
     fn render_news_tab(&mut self, ui: &mut egui::Ui) {
+        self.cfg.news_render_mode = "overlay".to_string();
         settings_section(
             ui,
             "Primary Stream",
             "Configurable live/news stream source in fixed 16:9 widget frame.",
             |ui| {
-                ui.checkbox(&mut self.cfg.show_news_layer, "Enable news widget");
-                ui.horizontal(|ui| {
-                    ui.label("Render target");
-                    egui::ComboBox::from_id_salt("news_render_mode_tab")
-                        .selected_text(match self.cfg.news_render_mode.as_str() {
-                            "overlay" => "Desktop overlay",
-                            _ => "Wallpaper",
-                        })
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.cfg.news_render_mode,
-                                "wallpaper".to_string(),
-                                "Wallpaper",
-                            );
-                            ui.selectable_value(
-                                &mut self.cfg.news_render_mode,
-                                "overlay".to_string(),
-                                "Desktop overlay",
-                            );
-                        });
-                });
+                ui.checkbox(&mut self.cfg.show_news_layer, "Enable news overlay");
+                ui.colored_label(
+                    egui::Color32::from_rgb(140, 214, 255),
+                    "Live news video runs as a separate desktop overlay. Wallpaper mode was removed because snapshot fallback hid or degraded the stream.",
+                );
                 ui.horizontal(|ui| {
                     ui.label("Catalog filter");
                     ui.add(
@@ -2940,10 +2925,10 @@ impl WcGuiApp {
                     ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
                         .on_hover_text(self.hover_text("news_audio_enabled"));
                 });
-                if self.cfg.news_render_mode == "overlay" {
+                if self.cfg.show_news_layer {
                     ui.colored_label(
                         egui::Color32::from_rgb(140, 214, 255),
-                        "News video will be started as a separate overlay window instead of being baked into the wallpaper.",
+                        "Selected live-capable sources open a dedicated overlay window plus ticker. Feed-only sources stay ticker-only by design.",
                     );
                     if !news_source_supports_live_video(
                         &self.cfg.news_source,
@@ -3073,32 +3058,17 @@ impl WcGuiApp {
     }
 
     fn render_cams_tab(&mut self, ui: &mut egui::Ui) {
+        self.cfg.cams_render_mode = "overlay".to_string();
         settings_section(
             ui,
             "Source & Presets",
             "Public/private camera feeds with optional custom URL lists.",
             |ui| {
-                ui.checkbox(&mut self.cfg.show_cams_layer, "Enable cams widget");
-                ui.horizontal(|ui| {
-                    ui.label("Render target");
-                    egui::ComboBox::from_id_salt("cams_render_mode_tab")
-                        .selected_text(match self.cfg.cams_render_mode.as_str() {
-                            "overlay" => "Desktop overlay",
-                            _ => "Wallpaper",
-                        })
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.cfg.cams_render_mode,
-                                "wallpaper".to_string(),
-                                "Wallpaper",
-                            );
-                            ui.selectable_value(
-                                &mut self.cfg.cams_render_mode,
-                                "overlay".to_string(),
-                                "Desktop overlay",
-                            );
-                        });
-                });
+                ui.checkbox(&mut self.cfg.show_cams_layer, "Enable cams overlay");
+                ui.colored_label(
+                    egui::Color32::from_rgb(140, 214, 255),
+                    "Camera feeds run as desktop overlays only. Wallpaper mode was removed because still/ticker fallback was misleading and not useful for surveillance.",
+                );
                 ui.horizontal(|ui| {
                     ui.label("Source mode");
                     egui::ComboBox::from_id_salt("cams_source_tab")
@@ -3208,14 +3178,14 @@ impl WcGuiApp {
                             .range(10..=3600),
                     );
                 });
-                if self.cfg.cams_render_mode == "overlay" {
+                if self.cfg.show_cams_layer {
                     ui.colored_label(
                         egui::Color32::from_rgb(140, 214, 255),
-                        "Each camera feed will be launched as a separate overlay window tile instead of a wallpaper snapshot grid.",
+                        "Each camera feed is launched as its own overlay tile in the configured grid.",
                     );
                     ui.colored_label(
                         egui::Color32::from_rgb(255, 200, 110),
-                        "Built-in public cam presets are a mixed starter list. For stable live video use direct YouTube/HLS/RTSP URLs plus mpv.",
+                        "Built-in public cam presets are only a starter list. Stable live video needs direct YouTube/HLS/RTSP sources plus mpv.",
                     );
                 }
             },
@@ -4799,7 +4769,7 @@ fn default_cfg() -> AppConfig {
         weather_location_override: String::new(),
         news_source: "euronews".to_string(),
         news_custom_url: String::new(),
-        news_render_mode: "wallpaper".to_string(),
+        news_render_mode: "overlay".to_string(),
         news_fps: 1.0,
         news_refresh_seconds: 90,
         news_audio_enabled: false,
@@ -4816,7 +4786,7 @@ fn default_cfg() -> AppConfig {
         cams_widget_width: 760,
         cams_widget_height: 428,
         cams_source: "auto_local".to_string(),
-        cams_render_mode: "wallpaper".to_string(),
+        cams_render_mode: "overlay".to_string(),
         cams_custom_urls: String::new(),
         cams_refresh_seconds: 75,
         cams_fps: 1.0,
