@@ -7,6 +7,7 @@ Status: active hobby project (use at your own risk).
 Temporary note for release line `2026.03.12-1`:
 - `Weather`, `News`, and `Cams` are still under active rework and are not yet considered fully reliable or visually finalized.
 - This note should be removed again after explicit functionality approval.
+- On `main`, `News` and `Cams` are temporarily disabled while live-overlay development continues on branch `codex/live-media-rnd`.
 
 ## Download (Latest)
 - Direct link: [github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest](https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest)
@@ -47,21 +48,17 @@ cargo run -p wc-gui
 - `Images`: background sources and wallpaper backend
 - `Quotes`: quote source and quote text settings
 - `Weather`: weather widget settings
-- `News`: overlay-only live-news source, placement, and ticker settings
-- `Cams`: overlay-only camera source, grid, and placement settings
+- `News`: temporarily disabled on `main`
+- `Cams`: temporarily disabled on `main`
 - `System`: runtime, startup, integrations, and script-fed overlay ticker settings
 
 ## Notes
 - Weather + News widgets are disabled by default after first install.
 - Default background preset for new configs is now `PlaceCats 1920x1080` (`https://placecats.com/1920/1080`).
 - Some widgets require internet access (`Weather`, `News`, remote image/quote sources).
-- Weather panel now renders the minimap as a dedicated left block with separate metric tiles on the right; iconography is still under active refinement.
-- News widget size uses fixed 16:9 presets (dropdown).
-- News supports a secondary independent ticker (`show_news_ticker2`) with separate source/FPS/position/width.
-- News and Cams now run only as separate desktop overlays; the broken wallpaper render-target path was removed.
-- News now ships with a larger built-in world catalog: curated live channels plus region/country feed sources across Europe, the Americas, Africa, Asia, and Oceania.
-- News tab now includes a catalog filter so region/country/source can be searched directly in the GUI.
-- Feed-only sources are now treated honestly: in overlay mode they render as headline/ticker sources, not fake live video.
+- Weather panel on `main` stays on the stable fitted layout while the more ambitious visual/icon rework continues separately.
+- `News` / `Cams` are intentionally disabled on `main` until the live-overlay branch solves windowing, feed health, and visible playback correctly.
+- Live-media R&D continues on branch `codex/live-media-rnd`; it is not considered production-ready for normal desktop use yet.
 - System tab includes an independent overlay ticker that can be filled by any shell command; the first non-empty stdout line is rendered as the scrolling text.
 - Example script ticker command: `printf 'Build %s | %s\n' "$(date +%H:%M)" "$(cat /tmp/le-compositeur-ticker.txt 2>/dev/null)"`.
 - Overlay live video currently expects `mpv` on the target system; YouTube-like sources are more reliable when `yt-dlp` is installed as well.

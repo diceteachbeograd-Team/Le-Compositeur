@@ -46,6 +46,7 @@ const WEATHER_MAP_TILE_SIZE: u32 = 256;
 const WEATHER_MAP_TARGET_RADIUS_KM: f64 = 50.0;
 const STREAM_CAPTURE_TIMEOUT_SECS: u64 = 4;
 const YOUTUBE_PAGE_TIMEOUT_SECS: u64 = 4;
+const LIVE_MEDIA_EXPERIMENTAL_ENABLED: bool = false;
 
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
@@ -3252,11 +3253,12 @@ fn news_widget_enabled(cfg: &AppConfig) -> bool {
 }
 
 fn news_ticker2_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_news_layer && cfg.show_news_ticker2
+    let _ = cfg;
+    false
 }
 
 fn news_overlay_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_news_layer
+    cfg.show_news_layer && LIVE_MEDIA_EXPERIMENTAL_ENABLED
 }
 
 fn cams_widget_enabled(cfg: &AppConfig) -> bool {
@@ -3265,7 +3267,7 @@ fn cams_widget_enabled(cfg: &AppConfig) -> bool {
 }
 
 fn cams_overlay_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_cams_layer
+    cfg.show_cams_layer && LIVE_MEDIA_EXPERIMENTAL_ENABLED
 }
 
 fn command_exists(cmd: &str) -> bool {
@@ -4584,7 +4586,7 @@ mod tests {
     }
 
     #[test]
-    fn overlay_runtime_plan_moves_live_media_out_of_wallpaper_path() {
+    fn overlay_runtime_plan_keeps_live_media_disabled_on_main() {
         let cfg_path = std::env::temp_dir().join("wc-cli-overlay-plan.toml");
         fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
         let mut cfg = load_config(&cfg_path).expect("default config should parse");
@@ -4607,10 +4609,8 @@ mod tests {
         assert!(!cams.enabled);
 
         let plan = build_overlay_runtime_plan(&cfg, 0).expect("overlay plan");
-        assert_eq!(plan.videos.len(), 3);
-        assert_eq!(plan.tickers.len(), 3);
-        assert!(plan.tickers.iter().any(|ticker| ticker.id == "news"));
-        assert!(plan.tickers.iter().any(|ticker| ticker.id == "cams"));
+        assert!(plan.videos.is_empty());
+        assert_eq!(plan.tickers.len(), 1);
         assert!(
             plan.tickers
                 .iter()
@@ -4621,7 +4621,7 @@ mod tests {
     }
 
     #[test]
-    fn overlay_runtime_plan_keeps_feed_only_news_as_ticker_only() {
+    fn overlay_runtime_plan_drops_news_when_live_media_is_disabled() {
         let cfg_path = std::env::temp_dir().join("wc-cli-overlay-feed-only.toml");
         fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
         let mut cfg = load_config(&cfg_path).expect("default config should parse");
@@ -4634,7 +4634,7 @@ mod tests {
 
         let plan = build_overlay_runtime_plan(&cfg, 0).expect("overlay plan");
         assert!(plan.videos.is_empty());
-        assert!(plan.tickers.iter().any(|ticker| ticker.id == "news"));
+        assert!(plan.tickers.is_empty());
 
         let _ = fs::remove_file(cfg_path);
     }

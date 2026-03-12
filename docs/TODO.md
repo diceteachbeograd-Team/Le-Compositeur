@@ -10,6 +10,7 @@ Last updated: 2026-03-12
 
 ## Current Snapshot
 - Repo branch: `main`
+- Experimental live-media branch: `codex/live-media-rnd`
 - Latest published tag: `2026.03.12-1`
 - Next hotfix target tag: `2026.03.12-2`
 - Local tests: passing (`cargo test --all`)
@@ -19,8 +20,8 @@ Last updated: 2026-03-12
 ## Now (Active Sprint)
 
 - [ ] `P0` Split `News` / `Cams` out of wallpaper rendering into a separate overlay runtime.
-  Status: `wallpaper` mode has now been removed from config defaults and GUI for `News` / `Cams`; the live-media path is overlay-only, which removes the misleading still-image fallback. Remaining work is Fedora VM validation of real live playback plus a stronger verified source list for stable channels/cams.
-  Done when: `News` / `Cams` are overlay-only everywhere, the GUI no longer offers wallpaper mode, and the Fedora packaged build shows visible live video instead of ticker-only degradation for healthy sources.
+  Status: live-media work is now isolated on branch `codex/live-media-rnd`. On `main`, `News` / `Cams` are intentionally disabled again so the rest of the application stays usable while overlay/windowing/feed problems are fixed separately.
+  Done when: the experimental branch no longer creates dock/taskbar app windows, healthy sources render visibly instead of falling back to ticker-only output, and the result is good enough to merge back into `main`.
 
 - [ ] `P0` Add overlay ticker layers that can be filled dynamically by scripts.
   Status: an independent overlay ticker is now configurable in `System`, writes JSON overlay state, and can render the first non-empty stdout line of a shell command; remaining work is runtime UX tuning and packaged-VM verification.
@@ -31,8 +32,8 @@ Last updated: 2026-03-12
   Done when: multiple configured cameras produce a visible grid distribution with source labels, and missing feeds degrade per-tile instead of collapsing to one large still.
 
 - [ ] `P1` Improve Weather widget metric layout and replace text-only pseudo-icons.
-  Status: the weather panel now renders the minimap as a dedicated left block with visible metric tiles on the right, a city label on the map, and a clearer incoming-wind arrow placement. Remaining work is better iconography/art direction plus Fedora VM validation of the final proportions.
-  Done when: the map shows roughly city-scale coverage (~50 km radius), the wind arrow is visually unambiguous for source direction, and the right-side metrics read like a finished compact dashboard rather than a text fallback.
+  Status: the ambitious weather-panel redesign is also being treated as experimental; `main` keeps the previous fitted layout so weather remains readable while the visual/icon pass continues separately.
+  Done when: the redesigned weather panel is at least as readable as the pre-redesign version at default widget sizes and passes real VM validation before merge.
 
 - [ ] `P1` Improve ticker readability and motion smoothness.
   Status: the ticker currently advances as character-level text rotation, which makes movement readable enough for static snapshots but still visually jumpy in desktop use.

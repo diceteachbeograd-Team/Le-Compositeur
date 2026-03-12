@@ -10,23 +10,24 @@ Use it together with `docs/TODO.md`.
 ## Current Workstream
 
 Active focus:
-1. Keep `News` / `Cams` on the simplified overlay-only path and validate it with real live sources on the Fedora VM.
-2. Add script-fed overlay ticker layers on top of that overlay runtime.
-3. Restore visible multi-source CAM grid output for custom camera lists and keep per-source labels readable.
-4. Tighten Weather widget layout and finish the visual/icon pass after the new metric-tile layout.
-5. Keep the temporary `README.md` warning until explicit functionality approval for `Weather` / `News` / `Cams`.
-6. Keep growing the shipped source catalogs so world-news selection is broad without pretending feed-only sources are live video.
+1. Keep `main` stable: `News` / `Cams` disabled, weather readable, rest of app usable.
+2. Continue live-media R&D only on branch `codex/live-media-rnd`.
+3. Fix overlay windowing so video/ticker helpers no longer appear as normal dock/taskbar apps.
+4. Restore visible multi-source CAM grid output for custom camera lists and keep per-source labels readable.
+5. Rework Weather visuals only after the redesigned panel is at least as readable as the old fitted layout.
+6. Keep the temporary `README.md` warning until explicit functionality approval for `Weather` / `News` / `Cams`.
 
 Current branch state:
-- `News` / `Cams` wallpaper mode has been removed from defaults and GUI; the live-media path is now intentionally overlay-only.
+- `main` now force-disables `News` / `Cams` again so unfinished live-overlay work does not break normal desktop use.
+- Experimental live-media work is preserved on branch `codex/live-media-rnd`.
 - `System` tab now exposes a script-fed overlay ticker; runtime uses the first non-empty stdout line from the configured command.
 - Schema/blueprint metadata were updated so the new overlay fields round-trip cleanly and are visible to contract consumers.
 - Local smoke tests can suppress real overlay windows with `WC_DISABLE_OVERLAY_HELPERS=1`; this was added after a host-side ticker smoke opened a visible overlay outside the VM.
 - Packaging/runtime notes now explicitly treat `mpv` as the live-overlay player dependency, with `yt-dlp` as a useful YouTube helper.
 - Built-in news sources now live in a shared `wc-core` catalog with world-region/country coverage and GUI-side filtering.
 - New default configs start with the `PlaceCats 1920x1080` image preset instead of the older random preset/local default.
-- Weather renderer now uses a structured minimap + metric-tile panel instead of the former single text block.
-- Remaining gap is visual/runtime validation on the Fedora VM and then release prep for the next hotfix tag after `2026.03.12-1`.
+- Weather on `main` has been returned to the previous fitted render path because the experimental redesign overflowed the default widget size.
+- Remaining gap is to make the branch-worthy live-media path actually production-safe before any merge back from `codex/live-media-rnd`.
 
 ## Ground Truth Commands
 
