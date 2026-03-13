@@ -52,7 +52,7 @@ Last updated: 2026-03-13
   Done when: `Check Updates` + `Update Now` either complete the package upgrade end-to-end or surface a deterministic success/failure state instead of hanging after password/auth prompts.
 
 - [ ] `P0` Disable widget runtime work when widget is disabled in `Ordering`.
-  Status: `News`/`Cams` enable gates are restored and now overlay-aware (`render_mode=overlay` disables wallpaper-path widget work); `show_news_ticker2` is now tied to `show_news_layer` so disabling News in `Ordering` suppresses secondary ticker timing/fetch paths too.
+  Status: `News`/`Cams` enable gates are restored and now overlay-aware (`render_mode=overlay` disables wallpaper-path widget work); `show_news_ticker2` is now tied to `show_news_layer` so disabling News in `Ordering` suppresses secondary ticker timing/fetch paths too. Added explicit regression tests for wallpaper-vs-overlay enable semantics in `wc-cli` test suite.
   Done when: disabled `Weather` / `News` / `Cams` widgets do not keep fetching network data, spawning stream capture, or rendering hidden overlays.
 
 - [ ] `P1` Add packaged-install regression coverage for GUI actions and updater flow.
