@@ -4,7 +4,7 @@ Dynamic desktop compositor (Rust) by diceteachbeograd-Team.
 
 Status: active hobby project (use at your own risk).
 
-Temporary note for release line `2026.03.12-3`:
+Temporary note for release line `2026.03.13-1`:
 - `Weather`, `News`, and `Cams` are still under active rework and are not yet considered fully reliable or visually finalized.
 - This note should be removed again after explicit functionality approval.
 - `main` is the stable operator line.
@@ -26,8 +26,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.12-3
-sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.12-3*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.13-1
+sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.13-1*.rpm
 le-compositeur
 ```
 
@@ -35,8 +35,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.12-3
-sudo apt install ./dist/le-compositeur_2026.03.12-3_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.13-1
+sudo apt install ./dist/le-compositeur_2026.03.13-1_amd64.deb
 le-compositeur
 ```
 

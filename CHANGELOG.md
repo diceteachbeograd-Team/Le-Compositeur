@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026.03.13-1 - 2026-03-13
+- Backported stability fixes from the Fedora/live-media work branch onto `main` while keeping `main` feature-gated:
+  - GUI action buttons (`Validate`, `Render Preview`, `Run Once`, `Apply Now`, `Migrate`) now execute in background workers so the settings window stays responsive instead of blocking on synchronous command execution.
+  - Linux self-update now uses GitHub release asset metadata to download and install the matching local package (`.rpm` / `.deb`) via `pkexec`, replacing the previous repo-upgrade-only approach that could appear to hang after auth prompts.
+- Kept `main` runtime safety behavior intact:
+  - `News` / `Cams` remain intentionally disabled on `main` while live-overlay behavior is still under active branch development.
+  - mainline tests were aligned to preserve that stable gate policy.
+- Synced release prep/docs/scripts to `2026.03.13-1`.
+
 ## 2026.03.12-3 - 2026-03-12
 - Kept `main` on a stable operator path while live-media development continues separately:
   - `News` / `Cams` remain grayed out on `main`
