@@ -46,7 +46,7 @@ const WEATHER_MAP_TILE_SIZE: u32 = 256;
 const WEATHER_MAP_TARGET_RADIUS_KM: f64 = 50.0;
 const STREAM_CAPTURE_TIMEOUT_SECS: u64 = 4;
 const YOUTUBE_PAGE_TIMEOUT_SECS: u64 = 4;
-const LIVE_MEDIA_EXPERIMENTAL_ENABLED: bool = false;
+const LIVE_MEDIA_EXPERIMENTAL_ENABLED: bool = cfg!(target_os = "linux");
 
 #[derive(Debug, Parser)]
 #[command(name = "wc-cli")]
@@ -2750,7 +2750,6 @@ fn spawn_overlay_video_process(window: &OverlayVideoWindow) -> Option<u32> {
             "--really-quiet",
             "--force-window=yes",
             "--no-border",
-            "--ontop",
             "--profile=low-latency",
             "--cache=no",
             "--geometry",
@@ -2778,8 +2777,6 @@ fn spawn_overlay_video_process(window: &OverlayVideoWindow) -> Option<u32> {
         cmd.args([
             "-loglevel",
             "error",
-            "-alwaysontop",
-            "1",
             "-noborder",
             "-window_title",
             &title,
@@ -3248,26 +3245,31 @@ fn is_youtube_url(url: &str) -> bool {
 }
 
 fn news_widget_enabled(cfg: &AppConfig) -> bool {
-    let _ = cfg;
-    false
+    cfg.show_news_layer
+        && cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay")
+        && LIVE_MEDIA_EXPERIMENTAL_ENABLED
 }
 
 fn news_ticker2_enabled(cfg: &AppConfig) -> bool {
-    let _ = cfg;
-    false
+    cfg.show_news_layer && cfg.show_news_ticker2 && LIVE_MEDIA_EXPERIMENTAL_ENABLED
 }
 
 fn news_overlay_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_news_layer && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+    cfg.show_news_layer
+        && cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay")
+        && LIVE_MEDIA_EXPERIMENTAL_ENABLED
 }
 
 fn cams_widget_enabled(cfg: &AppConfig) -> bool {
-    let _ = cfg;
-    false
+    cfg.show_cams_layer
+        && cfg.cams_render_mode.trim().eq_ignore_ascii_case("overlay")
+        && LIVE_MEDIA_EXPERIMENTAL_ENABLED
 }
 
 fn cams_overlay_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_cams_layer && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+    cfg.show_cams_layer
+        && cfg.cams_render_mode.trim().eq_ignore_ascii_case("overlay")
+        && LIVE_MEDIA_EXPERIMENTAL_ENABLED
 }
 
 fn command_exists(cmd: &str) -> bool {
@@ -4452,10 +4454,11 @@ fn fetch_stream_title_hint(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        OVERLAY_HELPERS_DISABLED_ENV, build_builtin_widget_registry, build_overlay_runtime_plan,
-        cycle_pick_state_path, determine_cycle, loop_tick_duration, overlay_helpers_disabled,
-        read_cycle_pick_state, read_recent_indices, ticker_shift_millis_for_len,
-        widget_instance_from_config, write_cycle_pick_state, write_recent_indices,
+        LIVE_MEDIA_EXPERIMENTAL_ENABLED, OVERLAY_HELPERS_DISABLED_ENV,
+        build_builtin_widget_registry, build_overlay_runtime_plan, cycle_pick_state_path,
+        determine_cycle, loop_tick_duration, overlay_helpers_disabled, read_cycle_pick_state,
+        read_recent_indices, ticker_shift_millis_for_len, widget_instance_from_config,
+        write_cycle_pick_state, write_recent_indices,
     };
     use std::fs;
     use std::time::Duration;
@@ -4586,7 +4589,7 @@ mod tests {
     }
 
     #[test]
-    fn overlay_runtime_plan_keeps_live_media_disabled_on_main() {
+    fn overlay_runtime_plan_follows_live_media_feature_gate() {
         let cfg_path = std::env::temp_dir().join("wc-cli-overlay-plan.toml");
         fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
         let mut cfg = load_config(&cfg_path).expect("default config should parse");
@@ -4604,24 +4607,29 @@ mod tests {
         cfg.overlay_script_ticker_command = "printf 'dynamic headline\\n'".to_string();
 
         let news = widget_instance_from_config(&cfg, "news").expect("news instance");
-        assert!(!news.enabled);
+        assert_eq!(news.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
         let cams = widget_instance_from_config(&cfg, "cams").expect("cams instance");
-        assert!(!cams.enabled);
+        assert_eq!(cams.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
 
         let plan = build_overlay_runtime_plan(&cfg, 0).expect("overlay plan");
-        assert!(plan.videos.is_empty());
-        assert_eq!(plan.tickers.len(), 1);
-        assert!(
-            plan.tickers
-                .iter()
-                .any(|ticker| ticker.id == "script" && !ticker.command.is_empty())
-        );
+        if LIVE_MEDIA_EXPERIMENTAL_ENABLED {
+            assert!(!plan.videos.is_empty());
+            assert!(plan.tickers.iter().any(|ticker| ticker.id == "script"));
+        } else {
+            assert!(plan.videos.is_empty());
+            assert_eq!(plan.tickers.len(), 1);
+            assert!(
+                plan.tickers
+                    .iter()
+                    .any(|ticker| ticker.id == "script" && !ticker.command.is_empty())
+            );
+        }
 
         let _ = fs::remove_file(cfg_path);
     }
 
     #[test]
-    fn overlay_runtime_plan_drops_news_when_live_media_is_disabled() {
+    fn overlay_runtime_plan_respects_live_media_feature_gate() {
         let cfg_path = std::env::temp_dir().join("wc-cli-overlay-feed-only.toml");
         fs::write(&cfg_path, default_config_toml()).expect("config should be writable");
         let mut cfg = load_config(&cfg_path).expect("default config should parse");
@@ -4630,11 +4638,15 @@ mod tests {
         cfg.news_source = "google_world_en".to_string();
 
         let news = widget_instance_from_config(&cfg, "news").expect("news instance");
-        assert!(!news.enabled);
+        assert_eq!(news.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
 
         let plan = build_overlay_runtime_plan(&cfg, 0).expect("overlay plan");
-        assert!(plan.videos.is_empty());
-        assert!(plan.tickers.is_empty());
+        if LIVE_MEDIA_EXPERIMENTAL_ENABLED {
+            assert!(!plan.videos.is_empty() || !plan.tickers.is_empty());
+        } else {
+            assert!(plan.videos.is_empty());
+            assert!(plan.tickers.is_empty());
+        }
 
         let _ = fs::remove_file(cfg_path);
     }

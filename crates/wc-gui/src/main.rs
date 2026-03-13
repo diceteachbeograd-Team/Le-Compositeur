@@ -20,7 +20,7 @@ const ORDERING_WORLD_HEIGHT: i32 = 1080;
 const ORDERING_GRID_STEP: i32 = 24;
 const ORDERING_COLLISION_ITERS: usize = 32;
 const OVERLAY_RELOAD_SECS: u64 = 1;
-const LIVE_MEDIA_EXPERIMENTAL_ENABLED: bool = false;
+const LIVE_MEDIA_EXPERIMENTAL_ENABLED: bool = cfg!(target_os = "linux");
 
 #[derive(Clone)]
 struct OverlayTickerState {
@@ -272,7 +272,6 @@ fn main() -> eframe::Result<()> {
             .with_decorations(false)
             .with_transparent(true)
             .with_resizable(false)
-            .with_always_on_top()
             .with_inner_size(egui::vec2(state.width.max(120.0), state.height.max(32.0)))
             .with_position(egui::pos2(state.x, state.y));
         let native_options = eframe::NativeOptions {
@@ -2892,40 +2891,274 @@ impl WcGuiApp {
     }
 
     fn render_news_tab(&mut self, ui: &mut egui::Ui) {
-        self.cfg.show_news_layer = false;
-        self.cfg.show_news_ticker2 = false;
-        self.cfg.news_render_mode = "overlay".to_string();
+        if !LIVE_MEDIA_EXPERIMENTAL_ENABLED {
+            self.cfg.show_news_layer = false;
+            self.cfg.show_news_ticker2 = false;
+            self.cfg.news_render_mode = "overlay".to_string();
+            settings_section(
+                ui,
+                "News Disabled",
+                "Live news overlay is currently enabled only on Linux/Fedora in this branch.",
+                |ui| {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 200, 110),
+                        "News remains disabled on this platform.",
+                    );
+                },
+            );
+            return;
+        }
+
         settings_section(
             ui,
-            "News Disabled On Main",
-            "Live news overlay work continues on a development branch.",
+            "Primary Stream",
+            "Configurable live/news stream source in fixed 16:9 widget frame.",
             |ui| {
-                ui.colored_label(
-                    egui::Color32::from_rgb(255, 200, 110),
-                    "News is temporarily disabled on main. Current live-video handling still creates normal desktop app windows, shows dock entries, and degrades too often into ticker-only output.",
-                );
-                ui.small(
-                    "Development continues on branch codex/live-media-rnd. Main stays focused on stable background, quotes, clock, weather, and system controls.",
-                );
+                ui.checkbox(&mut self.cfg.show_news_layer, "Enable news widget");
+                ui.horizontal(|ui| {
+                    ui.label("Channel");
+                    egui::ComboBox::from_id_salt("news_source_tab")
+                        .selected_text(news_source_label(&self.cfg.news_source))
+                        .show_ui(ui, |ui| {
+                            for source in news_sources() {
+                                ui.selectable_value(
+                                    &mut self.cfg.news_source,
+                                    source.id.to_string(),
+                                    source.display_label,
+                                );
+                            }
+                        })
+                        .response
+                        .on_hover_text(self.hover_text("news_source"));
+                });
+                if self.cfg.news_source == "custom" {
+                    ui.horizontal(|ui| {
+                        ui.label("Custom URL");
+                        ui.text_edit_singleline(&mut self.cfg.news_custom_url)
+                            .on_hover_text(self.hover_text("news_custom_url"));
+                    });
+                }
+                if is_camera_like_url(&news_source_url(
+                    &self.cfg.news_source,
+                    &self.cfg.news_custom_url,
+                )) && self.cfg.news_fps < 15.0
+                {
+                    self.cfg.news_fps = 15.0;
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Playback FPS");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_fps)
+                            .speed(0.1)
+                            .range(0.05..=30.0),
+                    )
+                    .on_hover_text(self.hover_text("news_fps"));
+                    ui.label("Refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_refresh_seconds)
+                            .speed(5)
+                            .range(10..=3600),
+                    );
+                    ui.checkbox(&mut self.cfg.news_audio_enabled, "Audio")
+                        .on_hover_text(self.hover_text("news_audio_enabled"));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Position X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_pos_y).speed(1));
+                    ui.label("Size (16:9)");
+                    let mut selected = current_news_size_id(
+                        self.cfg.news_widget_width,
+                        self.cfg.news_widget_height,
+                    )
+                    .to_string();
+                    egui::ComboBox::from_id_salt("news_size_tab")
+                        .selected_text(news_size_label(selected.as_str()))
+                        .show_ui(ui, |ui| {
+                            for (id, label, _, _) in news_size_presets() {
+                                ui.selectable_value(&mut selected, (*id).to_string(), *label);
+                            }
+                        });
+                    if let Some((_, _, w, h)) = news_size_presets()
+                        .iter()
+                        .copied()
+                        .find(|(id, _, _, _)| *id == selected)
+                    {
+                        self.cfg.news_widget_width = w;
+                        self.cfg.news_widget_height = h;
+                    }
+                });
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Secondary Ticker",
+            "Independent ticker source with auto reading-speed movement.",
+            |ui| {
+                ui.checkbox(&mut self.cfg.show_news_ticker2, "Enable secondary ticker");
+                ui.horizontal(|ui| {
+                    ui.label("Ticker source");
+                    egui::ComboBox::from_id_salt("news_ticker2_source_tab")
+                        .selected_text(news_source_label(&self.cfg.news_ticker2_source))
+                        .show_ui(ui, |ui| {
+                            for source in news_sources() {
+                                ui.selectable_value(
+                                    &mut self.cfg.news_ticker2_source,
+                                    source.id.to_string(),
+                                    source.display_label,
+                                );
+                            }
+                        });
+                });
+                if self.cfg.news_ticker2_source == "custom" {
+                    ui.horizontal(|ui| {
+                        ui.label("Ticker custom URL");
+                        ui.text_edit_singleline(&mut self.cfg.news_ticker2_custom_url)
+                            .on_hover_text(self.hover_text("news_custom_url"));
+                    });
+                }
+                if is_camera_like_url(&news_source_url(
+                    &self.cfg.news_ticker2_source,
+                    &self.cfg.news_ticker2_custom_url,
+                )) && self.cfg.news_ticker2_fps < 15.0
+                {
+                    self.cfg.news_ticker2_fps = 15.0;
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Ticker refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_refresh_seconds)
+                            .speed(5)
+                            .range(10..=3600),
+                    );
+                    ui.label("Ticker FPS");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_fps)
+                            .speed(0.1)
+                            .range(0.05..=30.0),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Ticker X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_y).speed(1));
+                    ui.label("Width");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_width)
+                            .speed(4)
+                            .range(220..=1920),
+                    );
+                });
             },
         );
     }
 
     fn render_cams_tab(&mut self, ui: &mut egui::Ui) {
-        self.cfg.show_cams_layer = false;
-        self.cfg.cams_render_mode = "overlay".to_string();
+        if !LIVE_MEDIA_EXPERIMENTAL_ENABLED {
+            self.cfg.show_cams_layer = false;
+            self.cfg.cams_render_mode = "overlay".to_string();
+            settings_section(
+                ui,
+                "Cams Disabled",
+                "Camera overlay is currently enabled only on Linux/Fedora in this branch.",
+                |ui| {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 200, 110),
+                        "Cams remain disabled on this platform.",
+                    );
+                },
+            );
+            return;
+        }
+
         settings_section(
             ui,
-            "Cams Disabled On Main",
-            "Camera overlay work continues on a development branch.",
+            "Camera Streams",
+            "Configure source list, tile layout, and playback cadence.",
             |ui| {
-                ui.colored_label(
-                    egui::Color32::from_rgb(255, 200, 110),
-                    "Cams are temporarily disabled on main. Current behavior still depends too much on unstable public feeds, external player windows, and ticker fallback instead of guaranteed visible camera tiles.",
-                );
-                ui.small(
-                    "Development continues on branch codex/live-media-rnd. Main stays on stable wallpaper-only widgets for now.",
-                );
+                ui.checkbox(&mut self.cfg.show_cams_layer, "Enable cams widget");
+                ui.horizontal(|ui| {
+                    ui.label("Source");
+                    egui::ComboBox::from_id_salt("cams_source_tab")
+                        .selected_text(match self.cfg.cams_source.as_str() {
+                            "city_public" => "City public",
+                            "custom" => "Custom URLs",
+                            _ => "Auto local/public",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.cfg.cams_source,
+                                "auto_local".to_string(),
+                                "Auto local/public",
+                            );
+                            ui.selectable_value(
+                                &mut self.cfg.cams_source,
+                                "city_public".to_string(),
+                                "City public",
+                            );
+                            ui.selectable_value(
+                                &mut self.cfg.cams_source,
+                                "custom".to_string(),
+                                "Custom URLs",
+                            );
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Count");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_count)
+                            .speed(1)
+                            .range(1..=5),
+                    );
+                    ui.label("Columns");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_columns)
+                            .speed(1)
+                            .range(1..=4),
+                    );
+                    ui.label("FPS");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_fps)
+                            .speed(0.1)
+                            .range(0.05..=30.0),
+                    );
+                    ui.label("Refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_refresh_seconds)
+                            .speed(5)
+                            .range(10..=3600),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Position X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.cams_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.cams_pos_y).speed(1));
+                    ui.label("W");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_widget_width)
+                            .speed(2)
+                            .range(240..=1920),
+                    );
+                    ui.label("H");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.cams_widget_height)
+                            .speed(2)
+                            .range(140..=1080),
+                    );
+                });
+                if self.cfg.cams_source == "custom" {
+                    ui.label("Custom URLs (one per line: Name => URL)");
+                    ui.add(
+                        egui::TextEdit::multiline(&mut self.cfg.cams_custom_urls)
+                            .desired_rows(6)
+                            .hint_text("Belgrade => https://example.com/cam.m3u8"),
+                    );
+                }
             },
         );
     }
@@ -4248,7 +4481,7 @@ impl eframe::App for WcGuiApp {
                 if !LIVE_MEDIA_EXPERIMENTAL_ENABLED {
                     ui.colored_label(
                         egui::Color32::from_rgb(255, 200, 110),
-                        "News/Cams are temporarily disabled on main while live-overlay work continues on branch codex/live-media-rnd.",
+                        "News/Cams are disabled on non-Linux platforms. Active Fedora work continues on branch codex/fedora-first.",
                     );
                 }
             });
@@ -4677,8 +4910,8 @@ fn parse_rgb_triplet(raw: &str) -> Option<egui::Color32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppConfig, GuiTab, LayoutElement, ReleaseAsset, WcGuiApp, default_cfg,
-        install_args_for_backend, is_newer_release, numeric_version_parts,
+        AppConfig, GuiTab, LIVE_MEDIA_EXPERIMENTAL_ENABLED, LayoutElement, ReleaseAsset, WcGuiApp,
+        default_cfg, install_args_for_backend, is_newer_release, numeric_version_parts,
         select_release_asset_by_suffix,
     };
     use std::path::Path;
@@ -4763,16 +4996,21 @@ mod tests {
     }
 
     #[test]
-    fn stable_feature_gates_disable_live_media_ui_state() {
+    fn stable_feature_gates_follow_live_media_flag() {
         let mut app = test_app();
         app.enforce_stable_feature_gates();
 
-        assert!(!app.cfg.show_news_layer);
-        assert!(!app.cfg.show_cams_layer);
-        assert!(!app.cfg.show_news_ticker2);
-        assert_eq!(app.cfg.news_render_mode, "overlay");
-        assert_eq!(app.cfg.cams_render_mode, "overlay");
-        assert_eq!(app.active_tab, GuiTab::Weather);
-        assert_eq!(app.selected_element, LayoutElement::Weather);
+        if LIVE_MEDIA_EXPERIMENTAL_ENABLED {
+            assert_eq!(app.active_tab, GuiTab::Ordering);
+            assert_eq!(app.selected_element, LayoutElement::Quote);
+        } else {
+            assert!(!app.cfg.show_news_layer);
+            assert!(!app.cfg.show_cams_layer);
+            assert!(!app.cfg.show_news_ticker2);
+            assert_eq!(app.cfg.news_render_mode, "overlay");
+            assert_eq!(app.cfg.cams_render_mode, "overlay");
+            assert_eq!(app.active_tab, GuiTab::Weather);
+            assert_eq!(app.selected_element, LayoutElement::Weather);
+        }
     }
 }
