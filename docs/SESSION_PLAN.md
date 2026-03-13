@@ -1,6 +1,6 @@
 # Session Plan (Restart-Safe)
 
-Last updated: 2026-03-12
+Last updated: 2026-03-13
 
 ## Purpose
 
@@ -21,6 +21,9 @@ Current branch state:
 - `main` now force-disables `News` / `Cams` again so unfinished live-overlay work does not break normal desktop use.
 - On `main`, `LAY Ordering` also keeps `News` / `Cams` unavailable: no active toggles there and no placement boxes in the position preview while the tabs remain grayed out.
 - Experimental live-media work is preserved on branch `codex/live-media-rnd`.
+- GUI action buttons (`Validate`, `Render Preview`, `Run Once`, `Migrate`, `Apply Now`) now run via background workers with polling/repaint instead of blocking the UI thread.
+- Linux self-update now uses release assets from GitHub metadata and installs the downloaded local package file via `pkexec` + package-manager command, replacing the older repo-only upgrade attempt.
+- Runtime widget gates were corrected so `News` / `Cams` are no longer forced-off by mistake, while overlay mode cleanly disables wallpaper-path rendering for those widgets.
 - `System` tab now exposes a script-fed overlay ticker; runtime uses the first non-empty stdout line from the configured command.
 - Schema/blueprint metadata were updated so the new overlay fields round-trip cleanly and are visible to contract consumers.
 - Local smoke tests can suppress real overlay windows with `WC_DISABLE_OVERLAY_HELPERS=1`; this was added after a host-side ticker smoke opened a visible overlay outside the VM.

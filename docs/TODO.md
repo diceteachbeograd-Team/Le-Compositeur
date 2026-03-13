@@ -1,6 +1,6 @@
 # TODO and Progress
 
-Last updated: 2026-03-12
+Last updated: 2026-03-13
 
 ## Working Rules (must stay current)
 - Update this file in every feature/fix commit.
@@ -48,11 +48,11 @@ Last updated: 2026-03-12
   Done when: packaged GUI remains clickable during and after `Validate` / `Render Preview` / `Run Once`, and no hard VM reset is required to recover.
 
 - [ ] `P0` Rework GUI self-update flow for packaged Fedora installs.
-  Status: official release `2026.03.11-8` was published and manually installed on the Fedora VM; the remaining end-to-end validation gap is the actual packaged GUI `Check Updates` -> `Update Now` path against a newer published release.
+  Status: Linux updater path now downloads the matching release asset (`.rpm`/`.deb`) from GitHub release metadata and installs that exact file via `pkexec` + package manager instead of relying on repo-visible `upgrade` commands; remaining gap is packaged Fedora VM click-path verification against a newer published tag.
   Done when: `Check Updates` + `Update Now` either complete the package upgrade end-to-end or surface a deterministic success/failure state instead of hanging after password/auth prompts.
 
 - [ ] `P0` Disable widget runtime work when widget is disabled in `Ordering`.
-  Status: `News` ordering now also suppresses secondary ticker timing/fetch/validation paths; Fedora VM packaged CLI validation shows disabled `Weather` / `News` / `Cams` run path dropping from ~13.6s to ~3.0s with empty widget outputs.
+  Status: `News`/`Cams` enable gates are restored and now overlay-aware (`render_mode=overlay` disables wallpaper-path widget work); `show_news_ticker2` is now tied to `show_news_layer` so disabling News in `Ordering` suppresses secondary ticker timing/fetch paths too.
   Done when: disabled `Weather` / `News` / `Cams` widgets do not keep fetching network data, spawning stream capture, or rendering hidden overlays.
 
 - [ ] `P1` Add packaged-install regression coverage for GUI actions and updater flow.

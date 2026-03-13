@@ -1,7 +1,7 @@
 use eframe::egui;
 use serde_json::Value;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
@@ -3309,12 +3309,8 @@ fn download_release_asset(release: &ReleaseInfo, asset: &ReleaseAsset) -> Result
     response
         .copy_to(&mut file)
         .map_err(|err| format!("Update asset download failed: {err}"))?;
-    file.flush().map_err(|err| {
-        format!(
-            "Cannot flush update temp file {}: {err}",
-            tmp_path.display()
-        )
-    })?;
+    file.sync_all()
+        .map_err(|err| format!("Cannot sync update temp file {}: {err}", tmp_path.display()))?;
     std::fs::rename(&tmp_path, &final_path).map_err(|err| {
         format!(
             "Cannot finalize downloaded update asset {}: {err}",

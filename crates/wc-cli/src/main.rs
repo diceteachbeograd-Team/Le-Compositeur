@@ -3248,8 +3248,7 @@ fn is_youtube_url(url: &str) -> bool {
 }
 
 fn news_widget_enabled(cfg: &AppConfig) -> bool {
-    let _ = cfg;
-    false
+    cfg.show_news_layer && !news_overlay_enabled(cfg)
 }
 
 fn news_ticker2_enabled(cfg: &AppConfig) -> bool {
@@ -3262,8 +3261,7 @@ fn news_overlay_enabled(cfg: &AppConfig) -> bool {
 }
 
 fn cams_widget_enabled(cfg: &AppConfig) -> bool {
-    let _ = cfg;
-    false
+    cfg.show_cams_layer && !cams_overlay_enabled(cfg)
 }
 
 fn cams_overlay_enabled(cfg: &AppConfig) -> bool {
