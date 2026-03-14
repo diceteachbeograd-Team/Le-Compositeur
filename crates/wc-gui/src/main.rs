@@ -361,8 +361,8 @@ enum GuiTab {
     Images,
     Quotes,
     Weather,
-    News,
-    Cams,
+    NewsTicker,
+    StaticUrl,
     System,
 }
 
@@ -472,17 +472,10 @@ impl WcGuiApp {
     }
 
     fn enforce_stable_feature_gates(&mut self) {
-        if LIVE_MEDIA_EXPERIMENTAL_ENABLED {
-            return;
-        }
         self.cfg.show_news_layer = false;
         self.cfg.show_cams_layer = false;
-        self.cfg.show_news_ticker2 = false;
         self.cfg.news_render_mode = "overlay".to_string();
         self.cfg.cams_render_mode = "overlay".to_string();
-        if matches!(self.active_tab, GuiTab::News | GuiTab::Cams) {
-            self.active_tab = GuiTab::Weather;
-        }
         if matches!(
             self.selected_element,
             LayoutElement::News | LayoutElement::Cams
@@ -506,8 +499,8 @@ impl WcGuiApp {
             GuiTab::Images => "Background Images",
             GuiTab::Quotes => "Quote Source & Style",
             GuiTab::Weather => "Weather Widget",
-            GuiTab::News => "News & Ticker Widgets",
-            GuiTab::Cams => "Cams Widget",
+            GuiTab::NewsTicker => "News Ticker",
+            GuiTab::StaticUrl => "Static URL Panels",
             GuiTab::System => "Runtime & Integrations",
         }
     }
@@ -526,11 +519,9 @@ impl WcGuiApp {
             GuiTab::Weather => {
                 "Configure weather source behavior, refresh budget, placement and visual style."
             }
-            GuiTab::News => {
-                "Configure primary stream plus secondary ticker with independent source and caps."
-            }
-            GuiTab::Cams => {
-                "Configure camera source mode, grid layout, and network/CPU refresh limits."
+            GuiTab::NewsTicker => "Configure ticker content sources, layout, and style.",
+            GuiTab::StaticUrl => {
+                "Configure static URL-based sources rendered as snapshots, not live browser/video."
             }
             GuiTab::System => {
                 "Manage runtime controls, updates, autostart, and desktop integration toggles."
@@ -544,8 +535,8 @@ impl WcGuiApp {
             GuiTab::Images => "IMG Images",
             GuiTab::Quotes => "QTE Quotes",
             GuiTab::Weather => "WTH Weather",
-            GuiTab::News => "NWS News",
-            GuiTab::Cams => "CAM Cams",
+            GuiTab::NewsTicker => "TIK NewsTicker",
+            GuiTab::StaticUrl => "URL Static",
             GuiTab::System => "SYS System",
         }
     }
@@ -2890,6 +2881,7 @@ impl WcGuiApp {
         );
     }
 
+    #[allow(dead_code)]
     fn render_news_tab(&mut self, ui: &mut egui::Ui) {
         if !LIVE_MEDIA_EXPERIMENTAL_ENABLED {
             self.cfg.show_news_layer = false;
@@ -3057,6 +3049,7 @@ impl WcGuiApp {
         );
     }
 
+    #[allow(dead_code)]
     fn render_cams_tab(&mut self, ui: &mut egui::Ui) {
         if !LIVE_MEDIA_EXPERIMENTAL_ENABLED {
             self.cfg.show_cams_layer = false;
@@ -3159,6 +3152,156 @@ impl WcGuiApp {
                             .hint_text("Belgrade => https://example.com/cam.m3u8"),
                     );
                 }
+            },
+        );
+    }
+
+    fn render_news_ticker_tab(&mut self, ui: &mut egui::Ui) {
+        self.cfg.show_news_layer = false;
+        self.cfg.show_cams_layer = false;
+        self.cfg.news_render_mode = "overlay".to_string();
+        self.cfg.cams_render_mode = "overlay".to_string();
+
+        settings_section(
+            ui,
+            "Ticker Sources",
+            "Configure headline feeds and ticker layout without live video windows.",
+            |ui| {
+                ui.checkbox(&mut self.cfg.show_news_ticker2, "Enable news ticker");
+                ui.horizontal(|ui| {
+                    ui.label("Source");
+                    egui::ComboBox::from_id_salt("news_ticker_only_source")
+                        .selected_text(news_source_label(&self.cfg.news_ticker2_source))
+                        .show_ui(ui, |ui| {
+                            for source in news_sources() {
+                                ui.selectable_value(
+                                    &mut self.cfg.news_ticker2_source,
+                                    source.id.to_string(),
+                                    source.display_label,
+                                );
+                            }
+                        });
+                });
+                if self.cfg.news_ticker2_source == "custom" {
+                    ui.horizontal(|ui| {
+                        ui.label("Custom RSS/URL");
+                        ui.text_edit_singleline(&mut self.cfg.news_ticker2_custom_url);
+                    });
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_refresh_seconds)
+                            .speed(5)
+                            .range(10..=3600),
+                    );
+                    ui.label("FPS");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_fps)
+                            .speed(0.1)
+                            .range(0.05..=30.0),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_y).speed(1));
+                    ui.label("Width");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_width)
+                            .speed(2)
+                            .range(220..=1920),
+                    );
+                });
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Custom Script Ticker",
+            "Optional additional ticker fed by your own command output.",
+            |ui| {
+                ui.checkbox(
+                    &mut self.cfg.overlay_script_ticker_enabled,
+                    "Enable script ticker",
+                );
+                ui.horizontal(|ui| {
+                    ui.label("Command");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.cfg.overlay_script_ticker_command)
+                            .hint_text("curl -fsSL https://example.com/status.txt | head -n 1"),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.overlay_script_ticker_refresh_seconds)
+                            .speed(1)
+                            .range(1..=3600),
+                    );
+                    ui.label("Font");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.overlay_script_ticker_font_size)
+                            .speed(1)
+                            .range(10..=120),
+                    );
+                });
+            },
+        );
+    }
+
+    fn render_static_url_tab(&mut self, ui: &mut egui::Ui) {
+        settings_section(
+            ui,
+            "Static URL Background",
+            "Use URL snapshots for background refresh instead of browser/video embeds.",
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Image source");
+                    ui.selectable_value(&mut self.cfg.image_source, "local".to_string(), "Local");
+                    ui.selectable_value(&mut self.cfg.image_source, "preset".to_string(), "Preset");
+                    ui.selectable_value(&mut self.cfg.image_source, "url".to_string(), "URL");
+                });
+                if self.cfg.image_source == "url" {
+                    let image_url = self.cfg.image_source_url.get_or_insert_with(String::new);
+                    ui.horizontal(|ui| {
+                        ui.label("Image URL");
+                        ui.text_edit_singleline(image_url);
+                    });
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Image refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.image_refresh_seconds)
+                            .speed(1)
+                            .range(5..=3600),
+                    );
+                });
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Static Text URL",
+            "Use URL text source for quotes/server info lines.",
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Quote source");
+                    ui.selectable_value(&mut self.cfg.quote_source, "local".to_string(), "Local");
+                    ui.selectable_value(&mut self.cfg.quote_source, "preset".to_string(), "Preset");
+                    ui.selectable_value(&mut self.cfg.quote_source, "url".to_string(), "URL");
+                });
+                if self.cfg.quote_source == "url" {
+                    let quote_url = self.cfg.quote_source_url.get_or_insert_with(String::new);
+                    ui.horizontal(|ui| {
+                        ui.label("Quote URL");
+                        ui.text_edit_singleline(quote_url);
+                    });
+                }
+                ui.small("Background browser embedding is avoided for stability.");
             },
         );
     }
@@ -4460,30 +4603,26 @@ impl eframe::App for WcGuiApp {
                         GuiTab::Weather,
                         Self::tab_button_label(GuiTab::Weather),
                     );
-                    ui.add_enabled_ui(LIVE_MEDIA_EXPERIMENTAL_ENABLED, |ui| {
-                        ui.selectable_value(
-                            &mut self.active_tab,
-                            GuiTab::News,
-                            Self::tab_button_label(GuiTab::News),
-                        );
-                        ui.selectable_value(
-                            &mut self.active_tab,
-                            GuiTab::Cams,
-                            Self::tab_button_label(GuiTab::Cams),
-                        );
-                    });
+                    ui.selectable_value(
+                        &mut self.active_tab,
+                        GuiTab::NewsTicker,
+                        Self::tab_button_label(GuiTab::NewsTicker),
+                    );
+                    ui.selectable_value(
+                        &mut self.active_tab,
+                        GuiTab::StaticUrl,
+                        Self::tab_button_label(GuiTab::StaticUrl),
+                    );
                     ui.selectable_value(
                         &mut self.active_tab,
                         GuiTab::System,
                         Self::tab_button_label(GuiTab::System),
                     );
                 });
-                if !LIVE_MEDIA_EXPERIMENTAL_ENABLED {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(255, 200, 110),
-                        "News/Cams are disabled on non-Linux platforms. Active Fedora work continues on branch codex/fedora-first.",
-                    );
-                }
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 200, 110),
+                    "Live video/cams are disabled. Use NewsTicker + Static URL modes for stable operation.",
+                );
             });
 
             ui.add_space(6.0);
@@ -4567,8 +4706,8 @@ impl eframe::App for WcGuiApp {
                     GuiTab::Images => self.render_images_tab(ui, ctx),
                     GuiTab::Quotes => self.render_quotes_tab(ui),
                     GuiTab::Weather => self.render_weather_tab(ui),
-                    GuiTab::News => self.render_news_tab(ui),
-                    GuiTab::Cams => self.render_cams_tab(ui),
+                    GuiTab::NewsTicker => self.render_news_ticker_tab(ui),
+                    GuiTab::StaticUrl => self.render_static_url_tab(ui),
                     GuiTab::System => self.render_system_tab(ui),
                 });
         });
@@ -4910,8 +5049,8 @@ fn parse_rgb_triplet(raw: &str) -> Option<egui::Color32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppConfig, GuiTab, LIVE_MEDIA_EXPERIMENTAL_ENABLED, LayoutElement, ReleaseAsset, WcGuiApp,
-        default_cfg, install_args_for_backend, is_newer_release, numeric_version_parts,
+        AppConfig, GuiTab, LayoutElement, ReleaseAsset, WcGuiApp, default_cfg,
+        install_args_for_backend, is_newer_release, numeric_version_parts,
         select_release_asset_by_suffix,
     };
     use std::path::Path;
@@ -4931,7 +5070,7 @@ mod tests {
             thumbnails_for_dir: String::new(),
             quote_preview: Vec::new(),
             runner: None,
-            active_tab: GuiTab::News,
+            active_tab: GuiTab::NewsTicker,
             ui_lang: super::UiLang::En,
             selected_element: LayoutElement::Cams,
             weather_status: String::new(),
@@ -5000,17 +5139,11 @@ mod tests {
         let mut app = test_app();
         app.enforce_stable_feature_gates();
 
-        if LIVE_MEDIA_EXPERIMENTAL_ENABLED {
-            assert_eq!(app.active_tab, GuiTab::Ordering);
-            assert_eq!(app.selected_element, LayoutElement::Quote);
-        } else {
-            assert!(!app.cfg.show_news_layer);
-            assert!(!app.cfg.show_cams_layer);
-            assert!(!app.cfg.show_news_ticker2);
-            assert_eq!(app.cfg.news_render_mode, "overlay");
-            assert_eq!(app.cfg.cams_render_mode, "overlay");
-            assert_eq!(app.active_tab, GuiTab::Weather);
-            assert_eq!(app.selected_element, LayoutElement::Weather);
-        }
+        assert!(!app.cfg.show_news_layer);
+        assert!(!app.cfg.show_cams_layer);
+        assert_eq!(app.cfg.news_render_mode, "overlay");
+        assert_eq!(app.cfg.cams_render_mode, "overlay");
+        assert_eq!(app.active_tab, GuiTab::NewsTicker);
+        assert_eq!(app.selected_element, LayoutElement::Weather);
     }
 }

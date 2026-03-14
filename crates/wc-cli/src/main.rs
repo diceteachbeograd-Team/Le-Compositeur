@@ -239,7 +239,8 @@ fn run_cycle(
     let widget_bundle = resolve_widgets_for_cycle(cfg, image_cycle, quote_cycle)?;
     // In live loop mode, overlay-rendered media should not be baked into the wallpaper frame.
     // Otherwise users see stale standbilder until the next background rewrite.
-    let render_news_into_wallpaper = !(sync_overlay && news_overlay_enabled(cfg));
+    let render_news_into_wallpaper =
+        !(sync_overlay && (news_overlay_enabled(cfg) || news_ticker2_enabled(cfg)));
     let render_cams_into_wallpaper = !(sync_overlay && cams_overlay_enabled(cfg));
 
     let quote = widget_bundle.quote;
@@ -2484,6 +2485,21 @@ fn build_overlay_runtime_plan(cfg: &AppConfig, image_cycle: u64) -> Result<Overl
         });
     }
 
+    if news_ticker2_enabled(cfg) {
+        tickers.push(OverlayTickerWindow {
+            id: "news_ticker2".to_string(),
+            label: "news-ticker2".to_string(),
+            x: cfg.news_ticker2_pos_x,
+            y: cfg.news_ticker2_pos_y,
+            width: cfg.news_ticker2_width,
+            height: 56,
+            font_size: 28,
+            refresh_seconds: cfg.news_ticker2_refresh_seconds.max(10),
+            text: resolve_secondary_news_ticker(cfg),
+            command: String::new(),
+        });
+    }
+
     if cams_overlay_enabled(cfg) {
         let source_cycle = now_epoch_seconds() / cfg.cams_refresh_seconds.max(10);
         let mut sources = cams_source_entries(cfg, source_cycle);
@@ -3274,7 +3290,7 @@ fn news_widget_enabled(cfg: &AppConfig) -> bool {
 }
 
 fn news_ticker2_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_news_layer && cfg.show_news_ticker2 && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+    cfg.show_news_ticker2 && LIVE_MEDIA_EXPERIMENTAL_ENABLED
 }
 
 fn news_overlay_enabled(cfg: &AppConfig) -> bool {
@@ -4605,7 +4621,7 @@ mod tests {
         cfg.show_news_ticker2 = true;
         let ticker2 =
             widget_instance_from_config(&cfg, "news_ticker2").expect("news ticker2 instance");
-        assert!(!ticker2.enabled);
+        assert_eq!(ticker2.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
 
         let cams = widget_instance_from_config(&cfg, "cams").expect("cams instance");
         assert_eq!(cams.refresh_seconds, 75);
