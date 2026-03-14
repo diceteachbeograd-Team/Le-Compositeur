@@ -1,6 +1,6 @@
 # TODO and Progress
 
-Last updated: 2026-03-13
+Last updated: 2026-03-14
 
 ## Working Rules (must stay current)
 - Update this file in every feature/fix commit.
@@ -9,34 +9,34 @@ Last updated: 2026-03-13
 - If session context is lost, resume from `docs/SESSION_PLAN.md`.
 
 ## Current Snapshot
-- Repo branch: `main`
-- Experimental live-media branch: `codex/live-media-rnd`
+- Repo branch: `codex/fedora-first`
+- Strategic decision: de-scope live video/cams from core UX; focus on `NewsTicker` + `Static URL` path
 - Latest published tag: `2026.03.13-1`
-- Next hotfix target tag: `TBD (after VM validation of 2026.03.13-1)`
+- Next hotfix target tag: `2026.03.14-2` (Fedora VM validation)
 - Local tests: passing (`cargo test --all`)
-- GUI tabs implemented: `Ordering`, `Images`, `Quotes`, `Weather`, `News`, `Cams`, `System`
+- GUI tabs now targeted: `Ordering`, `Images`, `Quotes`, `Weather`, `NewsTicker`, `Static URL`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline
 
 ## Now (Active Sprint)
 
-- [ ] `P0` Split `News` / `Cams` out of wallpaper rendering into a separate overlay runtime.
-  Status: live-media work is now isolated on branch `codex/live-media-rnd`. On `main`, `News` / `Cams` are intentionally disabled again so the rest of the application stays usable while overlay/windowing/feed problems are fixed separately; the grayed tabs are also locked out of `LAY Ordering`, and their preview boxes stay hidden there while disabled.
-  Done when: the experimental branch no longer creates dock/taskbar app windows, healthy sources render visibly instead of falling back to ticker-only output, and the result is good enough to merge back into `main`.
+- [ ] `P0` Finalize product pivot from live media to stable ticker/static URL workflow.
+  Status: branch `codex/fedora-first` now removes `News`/`Cams` from workspace navigation and introduces `NewsTicker` + `Static URL` tabs; ticker runtime has been decoupled from live-news enable flags.
+  Done when: Fedora VM package build shows no live video panes, ticker updates remain independent of BG refresh, and static URL panels are the only non-local media path.
 
-- [ ] `P0` Add overlay ticker layers that can be filled dynamically by scripts.
-  Status: an independent overlay ticker is now configurable in `System`, writes JSON overlay state, and can render the first non-empty stdout line of a shell command; remaining work is runtime UX tuning and packaged-VM verification.
-  Done when: at least one overlay ticker surface can read dynamic content from a configured command or script output and is controllable from the GUI.
+- [ ] `P0` Harden package/release versioning so VM installs always pick up latest binaries.
+  Status: repeated reuse of RPM release suffix (`2026.03.13-1`) caused false-success installs with stale binaries; hash checks proved installed files differed from latest local build.
+  Done when: each VM test build uses unique package release version and post-install hash check is documented and automated.
 
-- [ ] `P0` Restore meaningful CAM widget output for multi-source custom lists.
-  Status: user validation on `2026.03.11-8` shows CAM labels/ticker updating but the expected multi-camera grid is not consistently visible; likely failure points are preview capture success rate and/or montage/grid composition fallback.
-  Done when: multiple configured cameras produce a visible grid distribution with source labels, and missing feeds degrade per-tile instead of collapsing to one large still.
+- [ ] `P1` Build worldmonitor-style multi-source text aggregation for ticker feeds.
+  Status: source catalog exists in `wc-core` but currently single-source per ticker instance dominates; new goal is feed merge/rotation rather than video windows.
+  Done when: one ticker can aggregate multiple configured sources and cycle/merge lines with readable pacing.
 
-- [ ] `P1` Improve Weather widget metric layout and replace text-only pseudo-icons.
-  Status: the ambitious weather-panel redesign is also being treated as experimental; `main` keeps the previous fitted layout so weather remains readable while the visual/icon pass continues separately.
-  Done when: the redesigned weather panel is at least as readable as the pre-redesign version at default widget sizes and passes real VM validation before merge.
+- [ ] `P1` Document stable-mode limitations explicitly in README and release notes.
+  Status: decision made to avoid live browser/video embedding in wallpaper path due to reliability risk on Wayland/Fedora.
+  Done when: docs clearly state stable mode is snapshots + ticker, and "experimental live video" is opt-in only.
 
 - [ ] `P1` Improve ticker readability and motion smoothness.
-  Status: the ticker currently advances as character-level text rotation, which makes movement readable enough for static snapshots but still visually jumpy in desktop use.
+  Status: ticker now runs independently of live video, but spacing/font hierarchy still needs polish for long mixed-language headlines.
   Done when: ticker movement is visibly smoother and label/headline hierarchy remains readable at normal desktop viewing distance.
 
 - [ ] `P1` Expand shipped source catalogs for world news and public cams.
@@ -52,8 +52,8 @@ Last updated: 2026-03-13
   Done when: `Check Updates` + `Update Now` either complete the package upgrade end-to-end or surface a deterministic success/failure state instead of hanging after password/auth prompts.
 
 - [ ] `P0` Disable widget runtime work when widget is disabled in `Ordering`.
-  Status: `News`/`Cams` enable gates are restored and now overlay-aware (`render_mode=overlay` disables wallpaper-path widget work); `show_news_ticker2` is now tied to `show_news_layer` so disabling News in `Ordering` suppresses secondary ticker timing/fetch paths too. Added explicit regression tests for wallpaper-vs-overlay enable semantics in `wc-cli` test suite.
-  Done when: disabled `Weather` / `News` / `Cams` widgets do not keep fetching network data, spawning stream capture, or rendering hidden overlays.
+  Status: `News`/`Cams` layers are now forced off in stable mode; secondary ticker was decoupled from `show_news_layer` to support no-video operation.
+  Done when: disabled widgets do not fetch/render, and ticker-only mode fetches only ticker sources.
 
 - [ ] `P1` Add packaged-install regression coverage for GUI actions and updater flow.
   Done when: there is a reproducible VM/package test path documenting `Validate`, `Render Preview`, `Run Once`, and updater behavior on Fedora package installs.
@@ -130,6 +130,9 @@ Last updated: 2026-03-13
 
 ## Done Recently
 
+- [x] Pivoted GUI workspace from `News/Cams` to `NewsTicker/Static URL` and disabled live video/cam layers in stable mode UX path.
+- [x] Decoupled `news_ticker2` enable gate from `show_news_layer` so ticker works without live video widgets.
+- [x] Added overlay runtime plan support for dedicated secondary ticker process (`news_ticker2`) independent of news video window path.
 - [x] Published official release `2026.03.11-8`, verified GitHub artifacts, and replaced the Fedora VM local test RPM with the official published package.
 - [x] Moved GUI one-shot CLI actions (`Validate`, `Render Preview`, `Run Once`, `Migrate`, `Apply Now`) off the UI thread and added repaint polling so long renders no longer freeze the settings window.
 - [x] Reworked Linux self-update logic to download the matching GitHub release package asset (`.rpm` / `.deb`) before invoking privileged local installation.
