@@ -237,14 +237,37 @@ fn run_cycle(
     };
     let source_image = resolve_source_image(cfg, image_cycle)?;
     let widget_bundle = resolve_widgets_for_cycle(cfg, image_cycle, quote_cycle)?;
+    // In live loop mode, overlay-rendered media should not be baked into the wallpaper frame.
+    // Otherwise users see stale standbilder until the next background rewrite.
+    let render_news_into_wallpaper = !(sync_overlay && news_overlay_enabled(cfg));
+    let render_cams_into_wallpaper = !(sync_overlay && cams_overlay_enabled(cfg));
+
     let quote = widget_bundle.quote;
     let clock = widget_bundle.clock;
     let weather_payload = widget_bundle.weather;
     let weather = weather_payload.text.clone();
-    let news_payload = widget_bundle.news;
+    let news_payload = if render_news_into_wallpaper {
+        widget_bundle.news.clone()
+    } else {
+        NewsWidgetPayload {
+            text: String::new(),
+            preview_image: None,
+        }
+    };
     let news = news_payload.text.clone();
-    let news_ticker2 = widget_bundle.news_ticker2;
-    let cams_payload = widget_bundle.cams;
+    let news_ticker2 = if render_news_into_wallpaper {
+        widget_bundle.news_ticker2
+    } else {
+        String::new()
+    };
+    let cams_payload = if render_cams_into_wallpaper {
+        widget_bundle.cams.clone()
+    } else {
+        CamsWidgetPayload {
+            text: String::new(),
+            preview_image: None,
+        }
+    };
     let cams = cams_payload.text.clone();
     let (canvas_width, canvas_height) = detect_canvas_size();
     let (image_pool_size, quote_pool_size) = detect_local_pool_sizes(cfg);
@@ -3955,20 +3978,21 @@ fn effective_video_fps(requested_fps: f32) -> f32 {
 
 fn loop_tick_duration(cfg: &AppConfig) -> Duration {
     // Base loop from user-selected background interval, but keep clock updates within one minute.
+    // Overlay video/ticker animation is handled by helper processes; CLI only refreshes data/state.
     let mut seconds = master_rotation_interval(cfg).min(60) as f64;
-    if news_widget_enabled(cfg) {
-        let news_step = 1.0 / effective_video_fps(cfg.news_fps) as f64;
-        seconds = seconds.min(news_step.max(0.033));
+    if news_overlay_enabled(cfg) {
+        seconds = seconds.min(cfg.news_refresh_seconds.max(10) as f64);
     }
     if news_ticker2_enabled(cfg) {
-        let ticker_step = ticker_shift_millis_for_len(64) as f64 / 1000.0;
-        seconds = seconds.min(ticker_step.max(0.033));
+        seconds = seconds.min(cfg.news_ticker2_refresh_seconds.max(10) as f64);
     }
-    if cams_widget_enabled(cfg) {
-        let cams_step = 1.0 / effective_video_fps(cfg.cams_fps) as f64;
-        seconds = seconds.min(cams_step.max(0.033));
+    if cams_overlay_enabled(cfg) {
+        seconds = seconds.min(cfg.cams_refresh_seconds.max(10) as f64);
     }
-    let millis = (seconds * 1000.0).round().clamp(33.0, 60_000.0) as u64;
+    if cfg.overlay_script_ticker_enabled {
+        seconds = seconds.min(cfg.overlay_script_ticker_refresh_seconds.max(1) as f64);
+    }
+    let millis = (seconds * 1000.0).round().clamp(250.0, 60_000.0) as u64;
     Duration::from_millis(millis)
 }
 
