@@ -239,9 +239,9 @@ fn run_cycle(
     let widget_bundle = resolve_widgets_for_cycle(cfg, image_cycle, quote_cycle)?;
     // In live loop mode, overlay-rendered media should not be baked into the wallpaper frame.
     // Otherwise users see stale standbilder until the next background rewrite.
-    let render_news_into_wallpaper =
-        !(sync_overlay && (news_overlay_enabled(cfg) || news_ticker2_enabled(cfg)));
+    let render_news_into_wallpaper = !(sync_overlay && news_overlay_enabled(cfg));
     let render_cams_into_wallpaper = !(sync_overlay && cams_overlay_enabled(cfg));
+    let render_news_ticker2_into_wallpaper = !(sync_overlay && news_ticker2_enabled(cfg));
 
     let quote = widget_bundle.quote;
     let clock = widget_bundle.clock;
@@ -256,7 +256,7 @@ fn run_cycle(
         }
     };
     let news = news_payload.text.clone();
-    let news_ticker2 = if render_news_into_wallpaper {
+    let news_ticker2 = if render_news_ticker2_into_wallpaper {
         widget_bundle.news_ticker2
     } else {
         String::new()
@@ -3286,6 +3286,7 @@ fn is_youtube_url(url: &str) -> bool {
 fn news_widget_enabled(cfg: &AppConfig) -> bool {
     cfg.show_news_layer
         && cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay")
+        && news_source_supports_live_video_source(&cfg.news_source, &cfg.news_custom_url)
         && LIVE_MEDIA_EXPERIMENTAL_ENABLED
 }
 
@@ -3296,6 +3297,7 @@ fn news_ticker2_enabled(cfg: &AppConfig) -> bool {
 fn news_overlay_enabled(cfg: &AppConfig) -> bool {
     cfg.show_news_layer
         && cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay")
+        && news_source_supports_live_video_source(&cfg.news_source, &cfg.news_custom_url)
         && LIVE_MEDIA_EXPERIMENTAL_ENABLED
 }
 

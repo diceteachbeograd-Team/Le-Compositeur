@@ -1,6 +1,6 @@
 # TODO and Progress
 
-Last updated: 2026-03-14
+Last updated: 2026-03-18
 
 ## Working Rules (must stay current)
 - Update this file in every feature/fix commit.
@@ -11,8 +11,8 @@ Last updated: 2026-03-14
 ## Current Snapshot
 - Repo branch: `codex/fedora-first`
 - Strategic decision: de-scope live video/cams from core UX; focus on `NewsTicker` + `Static URL` path
-- Latest published tag: `2026.03.13-1`
-- Next hotfix target tag: `2026.03.14-2` (Fedora VM validation)
+- Latest published tag: `2026.03.18-2`
+- Next hotfix target tag: `2026.03.18-3` (Fedora VM validation)
 - Local tests: passing (`cargo test --all`)
 - GUI tabs now targeted: `Ordering`, `Images`, `Quotes`, `Weather`, `NewsTicker`, `Static URL`, `System`
 - Packaging artifacts implemented: Linux `rpm` + `deb`, Windows archive/installer pipeline, macOS `dmg` pipeline
@@ -20,7 +20,7 @@ Last updated: 2026-03-14
 ## Now (Active Sprint)
 
 - [ ] `P0` Finalize product pivot from live media to stable ticker/static URL workflow.
-  Status: branch `codex/fedora-first` now removes `News`/`Cams` from workspace navigation and introduces `NewsTicker` + `Static URL` tabs; ticker runtime has been decoupled from live-news enable flags.
+  Status: branch `codex/fedora-first` now removes `News`/`Cams` from workspace navigation and introduces `NewsTicker` + `Static URL` tabs; Ordering now maps to `NewsTicker` + `Static URL`; overlay runtime now treats non-live static sources as snapshot path so no ghost live ticker/video window is spawned.
   Done when: Fedora VM package build shows no live video panes, ticker updates remain independent of BG refresh, and static URL panels are the only non-local media path.
 
 - [ ] `P0` Harden package/release versioning so VM installs always pick up latest binaries.
@@ -40,7 +40,7 @@ Last updated: 2026-03-14
   Done when: ticker movement is visibly smoother and label/headline hierarchy remains readable at normal desktop viewing distance.
 
 - [ ] `P1` Expand shipped source catalogs for world news and public cams.
-  Status: the built-in news catalog now includes searchable world-region/country sources plus live-vs-feed separation, but the CAM side still needs a larger verified public catalog beyond the current starter presets.
+  Status: built-in news catalog now includes world-region/country feeds and additional static/ticker presets (`Guardian World`, `Ars Technica`, `MarketWatch`, `UN News`, `ReliefWeb`) with live-vs-feed separation; CAM side still needs a larger verified public catalog beyond the current starter presets.
   Done when: operators can pick from a broad shipped world-news catalog and a broader maintained public-cam catalog without relying only on manual YouTube URL entry.
 
 - [ ] `P0` Reproduce and fix packaged GUI freeze after `Render Preview` / action buttons on Fedora VM installs.

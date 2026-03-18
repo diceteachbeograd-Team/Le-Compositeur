@@ -286,6 +286,9 @@ fn main() -> eframe::Result<()> {
     }
 
     let mut viewport = egui::ViewportBuilder::default().with_app_id("le-compositeur");
+    viewport = viewport
+        .with_inner_size(egui::vec2(1040.0, 700.0))
+        .with_min_inner_size(egui::vec2(920.0, 620.0));
     if let Some(icon) = load_app_icon() {
         viewport = viewport.with_icon(icon);
     }
@@ -472,16 +475,8 @@ impl WcGuiApp {
     }
 
     fn enforce_stable_feature_gates(&mut self) {
-        self.cfg.show_news_layer = false;
         self.cfg.show_cams_layer = false;
-        self.cfg.news_render_mode = "overlay".to_string();
         self.cfg.cams_render_mode = "overlay".to_string();
-        if matches!(
-            self.selected_element,
-            LayoutElement::NewsTicker | LayoutElement::StaticUrl
-        ) {
-            self.selected_element = LayoutElement::Weather;
-        }
     }
 
     fn t<'a>(&self, en: &'a str, de: &'a str, sr: &'a str, zh: &'a str) -> &'a str {
@@ -2063,7 +2058,8 @@ impl WcGuiApp {
             ORDERING_GRID_STEP, ORDERING_WORLD_WIDTH, ORDERING_WORLD_HEIGHT
         ));
 
-        let canvas_w = ui.available_width().clamp(560.0, 900.0);
+        let max_canvas = if self.ui_compact_mode { 720.0 } else { 840.0 };
+        let canvas_w = ui.available_width().clamp(420.0, max_canvas);
         let canvas_size = egui::vec2(canvas_w, canvas_w * 9.0 / 16.0);
         let (rect, response) = ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
@@ -3053,9 +3049,7 @@ impl WcGuiApp {
     }
 
     fn render_news_ticker_tab(&mut self, ui: &mut egui::Ui) {
-        self.cfg.show_news_layer = false;
         self.cfg.show_cams_layer = false;
-        self.cfg.news_render_mode = "overlay".to_string();
         self.cfg.cams_render_mode = "overlay".to_string();
 
         settings_section(
@@ -3064,6 +3058,21 @@ impl WcGuiApp {
             "Configure headline feeds and ticker layout without live video windows.",
             |ui| {
                 ui.checkbox(&mut self.cfg.show_news_ticker2, "Enable news ticker");
+                ui.horizontal(|ui| {
+                    ui.label("Quick presets");
+                    if ui.button("Global").clicked() {
+                        self.cfg.news_ticker2_source = "google_world_en".to_string();
+                    }
+                    if ui.button("Tech").clicked() {
+                        self.cfg.news_ticker2_source = "ars_technica".to_string();
+                    }
+                    if ui.button("Finance").clicked() {
+                        self.cfg.news_ticker2_source = "marketwatch".to_string();
+                    }
+                    if ui.button("Peace").clicked() {
+                        self.cfg.news_ticker2_source = "un_news".to_string();
+                    }
+                });
                 ui.horizontal(|ui| {
                     ui.label("Source");
                     egui::ComboBox::from_id_salt("news_ticker_only_source")
@@ -3149,6 +3158,8 @@ impl WcGuiApp {
     }
 
     fn render_static_url_tab(&mut self, ui: &mut egui::Ui) {
+        self.cfg.show_cams_layer = false;
+        self.cfg.cams_render_mode = "overlay".to_string();
         settings_section(
             ui,
             "Static URL Background",
@@ -3175,6 +3186,97 @@ impl WcGuiApp {
                             .range(5..=3600),
                     );
                 });
+            },
+        );
+
+        ui.add_space(8.0);
+        settings_section(
+            ui,
+            "Static URL News Panel",
+            "Enable a non-video static URL panel with selectable known feeds or custom URLs.",
+            |ui| {
+                ui.checkbox(&mut self.cfg.show_news_layer, "Enable static URL panel");
+                ui.horizontal(|ui| {
+                    ui.label("Quick presets");
+                    if ui.button("Global").clicked() {
+                        self.cfg.news_source = "google_world_en".to_string();
+                    }
+                    if ui.button("Europe").clicked() {
+                        self.cfg.news_source = "guardian_world".to_string();
+                    }
+                    if ui.button("Tech").clicked() {
+                        self.cfg.news_source = "ars_technica".to_string();
+                    }
+                    if ui.button("Finance").clicked() {
+                        self.cfg.news_source = "marketwatch".to_string();
+                    }
+                    if ui.button("Peace").clicked() {
+                        self.cfg.news_source = "un_news".to_string();
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Source");
+                    egui::ComboBox::from_id_salt("static_url_news_source")
+                        .selected_text(news_source_label(&self.cfg.news_source))
+                        .show_ui(ui, |ui| {
+                            for source in static_url_sources() {
+                                ui.selectable_value(
+                                    &mut self.cfg.news_source,
+                                    source.id.to_string(),
+                                    source.display_label,
+                                );
+                            }
+                            ui.selectable_value(
+                                &mut self.cfg.news_source,
+                                "custom".to_string(),
+                                "Custom URL",
+                            );
+                        });
+                });
+                if self.cfg.news_source == "custom" {
+                    ui.horizontal(|ui| {
+                        ui.label("Custom static URL");
+                        ui.text_edit_singleline(&mut self.cfg.news_custom_url);
+                    });
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Refresh sec");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_refresh_seconds)
+                            .speed(5)
+                            .range(10..=3600),
+                    );
+                    ui.label("X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_pos_y).speed(1));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Size (16:9)");
+                    let mut selected = current_news_size_id(
+                        self.cfg.news_widget_width,
+                        self.cfg.news_widget_height,
+                    )
+                    .to_string();
+                    egui::ComboBox::from_id_salt("static_url_news_size")
+                        .selected_text(news_size_label(selected.as_str()))
+                        .show_ui(ui, |ui| {
+                            for (id, label, _, _) in news_size_presets() {
+                                ui.selectable_value(&mut selected, (*id).to_string(), *label);
+                            }
+                        });
+                    if let Some((_, _, w, h)) = news_size_presets()
+                        .iter()
+                        .copied()
+                        .find(|(id, _, _, _)| *id == selected)
+                    {
+                        self.cfg.news_widget_width = w;
+                        self.cfg.news_widget_height = h;
+                    }
+                });
+                ui.small(
+                    "Static URL panel uses snapshot updates and does not spawn live video windows.",
+                );
             },
         );
 
@@ -3827,6 +3929,13 @@ fn open_url(url: &str) -> bool {
 
 fn news_sources() -> &'static [NewsSourcePreset] {
     builtin_news_sources()
+}
+
+fn static_url_sources() -> Vec<&'static NewsSourcePreset> {
+    news_sources()
+        .iter()
+        .filter(|source| !source.is_live_video && source.id != "custom")
+        .collect()
 }
 
 #[allow(dead_code)]
@@ -5035,11 +5144,10 @@ mod tests {
         let mut app = test_app();
         app.enforce_stable_feature_gates();
 
-        assert!(!app.cfg.show_news_layer);
+        assert!(app.cfg.show_news_layer);
         assert!(!app.cfg.show_cams_layer);
-        assert_eq!(app.cfg.news_render_mode, "overlay");
         assert_eq!(app.cfg.cams_render_mode, "overlay");
         assert_eq!(app.active_tab, GuiTab::NewsTicker);
-        assert_eq!(app.selected_element, LayoutElement::Weather);
+        assert_eq!(app.selected_element, LayoutElement::StaticUrl);
     }
 }
