@@ -3286,7 +3286,6 @@ fn is_youtube_url(url: &str) -> bool {
 fn news_widget_enabled(cfg: &AppConfig) -> bool {
     cfg.show_news_layer
         && cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay")
-        && news_source_supports_live_video_source(&cfg.news_source, &cfg.news_custom_url)
         && LIVE_MEDIA_EXPERIMENTAL_ENABLED
 }
 

@@ -20,7 +20,7 @@ Last updated: 2026-03-18
 ## Now (Active Sprint)
 
 - [ ] `P0` Finalize product pivot from live media to stable ticker/static URL workflow.
-  Status: branch `codex/fedora-first` now removes `News`/`Cams` from workspace navigation and introduces `NewsTicker` + `Static URL` tabs; Ordering now maps to `NewsTicker` + `Static URL`; overlay runtime now treats non-live static sources as snapshot path so no ghost live ticker/video window is spawned.
+  Status: branch `codex/fedora-first` now removes `News`/`Cams` from workspace navigation and introduces `NewsTicker` + `Static URL` tabs; Ordering now maps to `NewsTicker` + `Static URL`; overlay runtime treats non-live static sources as snapshot path; static URL enable state is no longer force-reset each frame.
   Done when: Fedora VM package build shows no live video panes, ticker updates remain independent of BG refresh, and static URL panels are the only non-local media path.
 
 - [ ] `P0` Harden package/release versioning so VM installs always pick up latest binaries.

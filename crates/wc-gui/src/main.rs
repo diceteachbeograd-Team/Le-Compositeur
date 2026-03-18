@@ -287,8 +287,8 @@ fn main() -> eframe::Result<()> {
 
     let mut viewport = egui::ViewportBuilder::default().with_app_id("le-compositeur");
     viewport = viewport
-        .with_inner_size(egui::vec2(1040.0, 700.0))
-        .with_min_inner_size(egui::vec2(920.0, 620.0));
+        .with_inner_size(egui::vec2(960.0, 620.0))
+        .with_min_inner_size(egui::vec2(880.0, 560.0));
     if let Some(icon) = load_app_icon() {
         viewport = viewport.with_icon(icon);
     }
@@ -2042,6 +2042,14 @@ impl WcGuiApp {
                         "Static URL",
                     );
                 });
+            if ui.button("Select NewsTicker").clicked() {
+                self.selected_element = LayoutElement::NewsTicker;
+                self.cfg.show_news_ticker2 = true;
+            }
+            if ui.button("Select Static URL").clicked() {
+                self.selected_element = LayoutElement::StaticUrl;
+                self.cfg.show_news_layer = true;
+            }
         });
         ui.horizontal(|ui| {
             ui.label("Layer Z");
@@ -2057,6 +2065,14 @@ impl WcGuiApp {
             "Grid snap: {}px ({}x{} canvas)",
             ORDERING_GRID_STEP, ORDERING_WORLD_WIDTH, ORDERING_WORLD_HEIGHT
         ));
+        ui.horizontal(|ui| {
+            ui.label("Ticker X/Y");
+            ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_x).speed(1));
+            ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_y).speed(1));
+            ui.label("Static URL X/Y");
+            ui.add(egui::DragValue::new(&mut self.cfg.news_pos_x).speed(1));
+            ui.add(egui::DragValue::new(&mut self.cfg.news_pos_y).speed(1));
+        });
 
         let max_canvas = if self.ui_compact_mode { 720.0 } else { 840.0 };
         let canvas_w = ui.available_width().clamp(420.0, max_canvas);
