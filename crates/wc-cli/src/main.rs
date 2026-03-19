@@ -229,6 +229,7 @@ fn run_cycle(
     quote_cycle: u64,
     sync_overlay: bool,
 ) -> Result<()> {
+    let overlay_windows_supported = supports_positioned_overlay_windows();
     let output_path = expand_tilde(&cfg.output_image)?;
     let overlay_status = if sync_overlay {
         sync_overlay_runtime(config_path, cfg, image_cycle)?
@@ -241,7 +242,8 @@ fn run_cycle(
     // Otherwise users see stale standbilder until the next background rewrite.
     let render_news_into_wallpaper = !(sync_overlay && news_overlay_enabled(cfg));
     let render_cams_into_wallpaper = !(sync_overlay && cams_overlay_enabled(cfg));
-    let render_news_ticker2_into_wallpaper = !(sync_overlay && news_ticker2_enabled(cfg));
+    let render_news_ticker2_into_wallpaper =
+        !(sync_overlay && news_ticker2_enabled(cfg) && overlay_windows_supported);
 
     let quote = widget_bundle.quote;
     let clock = widget_bundle.clock;
@@ -2446,6 +2448,7 @@ fn sync_overlay_runtime(config_path: &Path, cfg: &AppConfig, image_cycle: u64) -
 }
 
 fn build_overlay_runtime_plan(cfg: &AppConfig, _image_cycle: u64) -> Result<OverlayRuntimePlan> {
+    let overlay_windows_supported = supports_positioned_overlay_windows();
     let mut videos = Vec::<OverlayVideoWindow>::new();
     let mut tickers = Vec::<OverlayTickerWindow>::new();
 
@@ -2466,7 +2469,7 @@ fn build_overlay_runtime_plan(cfg: &AppConfig, _image_cycle: u64) -> Result<Over
         }
     }
 
-    if news_ticker2_enabled(cfg) {
+    if news_ticker2_enabled(cfg) && overlay_windows_supported {
         tickers.push(OverlayTickerWindow {
             id: "news_ticker2".to_string(),
             label: "news-ticker2".to_string(),
@@ -2668,6 +2671,22 @@ fn process_alive(pid: u32) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+fn supports_positioned_overlay_windows() -> bool {
+    if !LIVE_MEDIA_EXPERIMENTAL_ENABLED {
+        return false;
+    }
+    let session = std::env::var("XDG_SESSION_TYPE")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if session == "wayland" {
+        return false;
+    }
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        return false;
+    }
+    true
 }
 
 fn overlay_helpers_disabled() -> bool {
