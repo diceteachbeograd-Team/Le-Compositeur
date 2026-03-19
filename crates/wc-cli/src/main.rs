@@ -1687,7 +1687,7 @@ fn resolve_news_widget(cfg: &AppConfig, cycle: u64) -> Result<NewsWidgetPayload>
             }
         }
     };
-    let line = news_ticker_frame(&payload.raw_line);
+    let line = compact_news_line(&payload.raw_line);
     Ok(NewsWidgetPayload {
         text: line,
         preview_image: preview_image.or(payload.preview_image),
@@ -2445,12 +2445,12 @@ fn sync_overlay_runtime(config_path: &Path, cfg: &AppConfig, image_cycle: u64) -
     })
 }
 
-fn build_overlay_runtime_plan(cfg: &AppConfig, image_cycle: u64) -> Result<OverlayRuntimePlan> {
+fn build_overlay_runtime_plan(cfg: &AppConfig, _image_cycle: u64) -> Result<OverlayRuntimePlan> {
     let mut videos = Vec::<OverlayVideoWindow>::new();
     let mut tickers = Vec::<OverlayTickerWindow>::new();
 
     if news_overlay_enabled(cfg) {
-        let (label, stream_url, feed_url) = news_source_profile(cfg);
+        let (label, stream_url, _feed_url) = news_source_profile(cfg);
         let has_live_video =
             news_source_supports_live_video_source(&cfg.news_source, &cfg.news_custom_url);
         if has_live_video {
@@ -2464,25 +2464,6 @@ fn build_overlay_runtime_plan(cfg: &AppConfig, image_cycle: u64) -> Result<Overl
                 audio: cfg.news_audio_enabled,
             });
         }
-        tickers.push(OverlayTickerWindow {
-            id: "news".to_string(),
-            label: "news".to_string(),
-            x: cfg.news_pos_x,
-            y: if has_live_video {
-                cfg.news_pos_y
-                    .saturating_add(cfg.news_widget_height as i32)
-                    .saturating_add(8)
-            } else {
-                cfg.news_pos_y
-            },
-            width: cfg.news_widget_width,
-            height: 56,
-            font_size: 30,
-            refresh_seconds: cfg.news_refresh_seconds.max(10),
-            text: resolve_news_overlay_text(cfg, image_cycle, label, &stream_url, feed_url)
-                .unwrap_or_else(|_| compact_news_line(label)),
-            command: String::new(),
-        });
     }
 
     if news_ticker2_enabled(cfg) {
@@ -2592,37 +2573,6 @@ fn build_overlay_runtime_plan(cfg: &AppConfig, image_cycle: u64) -> Result<Overl
         videos,
         tickers,
     })
-}
-
-fn resolve_news_overlay_text(
-    cfg: &AppConfig,
-    cycle: u64,
-    label: &str,
-    stream_url: &str,
-    feed_url: Option<&str>,
-) -> Result<String> {
-    let cache_id = format!(
-        "news-overlay-{}",
-        stable_hash(&format!(
-            "{}|{}|{}|{}",
-            cfg.news_source, cfg.news_custom_url, cfg.news_refresh_seconds, cfg.news_fps
-        ))
-    );
-    let payload = load_cached_news_payload(&cache_id, cfg.news_refresh_seconds)?
-        .or_else(|| {
-            fetch_news_payload(label, stream_url, feed_url, Some((cfg, cycle)))
-                .ok()
-                .inspect(|fetched| {
-                    let _ = store_cached_news_payload(&cache_id, fetched);
-                })
-        })
-        .or_else(|| {
-            load_cached_news_payload(&cache_id, NEWS_WIDGET_CACHE_MAX_AGE_SECS)
-                .ok()
-                .flatten()
-        })
-        .ok_or_else(|| anyhow::anyhow!("no overlay news text available"))?;
-    Ok(compact_news_line(&payload.raw_line))
 }
 
 fn overlay_runtime_dir(config_path: &Path) -> Result<PathBuf> {
@@ -3511,7 +3461,15 @@ fn extract_first_xml_tag(raw: &str, tag: &str) -> Option<String> {
         let value = raw[start..end]
             .replace("&amp;", "&")
             .replace("&lt;", "<")
-            .replace("&gt;", ">");
+            .replace("&gt;", ">")
+            .replace("&apos;", "'")
+            .replace("&quot;", "\"");
+        let value = value
+            .replace("<![CDATA[", "")
+            .replace("]]>", "")
+            .replace("<![cdata[", "")
+            .replace("]]&gt;", "")
+            .replace("&apos;", "'");
         let decoded = decode_numeric_entities(&value);
         let cleaned = decoded.trim();
         if !cleaned.is_empty() && !cleaned.to_ascii_lowercase().contains("rss") {

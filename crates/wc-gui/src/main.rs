@@ -3231,6 +3231,29 @@ impl WcGuiApp {
                     }
                 });
                 ui.horizontal(|ui| {
+                    ui.label("Snapshot presets");
+                    if ui.button("Belgrade Cam").clicked() {
+                        self.cfg.news_source = "custom".to_string();
+                        self.cfg.news_custom_url =
+                            "https://stream.uzivobeograd.rs/live/cam_20.jpg".to_string();
+                    }
+                    if ui.button("Berlin Cam").clicked() {
+                        self.cfg.news_source = "custom".to_string();
+                        self.cfg.news_custom_url =
+                            "https://www.berlin.de/webcams/fsz/webcam.jpg".to_string();
+                    }
+                    if ui.button("Paris Cam").clicked() {
+                        self.cfg.news_source = "custom".to_string();
+                        self.cfg.news_custom_url =
+                            "https://images.webcamgalore.com/33422-current-webcam-Paris.jpg"
+                                .to_string();
+                    }
+                    if ui.button("Belgrade Map").clicked() {
+                        self.cfg.news_source = "custom".to_string();
+                        self.cfg.news_custom_url = "https://staticmap.openstreetmap.de/staticmap.php?center=44.8176,20.4633&zoom=11&size=760x428&maptype=mapnik".to_string();
+                    }
+                });
+                ui.horizontal(|ui| {
                     ui.label("Source");
                     egui::ComboBox::from_id_salt("static_url_news_source")
                         .selected_text(news_source_label(&self.cfg.news_source))
@@ -3908,6 +3931,7 @@ fn wait_self_update_result(child: Child, backend: &str) -> Result<String, String
     ))
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn open_url(url: &str) -> bool {
     #[cfg(target_os = "linux")]
     {
@@ -4871,7 +4895,7 @@ fn default_cfg() -> AppConfig {
         weather_refresh_seconds: 600,
         weather_use_system_location: true,
         weather_location_override: String::new(),
-        news_source: "euronews".to_string(),
+        news_source: "un_news".to_string(),
         news_custom_url: String::new(),
         news_render_mode: "overlay".to_string(),
         news_fps: 1.0,
