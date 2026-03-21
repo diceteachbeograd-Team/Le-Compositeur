@@ -39,9 +39,9 @@ const OVERLAY_HELPERS_DISABLED_ENV: &str = "WC_DISABLE_OVERLAY_HELPERS";
 const MIN_SMOOTH_VIDEO_FPS: f32 = 15.0;
 const WEATHER_MAP_TILE_SIZE: u32 = 256;
 const WEATHER_MAP_TARGET_RADIUS_KM: f64 = 24.0;
-const WEATHER_POINTER_CENTER_X: i32 = 256;
-const WEATHER_POINTER_CENTER_Y: i32 = 186;
-const WEATHER_POINTER_RING_RADIUS: i32 = 72;
+const WEATHER_POINTER_CENTER_X: i32 = 320;
+const WEATHER_POINTER_CENTER_Y: i32 = 180;
+const WEATHER_POINTER_RING_RADIUS: i32 = 154;
 const STREAM_CAPTURE_TIMEOUT_SECS: u64 = 4;
 const YOUTUBE_PAGE_TIMEOUT_SECS: u64 = 4;
 const LIVE_MEDIA_EXPERIMENTAL_ENABLED: bool = cfg!(target_os = "linux");
@@ -2370,12 +2370,13 @@ fn news_ticker_frame(input: &str) -> String {
     };
     let visible = headlines
         .into_iter()
-        .take(4)
+        .take(3)
         .map(|item| compact_news_line(&item))
-        .map(|item| trim_to_chars(&item, 28))
+        .map(|item| trim_to_chars(&item, 46))
+        .map(|item| format!("• {item}"))
         .collect::<Vec<_>>()
-        .join("   •   ");
-    format!("▮ {source} ▮ {visible} ▮")
+        .join("\n");
+    format!("{} Bulletin\n{visible}", trim_to_chars(&source, 22))
 }
 
 fn trim_to_chars(input: &str, max_chars: usize) -> String {

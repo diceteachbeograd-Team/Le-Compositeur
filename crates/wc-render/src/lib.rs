@@ -395,9 +395,9 @@ fn render_with_imagemagick(
         if let Some(map_img) = text.weather_map_image
             && map_img.exists()
         {
-            let map_w = (weather_box_w.saturating_mul(42) / 100)
-                .max(120)
-                .min(weather_box_w.saturating_sub(80));
+            let map_w = (weather_box_w.saturating_mul(48) / 100)
+                .max(140)
+                .min(weather_box_w.saturating_sub(70));
             let map_h = weather_box_h.saturating_sub(16).max(64);
 
             args.push("(".to_string());
@@ -460,7 +460,7 @@ fn render_with_imagemagick(
     if !text.news.trim().is_empty() {
         let news_box_w = text.news_width.clamp(320, canvas_w.max(320));
         let news_box_h = news_box_w.saturating_mul(9) / 16;
-        let news_text_h = (text.clock_font_size.saturating_mul(7) / 5).clamp(44, 92);
+        let news_text_h = (text.clock_font_size.saturating_mul(8) / 5).clamp(54, 112);
         if let Some(news_image) = text.news_image
             && news_image.exists()
         {
@@ -481,7 +481,7 @@ fn render_with_imagemagick(
             args.push("-composite".to_string());
         }
 
-        let news_size = (text.clock_font_size.saturating_mul(58) / 100).max(14);
+        let news_size = (text.clock_font_size.saturating_mul(54) / 100).max(14);
         let news_line = text.news.replace(['\n', '\r'], " ");
         args.push("(".to_string());
         args.push("-size".to_string());
@@ -490,7 +490,7 @@ fn render_with_imagemagick(
         args.push("-background".to_string());
         args.push("none".to_string());
         args.push("-fill".to_string());
-        args.push("#001108D9".to_string());
+        args.push("#F4EAD4E6".to_string());
         args.push("-stroke".to_string());
         args.push("none".to_string());
         args.push("-draw".to_string());
@@ -500,17 +500,17 @@ fn render_with_imagemagick(
             news_text_h.saturating_sub(1)
         ));
         args.push("-fill".to_string());
-        args.push("#39FF14".to_string());
+        args.push("#111111".to_string());
         args.push("-stroke".to_string());
-        args.push("#062200".to_string());
+        args.push("#00000000".to_string());
         args.push("-strokewidth".to_string());
         args.push("1".to_string());
         args.push("-undercolor".to_string());
-        args.push("#001108D9".to_string());
+        args.push("#00000000".to_string());
         args.push("-gravity".to_string());
         args.push("West".to_string());
         args.push("-font".to_string());
-        args.push("DejaVu-Sans-Mono".to_string());
+        args.push("DejaVu-Serif".to_string());
         args.push("-pointsize".to_string());
         args.push(news_size.to_string());
         args.push("-annotate".to_string());
@@ -533,9 +533,9 @@ fn render_with_imagemagick(
 
     if !text.news_ticker2.trim().is_empty() {
         let ticker_w = text.news_ticker2_width.clamp(220, canvas_w.max(220));
-        let ticker_h = (text.clock_font_size.saturating_mul(7) / 5).clamp(44, 92);
-        let ticker_size = (text.clock_font_size.saturating_mul(58) / 100).max(14);
-        let ticker_line = text.news_ticker2.replace(['\n', '\r'], " ");
+        let ticker_h = (text.clock_font_size.saturating_mul(5) / 1).clamp(120, 220);
+        let ticker_size = (text.clock_font_size.saturating_mul(54) / 100).max(15);
+        let ticker_line = text.news_ticker2.replace('\r', "");
         args.push("(".to_string());
         args.push("-size".to_string());
         args.push(format!("{ticker_w}x{ticker_h}"));
@@ -543,7 +543,7 @@ fn render_with_imagemagick(
         args.push("-background".to_string());
         args.push("none".to_string());
         args.push("-fill".to_string());
-        args.push("#001108D9".to_string());
+        args.push("#F4EAD4E6".to_string());
         args.push("-stroke".to_string());
         args.push("none".to_string());
         args.push("-draw".to_string());
@@ -553,22 +553,20 @@ fn render_with_imagemagick(
             ticker_h.saturating_sub(1)
         ));
         args.push("-fill".to_string());
-        args.push("#39FF14".to_string());
+        args.push("#111111".to_string());
         args.push("-stroke".to_string());
-        args.push("#062200".to_string());
+        args.push("#00000000".to_string());
         args.push("-strokewidth".to_string());
-        args.push("1".to_string());
+        args.push("0".to_string());
         args.push("-undercolor".to_string());
-        args.push("#001108D9".to_string());
+        args.push("#00000000".to_string());
         args.push("-gravity".to_string());
-        args.push("West".to_string());
+        args.push("NorthWest".to_string());
         args.push("-font".to_string());
-        args.push("DejaVu-Sans-Mono".to_string());
+        args.push("DejaVu-Serif".to_string());
         args.push("-pointsize".to_string());
         args.push(ticker_size.to_string());
-        args.push("-annotate".to_string());
-        args.push("+12+0".to_string());
-        args.push(ticker_line);
+        args.push(format!("caption:{ticker_line}"));
         args.push(")".to_string());
         args.push("-gravity".to_string());
         args.push("NorthWest".to_string());
