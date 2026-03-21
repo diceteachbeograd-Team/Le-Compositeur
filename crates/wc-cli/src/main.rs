@@ -2365,20 +2365,12 @@ fn news_ticker_frame(input: &str) -> String {
     } else {
         vec![source.clone()]
     };
-    let shift_ms = ticker_shift_millis_for_len(headlines.len().max(3) * 20);
-    let cycle = now_epoch_millis() / shift_ms.max(1);
-    let shift = (cycle as usize) % headlines.len().max(1);
-    let ordered = headlines[shift..]
-        .iter()
-        .chain(headlines[..shift].iter())
-        .cloned()
-        .collect::<Vec<_>>();
-    let visible = ordered
+    let visible = headlines
         .into_iter()
         .take(4)
         .map(|item| compact_news_line(&item))
         .collect::<Vec<_>>()
-        .join("   ◇   ");
+        .join("   |   ");
     format!("▮ {source} ▮ {visible} ▮")
 }
 
