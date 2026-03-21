@@ -2,23 +2,49 @@
 
 Dynamic desktop compositor (Rust) by diceteachbeograd-Team.
 
-Status: active hobby project (use at your own risk).
+Status: active hobby project (operator-first, Fedora-first validation path).
 
-Temporary note for release line `2026.03.13-1`:
-- `Weather`, `News`, and `Cams` are still under active rework and are not yet considered fully reliable or visually finalized.
-- This note should be removed again after explicit functionality approval.
-- `main` is the stable operator line.
-- On `main`, `News` and `Cams` are temporarily disabled while live-overlay development continues on branch `codex/live-media-rnd`.
-- Disabled `News` / `Cams` tabs are also unavailable in `LAY Ordering`: they cannot be toggled there and no placement boxes are shown while the tabs stay grayed out.
+Temporary quality note (keep until explicit user approval):
+- `Weather`, `News`, and `Static URL` are actively improved and not yet considered visually final.
+- Stable mode is intentionally focused on deterministic snapshot + text workflows.
 
 ## Download (Latest)
 - Direct link: [github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest](https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest)
 
-### Which file is for which OS?
+### Artifact mapping
 - Linux: `le-compositeur-linux-x86_64.deb` or `le-compositeur-linux-x86_64.rpm`
 - Linux portable bundle: `le-compositeur-linux-x86_64.tar.gz`
 - Windows: `le-compositeur-windows-x86_64.zip`
 - macOS ARM: `le-compositeur-macos-arm64.dmg`
+
+## Current Product Mode
+- Stable UX path on branch `codex/fedora-first` uses:
+  - background images
+  - quote overlays
+  - weather panel (map + metrics)
+  - `News` ticker
+  - `Static URL` snapshots (no live browser/video embedding)
+- Experimental live video/cams are de-scoped from stable operation due to Wayland/Fedora reliability constraints.
+
+## What's New (recent branch changes)
+- `News Ticker` wording was unified to `News` in GUI-facing labels/hints.
+- News ticker cadence is now decoupled from background refresh cadence.
+- News ticker rendering now formats multiple headlines in one strip (`source + headline blocks`) for better readability.
+- Weather minimap rework:
+  - stronger city zoom
+  - wind indicator moved closer to map edge area
+  - higher-contrast grayscale mapping
+  - CARTO Light map tiles with OpenStreetMap fallback
+- Ordering remains the source of truth for placement/layering with snap-grid behavior.
+
+## Current GUI Tabs
+- `LAY Ordering`: layer toggles, z-order, drag/snap placement
+- `IMG Images`: background source + timing
+- `QTE Quotes`: quote source and style
+- `WTH Weather`: weather source/map/panel settings
+- `NWS News`: ticker source, refresh, fps, placement, width
+- `URL Static`: snapshot URL source list/custom URLs and placement
+- `SYS System`: runtime control, update checks, startup/integration toggles
 
 ## Build locally
 
@@ -26,8 +52,8 @@ Fedora/RHEL:
 ```bash
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.13-1
-sudo dnf install -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.13-1*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.21-1
+sudo dnf upgrade -y ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.21-1*.rpm
 le-compositeur
 ```
 
@@ -35,8 +61,8 @@ Ubuntu/Debian:
 ```bash
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.13-1
-sudo apt install ./dist/le-compositeur_2026.03.13-1_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.21-1
+sudo apt install ./dist/le-compositeur_2026.03.21-1_amd64.deb
 le-compositeur
 ```
 
@@ -45,34 +71,14 @@ macOS (source run):
 cargo run -p wc-gui
 ```
 
-## Current GUI tabs
-- `Ordering`: layer toggles + draggable neon boxes on grayscale frame
-- `Images`: background sources and wallpaper backend
-- `Quotes`: quote source and quote text settings
-- `Weather`: weather widget settings
-- `News`: grayed out on `main` until live-overlay work is ready
-- `Cams`: grayed out on `main` until live-overlay work is ready
-- `System`: runtime, startup, integrations, and script-fed overlay ticker settings
+## Operational Notes
+- Keep package release suffix unique per VM validation cycle (`YYYY.MM.DD-N`) to avoid stale-installs.
+- Some widgets need internet access (`Weather`, `News`, remote image/quote/static URL sources).
+- `Static URL` is snapshot-oriented by design; it is not a live browser renderer.
+- Self-update flow in GUI is package-based and relies on distro package tools + auth dialog behavior.
+- Default local quotes seed is packaged and auto-recovered if missing.
 
-## Notes
-- Weather, News, and Cams widgets are disabled by default after first install.
-- Default background preset for new configs is now `PlaceCats 1920x1080` (`https://placecats.com/1920/1080`).
-- Some widgets require internet access (`Weather`, `News`, remote image/quote sources).
-- Weather panel on `main` stays on the stable fitted layout while the more ambitious visual/icon rework continues separately.
-- `News` / `Cams` are intentionally disabled on `main` until the live-overlay branch solves windowing, feed health, and visible playback correctly.
-- While they are disabled, `LAY Ordering` also keeps their toggles inactive and removes their placement boxes from the position preview.
-- Live-media R&D continues on branch `codex/live-media-rnd`; it is not considered production-ready for normal desktop use yet.
-- System tab includes an independent overlay ticker that can be filled by any shell command; the first non-empty stdout line is rendered as the scrolling text.
-- Example script ticker command: `printf 'Build %s | %s\n' "$(date +%H:%M)" "$(cat /tmp/le-compositeur-ticker.txt 2>/dev/null)"`.
-- Overlay live video currently expects `mpv` on the target system; YouTube-like sources are more reliable when `yt-dlp` is installed as well.
-- Ordering tab now shows a grid and snaps dragged widget positions to that grid; layer Z is configurable per widget and drag collisions auto-resolve.
-- Performance caps are configurable per widget (`news_refresh_seconds`, `news_ticker2_refresh_seconds`, `cams_refresh_seconds`, `cams_fps`).
-- Linux distro smoke matrix and overlay snapshot/hash regression workflow are documented in `docs/TEST_MATRIX.md`.
-- Plugin-registry migration is documented in `docs/PLUGIN_REGISTRY_DRAFT.md`; stage-A scaffold is in `wc-core/src/widget_registry.rs` and stage-B dual-path is wired in `wc-cli`.
-- Release bundles include both GUI + CLI binaries and packaged default quotes seed (`local-quotes.md`).
-- Security notes: see [SECURITY.md](SECURITY.md)
-
-## Full docs
+## Docs
 - [docs/README_FULL.md](docs/README_FULL.md)
 - [docs/TODO.md](docs/TODO.md)
 - [docs/SESSION_PLAN.md](docs/SESSION_PLAN.md)
@@ -81,6 +87,9 @@ cargo run -p wc-gui
 - [docs/PLUGIN_REGISTRY_DRAFT.md](docs/PLUGIN_REGISTRY_DRAFT.md)
 - [docs/PACKAGING.md](docs/PACKAGING.md)
 - [docs/USER_CONTENT_FORMAT.md](docs/USER_CONTENT_FORMAT.md)
+
+## Security
+- [SECURITY.md](SECURITY.md)
 
 ## Support
 - Litecoin: `LLBCyZ3PwdprKYkuegouxkSbGfQxa7z9Rt`

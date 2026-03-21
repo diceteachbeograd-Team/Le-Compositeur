@@ -1,6 +1,6 @@
 # TODO and Progress
 
-Last updated: 2026-03-18
+Last updated: 2026-03-21
 
 ## Working Rules (must stay current)
 - Update this file in every feature/fix commit.
@@ -20,7 +20,7 @@ Last updated: 2026-03-18
 ## Now (Active Sprint)
 
 - [ ] `P0` Finalize product pivot from live media to stable ticker/static URL workflow.
-  Status: branch `codex/fedora-first` now removes `News`/`Cams` from workspace navigation and introduces `NewsTicker` + `Static URL` tabs; Ordering maps to `NewsTicker` + `Static URL`; overlay runtime no longer spawns the legacy primary-news ticker (only `NewsTicker` overlay ticker remains), RSS parsing now strips CDATA artifacts, and static URL tab ships one-click snapshot presets (Belgrade/Berlin/Paris/Belgrade map).
+  Status: branch `codex/fedora-first` now removes `News`/`Cams` from workspace navigation and introduces `News` + `Static URL` tabs; Ordering maps to `News` + `Static URL`; overlay runtime no longer spawns the legacy primary-news ticker, RSS parsing strips CDATA artifacts, static URL tab ships one-click snapshot presets, and ticker cadence was decoupled from background cadence in runtime loop handling.
   Done when: Fedora VM package build shows no live video panes, ticker updates remain independent of BG refresh, and static URL panels are the only non-local media path.
 
 - [ ] `P0` Harden package/release versioning so VM installs always pick up latest binaries.
@@ -36,7 +36,7 @@ Last updated: 2026-03-18
   Done when: docs clearly state stable mode is snapshots + ticker, and "experimental live video" is opt-in only.
 
 - [ ] `P1` Improve ticker readability and motion smoothness.
-  Status: ticker now runs independently of live video, but spacing/font hierarchy still needs polish for long mixed-language headlines.
+  Status: ticker now renders source + multi-headline strip and update cadence is no longer bound to image refresh; final spacing/font hierarchy polish for long mixed-language headlines remains.
   Done when: ticker movement is visibly smoother and label/headline hierarchy remains readable at normal desktop viewing distance.
 
 - [ ] `P1` Expand shipped source catalogs for world news and public cams.
@@ -95,7 +95,7 @@ Last updated: 2026-03-18
   Done when: ticker shift uses auto reading-speed logic, video/camera streams enforce smooth playback floor, and loop wake interval follows `min(image_refresh_seconds, 60)` unless animation needs faster ticks.
 
 - [ ] `P1` Remove temporary README instability warning after explicit user approval.
-  Done when: user confirms `Weather`, `News`, and `Cams` are functionally acceptable and the temporary release-line warning is removed from `README.md`.
+  Done when: user confirms `Weather`, `News`, and `Static URL` are functionally acceptable and the temporary release-line warning is removed from `README.md`.
 
 ## Next (After Active Sprint)
 
@@ -176,6 +176,10 @@ Last updated: 2026-03-18
 - [x] Moved built-in news source definitions into a shared catalog in `wc-core` and expanded them to shipped world-region/country sources with clear feed-vs-live-video semantics.
 - [x] Added GUI news-source filtering plus overlay warning text so feed-only sources no longer masquerade as live video.
 - [x] Switched the default background preset for new configs to `PlaceCats 1920x1080` and set the secondary ticker default to a world-news feed source.
+- [x] Renamed GUI user-facing wording from `NewsTicker` to `News` for tab/button/ordering labels and hints.
+- [x] Decoupled ticker runtime cadence from background rotation cadence by applying ticker FPS-based loop wake constraints.
+- [x] Reworked news strip output into a multi-headline format (`source + rotating headline blocks`) for better readability.
+- [x] Improved weather minimap quality using stronger city zoom, shifted wind-pointer ring placement, contrast tuning, and CARTO-light map tiles with OSM fallback.
 
 ## Restart Checklist (Operator)
 
