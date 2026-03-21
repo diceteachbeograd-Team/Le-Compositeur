@@ -43,7 +43,10 @@ const TICKER_READING_CHARS_PER_SEC: f64 = 7.5;
 const TICKER_MIN_SHIFT_MS: f64 = 120.0;
 const TICKER_MAX_SHIFT_MS: f64 = 650.0;
 const WEATHER_MAP_TILE_SIZE: u32 = 256;
-const WEATHER_MAP_TARGET_RADIUS_KM: f64 = 50.0;
+const WEATHER_MAP_TARGET_RADIUS_KM: f64 = 24.0;
+const WEATHER_POINTER_CENTER_X: i32 = 548;
+const WEATHER_POINTER_CENTER_Y: i32 = 258;
+const WEATHER_POINTER_RING_RADIUS: i32 = 62;
 const STREAM_CAPTURE_TIMEOUT_SECS: u64 = 4;
 const YOUTUBE_PAGE_TIMEOUT_SECS: u64 = 4;
 const LIVE_MEDIA_EXPERIMENTAL_ENABLED: bool = cfg!(target_os = "linux");
@@ -1600,7 +1603,7 @@ impl WidgetPlugin for NewsTicker2WidgetPlugin {
     }
 
     fn display_name(&self) -> &'static str {
-        "News Ticker 2"
+        "News"
     }
 
     fn default_instance(&self) -> WidgetInstanceConfig {
@@ -2174,9 +2177,12 @@ fn resolve_weather_minimap_raw(lat: f64, lon: f64) -> Option<PathBuf> {
     let cache_dir = expand_tilde("~/.cache/wallpaper-composer/images").ok()?;
     fs::create_dir_all(&cache_dir).ok()?;
     let zoom = weather_map_zoom_for_lat(lat);
+    let weather_map_source_fingerprint = "carto-light+osm-fallback";
     let output = cache_dir.join(format!(
         "weather-map-base-{}.png",
-        stable_hash(&format!("{lat:.4}:{lon:.4}:z{zoom}"))
+        stable_hash(&format!(
+            "{lat:.4}:{lon:.4}:z{zoom}:{weather_map_source_fingerprint}"
+        ))
     ));
     if output.exists() {
         return Some(output);
@@ -2197,21 +2203,20 @@ fn resolve_weather_minimap_raw(lat: f64, lon: f64) -> Option<PathBuf> {
         for ox in 0..3_i64 {
             let wrapped_x = (base_x + ox).rem_euclid(tile_span);
             let clamped_y = (base_y + oy).clamp(0, tile_span.saturating_sub(1));
-            let url = format!(
-                "https://tile.openstreetmap.org/{}/{}/{}.png",
-                zoom, wrapped_x, clamped_y
-            );
-            if let Ok(path) = fetch_remote_image(url, ImageProvider::Generic)
-                && let Ok(tile) = image::open(path)
-            {
-                let tile_rgba = tile.to_rgba8();
-                imageops::overlay(
-                    &mut mosaic,
-                    &tile_rgba,
-                    ox * WEATHER_MAP_TILE_SIZE as i64,
-                    oy * WEATHER_MAP_TILE_SIZE as i64,
-                );
-                downloaded_any = true;
+            for url in weather_tile_urls(zoom, wrapped_x, clamped_y) {
+                if let Ok(path) = fetch_remote_image(url, ImageProvider::Generic)
+                    && let Ok(tile) = image::open(path)
+                {
+                    let tile_rgba = tile.to_rgba8();
+                    imageops::overlay(
+                        &mut mosaic,
+                        &tile_rgba,
+                        ox * WEATHER_MAP_TILE_SIZE as i64,
+                        oy * WEATHER_MAP_TILE_SIZE as i64,
+                    );
+                    downloaded_any = true;
+                    break;
+                }
             }
         }
     }
@@ -2228,6 +2233,14 @@ fn resolve_weather_minimap_raw(lat: f64, lon: f64) -> Option<PathBuf> {
     let crop_y = (center_px_y - 180).clamp(0, max_crop_y) as u32;
     let cropped = imageops::crop_imm(&mosaic, crop_x, crop_y, 640, 360).to_image();
     write_weather_image(&output, &cropped)
+}
+
+fn weather_tile_urls(zoom: u32, tile_x: i64, tile_y: i64) -> [String; 3] {
+    [
+        format!("https://a.basemaps.cartocdn.com/light_all/{zoom}/{tile_x}/{tile_y}.png"),
+        format!("https://b.basemaps.cartocdn.com/light_all/{zoom}/{tile_x}/{tile_y}.png"),
+        format!("https://tile.openstreetmap.org/{zoom}/{tile_x}/{tile_y}.png"),
+    ]
 }
 
 fn weather_map_zoom_for_lat(lat: f64) -> u32 {
@@ -2337,20 +2350,36 @@ fn ticker_shift_millis_for_len(char_count: usize) -> u64 {
 
 fn news_ticker_frame(input: &str) -> String {
     let clean = compact_news_line(input);
-    let tape = format!("   {clean}   ◆   ");
-    let chars = tape.chars().collect::<Vec<_>>();
-    if chars.is_empty() {
+    let parts = clean
+        .split('◆')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(compact_news_line)
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
         return "LIVE ◆ no data".to_string();
     }
-    let shift_ms = ticker_shift_millis_for_len(chars.len());
+    let source = parts.first().cloned().unwrap_or_else(|| "LIVE".to_string());
+    let headlines = if parts.len() > 1 {
+        parts[1..].to_vec()
+    } else {
+        vec![source.clone()]
+    };
+    let shift_ms = ticker_shift_millis_for_len(headlines.len().max(3) * 20);
     let cycle = now_epoch_millis() / shift_ms.max(1);
-    let shift = (cycle as usize) % chars.len();
-    let ordered_full = chars[shift..]
+    let shift = (cycle as usize) % headlines.len().max(1);
+    let ordered = headlines[shift..]
         .iter()
-        .chain(chars[..shift].iter())
-        .collect::<String>();
-    let visible = ordered_full.chars().take(92).collect::<String>();
-    format!("▮ {visible} ▮")
+        .chain(headlines[..shift].iter())
+        .cloned()
+        .collect::<Vec<_>>();
+    let visible = ordered
+        .into_iter()
+        .take(4)
+        .map(|item| compact_news_line(&item))
+        .collect::<Vec<_>>()
+        .join("   ◇   ");
+    format!("▮ {source} ▮ {visible} ▮")
 }
 
 #[derive(Debug, Clone)]
@@ -3979,6 +4008,7 @@ fn loop_tick_duration(cfg: &AppConfig) -> Duration {
     }
     if news_ticker2_enabled(cfg) {
         seconds = seconds.min(cfg.news_ticker2_refresh_seconds.max(10) as f64);
+        seconds = seconds.min((1.0 / cfg.news_ticker2_fps.max(0.05)) as f64);
     }
     if cams_overlay_enabled(cfg) {
         seconds = seconds.min(cfg.cams_refresh_seconds.max(10) as f64);
@@ -4202,7 +4232,13 @@ fn stylize_weather_minimap(
     }
     tint_weather_map(&mut img);
     draw_weather_frame(&mut img);
-    draw_weather_pointer(&mut img, 320, 180, wind_deg, wind_speed);
+    draw_weather_pointer(
+        &mut img,
+        WEATHER_POINTER_CENTER_X,
+        WEATHER_POINTER_CENTER_Y,
+        wind_deg,
+        wind_speed,
+    );
     write_weather_image(&output, &img)
 }
 
@@ -4227,7 +4263,13 @@ fn fallback_weather_minimap(wind_deg: f64, wind_speed: f64, wind_unit: &str) -> 
         draw_line(&mut img, 12, y, 628, y, Rgba([46, 58, 69, 140]), 1);
     }
     draw_weather_frame(&mut img);
-    draw_weather_pointer(&mut img, 320, 180, wind_deg, wind_speed);
+    draw_weather_pointer(
+        &mut img,
+        WEATHER_POINTER_CENTER_X,
+        WEATHER_POINTER_CENTER_Y,
+        wind_deg,
+        wind_speed,
+    );
     write_weather_image(&output, &img)
 }
 
@@ -4239,13 +4281,12 @@ fn write_weather_image(path: &Path, img: &RgbaImage) -> Option<PathBuf> {
 fn tint_weather_map(img: &mut RgbaImage) {
     for pixel in img.pixels_mut() {
         let src = pixel.0;
-        let lum = ((src[0] as f32 * 0.299) + (src[1] as f32 * 0.587) + (src[2] as f32 * 0.114))
-            .round() as u8;
-        let mapped = lum.saturating_add(12);
+        let lum = (src[0] as f32 * 0.299) + (src[1] as f32 * 0.587) + (src[2] as f32 * 0.114);
+        let boosted = ((lum - 128.0) * 1.35 + 152.0).clamp(0.0, 255.0) as u8;
         *pixel = Rgba([
-            mapped.saturating_sub(20),
-            mapped.saturating_sub(10),
-            mapped,
+            boosted.saturating_sub(10),
+            boosted.saturating_sub(4),
+            boosted,
             255,
         ]);
     }
@@ -4254,12 +4295,25 @@ fn tint_weather_map(img: &mut RgbaImage) {
 fn draw_weather_frame(img: &mut RgbaImage) {
     draw_rect_outline(img, 6, 6, 628, 348, Rgba([48, 61, 74, 220]), 2);
     draw_rect_outline(img, 14, 14, 612, 332, Rgba([28, 36, 45, 220]), 1);
-    draw_circle_outline(img, 320, 180, 82, Rgba([93, 107, 122, 170]), 2);
-    draw_filled_circle(img, 320, 180, 4, Rgba([255, 107, 107, 255]));
+    draw_circle_outline(
+        img,
+        WEATHER_POINTER_CENTER_X,
+        WEATHER_POINTER_CENTER_Y,
+        WEATHER_POINTER_RING_RADIUS,
+        Rgba([93, 107, 122, 170]),
+        2,
+    );
+    draw_filled_circle(
+        img,
+        WEATHER_POINTER_CENTER_X,
+        WEATHER_POINTER_CENTER_Y,
+        4,
+        Rgba([255, 107, 107, 255]),
+    );
 }
 
 fn draw_weather_pointer(img: &mut RgbaImage, cx: i32, cy: i32, wind_deg: f64, wind_speed: f64) {
-    let radius = 88.0_f64;
+    let radius = (WEATHER_POINTER_RING_RADIUS + 8) as f64;
     let tip_offset = 18.0_f64;
     let rad = wind_deg.to_radians();
     let dx = rad.sin();

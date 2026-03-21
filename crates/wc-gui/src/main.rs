@@ -494,7 +494,7 @@ impl WcGuiApp {
             GuiTab::Images => "Background Images",
             GuiTab::Quotes => "Quote Source & Style",
             GuiTab::Weather => "Weather Widget",
-            GuiTab::NewsTicker => "News Ticker",
+            GuiTab::NewsTicker => "News",
             GuiTab::StaticUrl => "Static URL Panels",
             GuiTab::System => "Runtime & Integrations",
         }
@@ -514,7 +514,7 @@ impl WcGuiApp {
             GuiTab::Weather => {
                 "Configure weather source behavior, refresh budget, placement and visual style."
             }
-            GuiTab::NewsTicker => "Configure ticker content sources, layout, and style.",
+            GuiTab::NewsTicker => "Configure news content sources, layout, and style.",
             GuiTab::StaticUrl => {
                 "Configure static URL-based sources rendered as snapshots, not live browser/video."
             }
@@ -530,7 +530,7 @@ impl WcGuiApp {
             GuiTab::Images => "IMG Images",
             GuiTab::Quotes => "QTE Quotes",
             GuiTab::Weather => "WTH Weather",
-            GuiTab::NewsTicker => "TIK NewsTicker",
+            GuiTab::NewsTicker => "NWS News",
             GuiTab::StaticUrl => "URL Static",
             GuiTab::System => "SYS System",
         }
@@ -548,7 +548,7 @@ impl WcGuiApp {
             LayoutElement::Quote => "Quote Box",
             LayoutElement::Clock => "Clock",
             LayoutElement::Weather => "Weather",
-            LayoutElement::NewsTicker => "News Ticker",
+            LayoutElement::NewsTicker => "News",
             LayoutElement::StaticUrl => "Static URL",
         }
     }
@@ -2011,7 +2011,7 @@ impl WcGuiApp {
             ui.checkbox(&mut self.cfg.show_quote_layer, "Quote");
             ui.checkbox(&mut self.cfg.show_clock_layer, "Clock");
             ui.checkbox(&mut self.cfg.show_weather_layer, "Weather");
-            ui.checkbox(&mut self.cfg.show_news_ticker2, "NewsTicker");
+            ui.checkbox(&mut self.cfg.show_news_ticker2, "News");
             ui.checkbox(&mut self.cfg.show_news_layer, "Static URL");
         });
 
@@ -2034,7 +2034,7 @@ impl WcGuiApp {
                     ui.selectable_value(
                         &mut self.selected_element,
                         LayoutElement::NewsTicker,
-                        "NewsTicker",
+                        "News",
                     );
                     ui.selectable_value(
                         &mut self.selected_element,
@@ -2042,7 +2042,7 @@ impl WcGuiApp {
                         "Static URL",
                     );
                 });
-            if ui.button("Select NewsTicker").clicked() {
+            if ui.button("Select News").clicked() {
                 self.selected_element = LayoutElement::NewsTicker;
                 self.cfg.show_news_ticker2 = true;
             }
@@ -2536,7 +2536,7 @@ impl WcGuiApp {
                 }
             }
             LayoutElement::NewsTicker => {
-                ui.heading("NewsTicker Settings");
+                ui.heading("News Settings");
                 ui.checkbox(&mut self.cfg.show_news_ticker2, "Enabled");
                 ui.horizontal(|ui| {
                     ui.label("X");
@@ -3073,7 +3073,7 @@ impl WcGuiApp {
             "Ticker Sources",
             "Configure headline feeds and ticker layout without live video windows.",
             |ui| {
-                ui.checkbox(&mut self.cfg.show_news_ticker2, "Enable news ticker");
+                ui.checkbox(&mut self.cfg.show_news_ticker2, "Enable news");
                 ui.horizontal(|ui| {
                     ui.label("Quick presets");
                     if ui.button("Global").clicked() {
@@ -4666,7 +4666,7 @@ impl eframe::App for WcGuiApp {
                 });
                 ui.colored_label(
                     egui::Color32::from_rgb(255, 200, 110),
-                    "Live video/cams are disabled. Use NewsTicker + Static URL modes for stable operation.",
+                    "Live video/cams are disabled. Use News + Static URL modes for stable operation.",
                 );
             });
 
