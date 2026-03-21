@@ -37,11 +37,6 @@ const CAMS_WIDGET_CACHE_MAX_AGE_SECS: u64 = 24 * 60 * 60;
 const WIDGET_REGISTRY_STAGE_B_ENV: &str = "WC_WIDGET_REGISTRY_STAGE_B";
 const OVERLAY_HELPERS_DISABLED_ENV: &str = "WC_DISABLE_OVERLAY_HELPERS";
 const MIN_SMOOTH_VIDEO_FPS: f32 = 15.0;
-const TICKER_MIN_PASS_SECS: f64 = 14.0;
-const TICKER_MAX_PASS_SECS: f64 = 42.0;
-const TICKER_READING_CHARS_PER_SEC: f64 = 7.5;
-const TICKER_MIN_SHIFT_MS: f64 = 120.0;
-const TICKER_MAX_SHIFT_MS: f64 = 650.0;
 const WEATHER_MAP_TILE_SIZE: u32 = 256;
 const WEATHER_MAP_TARGET_RADIUS_KM: f64 = 24.0;
 const WEATHER_POINTER_CENTER_X: i32 = 548;
@@ -2356,15 +2351,6 @@ fn compact_news_line(input: &str) -> String {
     out
 }
 
-fn ticker_shift_millis_for_len(char_count: usize) -> u64 {
-    let chars = char_count.max(1) as f64;
-    let pass_seconds =
-        (chars / TICKER_READING_CHARS_PER_SEC).clamp(TICKER_MIN_PASS_SECS, TICKER_MAX_PASS_SECS);
-    ((pass_seconds * 1000.0) / chars)
-        .clamp(TICKER_MIN_SHIFT_MS, TICKER_MAX_SHIFT_MS)
-        .round() as u64
-}
-
 fn news_ticker_frame(input: &str) -> String {
     let clean = compact_news_line(input);
     let parts = clean
@@ -4537,8 +4523,8 @@ mod tests {
         LIVE_MEDIA_EXPERIMENTAL_ENABLED, OVERLAY_HELPERS_DISABLED_ENV,
         build_builtin_widget_registry, build_overlay_runtime_plan, cycle_pick_state_path,
         determine_cycle, loop_tick_duration, overlay_helpers_disabled, read_cycle_pick_state,
-        read_recent_indices, ticker_shift_millis_for_len, widget_instance_from_config,
-        write_cycle_pick_state, write_recent_indices,
+        read_recent_indices, widget_instance_from_config, write_cycle_pick_state,
+        write_recent_indices,
     };
     use std::fs;
     use std::time::Duration;
@@ -4615,15 +4601,6 @@ mod tests {
 
         let _ = fs::remove_file(cycle_pick_state_path(&state_path));
         let _ = fs::remove_file(state_path);
-    }
-
-    #[test]
-    fn ticker_shift_scales_with_text_length() {
-        let short_ms = ticker_shift_millis_for_len(24);
-        let long_ms = ticker_shift_millis_for_len(96);
-        assert!(short_ms > long_ms);
-        assert!(short_ms >= 300);
-        assert!(long_ms <= 180);
     }
 
     #[test]
