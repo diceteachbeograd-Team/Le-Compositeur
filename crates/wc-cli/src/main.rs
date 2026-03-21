@@ -1831,16 +1831,27 @@ fn fetch_news_payload(
     feed_url: Option<&str>,
     with_preview: Option<(&AppConfig, u64)>,
 ) -> Result<NewsCachedPayload> {
-    let headline = if let Some(feed) = feed_url {
-        fetch_rss_ticker(feed).unwrap_or_else(|| "live feed".to_string())
-    } else {
-        "live source".to_string()
-    };
     let subtitle_hint = fetch_stream_title_hint(stream_url).unwrap_or_default();
-    let raw_line = if subtitle_hint.is_empty() {
-        compact_news_line(&format!("{label} ◆ {headline}"))
+    let raw_line = if let Some(feed) = feed_url {
+        let mut parts = vec![compact_news_line(label)];
+        let headlines =
+            fetch_rss_headlines(feed, 6).unwrap_or_else(|| vec!["live feed".to_string()]);
+        parts.extend(headlines);
+        if !subtitle_hint.is_empty() {
+            parts.push(compact_news_line(&subtitle_hint));
+        }
+        parts
+            .into_iter()
+            .filter(|part| !part.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join(" ◆ ")
     } else {
-        compact_news_line(&format!("{label} ◆ {headline} ◆ {subtitle_hint}"))
+        let headline = "live source".to_string();
+        if subtitle_hint.is_empty() {
+            compact_news_line(&format!("{label} ◆ {headline}"))
+        } else {
+            compact_news_line(&format!("{label} ◆ {headline} ◆ {subtitle_hint}"))
+        }
     };
     let preview_image =
         with_preview.and_then(|(cfg, cycle)| resolve_news_preview_image(cfg, stream_url, cycle));
@@ -2070,7 +2081,7 @@ fn news_source_profile_raw(
     ("Custom", custom_url.trim().to_string(), None)
 }
 
-fn fetch_rss_ticker(url: &str) -> Option<String> {
+fn fetch_rss_headlines(url: &str, limit: usize) -> Option<Vec<String>> {
     let client = Client::builder()
         .timeout(Duration::from_secs(6))
         .build()
@@ -2083,7 +2094,7 @@ fn fetch_rss_ticker(url: &str) -> Option<String> {
         .ok()?
         .text()
         .ok()?;
-    let mut titles = extract_rss_item_titles(&body, 4);
+    let mut titles = extract_rss_item_titles(&body, limit.max(1));
     if titles.is_empty()
         && let Some(single) =
             extract_first_rss_item_title(&body).or_else(|| extract_first_xml_tag(&body, "title"))
@@ -2093,7 +2104,13 @@ fn fetch_rss_ticker(url: &str) -> Option<String> {
     if titles.is_empty() {
         None
     } else {
-        Some(compact_news_line(&titles.join(" ◆ ")))
+        Some(
+            titles
+                .into_iter()
+                .map(|t| compact_news_line(&t))
+                .filter(|t| !t.trim().is_empty())
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -2237,9 +2254,9 @@ fn resolve_weather_minimap_raw(lat: f64, lon: f64) -> Option<PathBuf> {
 
 fn weather_tile_urls(zoom: u32, tile_x: i64, tile_y: i64) -> [String; 3] {
     [
+        format!("https://tile.openstreetmap.org/{zoom}/{tile_x}/{tile_y}.png"),
         format!("https://a.basemaps.cartocdn.com/light_all/{zoom}/{tile_x}/{tile_y}.png"),
         format!("https://b.basemaps.cartocdn.com/light_all/{zoom}/{tile_x}/{tile_y}.png"),
-        format!("https://tile.openstreetmap.org/{zoom}/{tile_x}/{tile_y}.png"),
     ]
 }
 
@@ -4274,13 +4291,12 @@ fn tint_weather_map(img: &mut RgbaImage) {
     for pixel in img.pixels_mut() {
         let src = pixel.0;
         let lum = (src[0] as f32 * 0.299) + (src[1] as f32 * 0.587) + (src[2] as f32 * 0.114);
-        let boosted = ((lum - 128.0) * 1.35 + 152.0).clamp(0.0, 255.0) as u8;
-        *pixel = Rgba([
-            boosted.saturating_sub(10),
-            boosted.saturating_sub(4),
-            boosted,
-            255,
-        ]);
+        let blend = 0.35_f32;
+        let gray = lum.clamp(0.0, 255.0);
+        let r = (src[0] as f32 * (1.0 - blend) + gray * blend + 8.0).clamp(0.0, 255.0) as u8;
+        let g = (src[1] as f32 * (1.0 - blend) + gray * blend + 8.0).clamp(0.0, 255.0) as u8;
+        let b = (src[2] as f32 * (1.0 - blend) + gray * blend + 10.0).clamp(0.0, 255.0) as u8;
+        *pixel = Rgba([r, g, b, 255]);
     }
 }
 
