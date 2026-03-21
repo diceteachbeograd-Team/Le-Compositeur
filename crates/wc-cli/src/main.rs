@@ -39,9 +39,9 @@ const OVERLAY_HELPERS_DISABLED_ENV: &str = "WC_DISABLE_OVERLAY_HELPERS";
 const MIN_SMOOTH_VIDEO_FPS: f32 = 15.0;
 const WEATHER_MAP_TILE_SIZE: u32 = 256;
 const WEATHER_MAP_TARGET_RADIUS_KM: f64 = 24.0;
-const WEATHER_POINTER_CENTER_X: i32 = 548;
-const WEATHER_POINTER_CENTER_Y: i32 = 258;
-const WEATHER_POINTER_RING_RADIUS: i32 = 62;
+const WEATHER_POINTER_CENTER_X: i32 = 256;
+const WEATHER_POINTER_CENTER_Y: i32 = 186;
+const WEATHER_POINTER_RING_RADIUS: i32 = 72;
 const STREAM_CAPTURE_TIMEOUT_SECS: u64 = 4;
 const YOUTUBE_PAGE_TIMEOUT_SECS: u64 = 4;
 const LIVE_MEDIA_EXPERIMENTAL_ENABLED: bool = cfg!(target_os = "linux");
@@ -2372,9 +2372,21 @@ fn news_ticker_frame(input: &str) -> String {
         .into_iter()
         .take(4)
         .map(|item| compact_news_line(&item))
+        .map(|item| trim_to_chars(&item, 28))
         .collect::<Vec<_>>()
-        .join("   |   ");
+        .join("   •   ");
     format!("▮ {source} ▮ {visible} ▮")
+}
+
+fn trim_to_chars(input: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for ch in input.chars().take(max_chars) {
+        out.push(ch);
+    }
+    if input.chars().count() > max_chars {
+        out.push('…');
+    }
+    out
 }
 
 #[derive(Debug, Clone)]
@@ -4294,8 +4306,8 @@ fn draw_weather_frame(img: &mut RgbaImage) {
         WEATHER_POINTER_CENTER_X,
         WEATHER_POINTER_CENTER_Y,
         WEATHER_POINTER_RING_RADIUS,
-        Rgba([93, 107, 122, 170]),
-        2,
+        Rgba([32, 44, 58, 210]),
+        3,
     );
     draw_filled_circle(
         img,
