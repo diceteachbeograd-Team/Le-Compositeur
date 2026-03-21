@@ -2373,10 +2373,10 @@ fn news_ticker_frame(input: &str) -> String {
         .take(3)
         .map(|item| compact_news_line(&item))
         .map(|item| trim_to_chars(&item, 46))
-        .map(|item| format!("• {item}"))
+        .map(|item| format!("- {item}"))
         .collect::<Vec<_>>()
         .join("\n");
-    format!("{} Bulletin\n{visible}", trim_to_chars(&source, 22))
+    format!("{} BULLETIN\n{visible}", trim_to_chars(&source, 22))
 }
 
 fn trim_to_chars(input: &str, max_chars: usize) -> String {
@@ -2385,7 +2385,7 @@ fn trim_to_chars(input: &str, max_chars: usize) -> String {
         out.push(ch);
     }
     if input.chars().count() > max_chars {
-        out.push('…');
+        out.push_str("...");
     }
     out
 }
