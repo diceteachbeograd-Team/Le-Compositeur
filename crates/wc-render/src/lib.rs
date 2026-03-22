@@ -554,19 +554,24 @@ fn render_with_imagemagick(
             .take(5)
             .cloned()
             .collect::<Vec<_>>();
-        let cols = 2_u32;
-        let rows = ((items.len() as u32 + cols - 1) / cols).max(2);
+        let cols = match items.len() {
+            n if n >= 5 => 5_u32,
+            4 => 4_u32,
+            3 => 3_u32,
+            _ => 2_u32,
+        };
+        let rows = ((items.len() as u32 + cols - 1) / cols).max(1);
         let panel_pad = 12_u32;
         let card_gap = 8_u32;
         let header_h = (text.clock_font_size.saturating_mul(9) / 5).clamp(36, 56);
-        let card_h = (text.clock_font_size.saturating_mul(7) / 5).clamp(28, 42);
+        let card_h = (text.clock_font_size.saturating_mul(12) / 5).clamp(54, 88);
         let body_h = panel_pad
             .saturating_add(rows.saturating_mul(card_h))
             .saturating_add(rows.saturating_sub(1).saturating_mul(card_gap))
             .saturating_add(panel_pad);
         let ticker_h = header_h
             .saturating_add(body_h)
-            .clamp(170, 270)
+            .clamp(128, 320)
             .min(canvas_h.saturating_sub(24));
         let inner_w = ticker_w.saturating_sub(panel_pad.saturating_mul(2));
         let card_w = inner_w.saturating_sub(card_gap.saturating_mul(cols.saturating_sub(1))) / cols;
@@ -639,15 +644,19 @@ fn render_with_imagemagick(
             args.push("DejaVu-Serif".to_string());
             args.push("-pointsize".to_string());
             args.push(card_size.to_string());
+            args.push("-interline-spacing".to_string());
+            args.push("2".to_string());
             args.push("-gravity".to_string());
             args.push("NorthWest".to_string());
             args.push("-annotate".to_string());
+            let max_chars_per_line = (card_w / 10).clamp(16, 34) as usize;
+            let wrapped = wrap_text_for_card(item, max_chars_per_line, 3);
             args.push(format!(
                 "+{}+{}",
                 card_x.saturating_add(8),
-                card_y.saturating_add(card_h / 2 + 5)
+                card_y.saturating_add(18)
             ));
-            args.push(item.clone());
+            args.push(wrapped);
         }
         args.push(")".to_string());
         args.push("-gravity".to_string());
@@ -778,6 +787,58 @@ fn split_quote_and_author(input: &str) -> (String, Option<String>) {
         return (input.trim().to_string(), None);
     }
     (body, Some(author))
+}
+
+fn wrap_text_for_card(input: &str, max_chars_per_line: usize, max_lines: usize) -> String {
+    let max_chars = max_chars_per_line.max(8);
+    let max_rows = max_lines.max(1);
+    let words = input.split_whitespace().collect::<Vec<_>>();
+    if words.is_empty() {
+        return String::new();
+    }
+
+    let mut lines = Vec::<String>::new();
+    let mut current = String::new();
+    for word in words {
+        let candidate = if current.is_empty() {
+            word.to_string()
+        } else {
+            format!("{current} {word}")
+        };
+        if candidate.chars().count() <= max_chars {
+            current = candidate;
+        } else {
+            if !current.is_empty() {
+                lines.push(current);
+            }
+            current = word.to_string();
+            if lines.len() >= max_rows {
+                break;
+            }
+        }
+    }
+    if !current.is_empty() && lines.len() < max_rows {
+        lines.push(current);
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    if lines.len() > max_rows {
+        lines.truncate(max_rows);
+    }
+    if input.chars().count() > lines.join(" ").chars().count() {
+        let last = lines.last_mut().expect("non-empty lines");
+        if last.chars().count() + 3 > max_chars {
+            let trimmed = last
+                .chars()
+                .take(max_chars.saturating_sub(3))
+                .collect::<String>();
+            *last = format!("{trimmed}...");
+        } else {
+            last.push_str("...");
+        }
+    }
+    lines.join("\n")
 }
 
 fn is_rtl_text(input: &str) -> bool {
