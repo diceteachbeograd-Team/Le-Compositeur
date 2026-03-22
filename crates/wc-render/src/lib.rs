@@ -532,10 +532,13 @@ fn render_with_imagemagick(
     }
 
     if !text.news_ticker2.trim().is_empty() {
-        let ticker_w = text.news_ticker2_width.clamp(220, canvas_w.max(220));
-        let ticker_h = (text.clock_font_size.saturating_mul(5) / 1).clamp(120, 220);
-        let ticker_size = (text.clock_font_size.saturating_mul(54) / 100).max(15);
-        let ticker_line = text.news_ticker2.replace('\r', "").replace('\n', "   |   ");
+        let ticker_w = text
+            .news_ticker2_width
+            .clamp(420, 960)
+            .min(canvas_w.saturating_sub(24));
+        let ticker_h = (text.clock_font_size.saturating_mul(7) / 1).clamp(170, 280);
+        let ticker_size = (text.clock_font_size.saturating_mul(50) / 100).max(14);
+        let ticker_line = text.news_ticker2.replace('\r', "");
         args.push("(".to_string());
         args.push("-size".to_string());
         args.push(format!("{ticker_w}x{ticker_h}"));
@@ -566,8 +569,10 @@ fn render_with_imagemagick(
         args.push("DejaVu-Serif".to_string());
         args.push("-pointsize".to_string());
         args.push(ticker_size.to_string());
+        args.push("-interline-spacing".to_string());
+        args.push("4".to_string());
         args.push("-annotate".to_string());
-        args.push("+12+0".to_string());
+        args.push("+12+18".to_string());
         args.push(ticker_line);
         args.push(")".to_string());
         args.push("-gravity".to_string());

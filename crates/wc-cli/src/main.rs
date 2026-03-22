@@ -2368,15 +2368,25 @@ fn news_ticker_frame(input: &str) -> String {
     } else {
         vec![source.clone()]
     };
-    let visible = headlines
+    let items = headlines
         .into_iter()
-        .take(3)
+        .take(5)
         .map(|item| compact_news_line(&item))
-        .map(|item| trim_to_chars(&item, 46))
-        .map(|item| format!("- {item}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!("{} BULLETIN\n{visible}", trim_to_chars(&source, 22))
+        .map(|item| trim_to_chars(&item, 34))
+        .collect::<Vec<_>>();
+    let mut lines = vec![format!("{} BULLETIN", trim_to_chars(&source, 22))];
+    let mut idx = 0_usize;
+    while idx < items.len() {
+        let left = format!("{}. {}", idx + 1, items[idx]);
+        if idx + 1 < items.len() {
+            let right = format!("{}. {}", idx + 2, items[idx + 1]);
+            lines.push(format!("{left:<42} | {right}"));
+        } else {
+            lines.push(left);
+        }
+        idx += 2;
+    }
+    lines.join("\n")
 }
 
 fn trim_to_chars(input: &str, max_chars: usize) -> String {
