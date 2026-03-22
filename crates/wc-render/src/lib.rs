@@ -459,7 +459,7 @@ fn render_with_imagemagick(
 
     if !text.news.trim().is_empty() {
         let news_box_w = text.news_width.clamp(320, canvas_w.max(320));
-        let news_box_h = news_box_w.saturating_mul(9) / 16;
+        let news_box_h = text.news_height.clamp(120, canvas_h.max(120));
         let has_news_image = if let Some(news_image) = text.news_image
             && news_image.exists()
         {
@@ -484,7 +484,9 @@ fn render_with_imagemagick(
         };
 
         if !has_news_image {
-            let news_text_h = (text.clock_font_size.saturating_mul(8) / 5).clamp(54, 112);
+            let news_text_h = (text.clock_font_size.saturating_mul(8) / 5)
+                .clamp(54, 112)
+                .min(news_box_h);
             let news_size = (text.clock_font_size.saturating_mul(54) / 100).max(14);
             let news_line = text.news.replace(['\n', '\r'], " ");
             args.push("(".to_string());
@@ -532,7 +534,7 @@ fn render_with_imagemagick(
     if !text.news_ticker2.trim().is_empty() {
         let ticker_w = text
             .news_ticker2_width
-            .clamp(460, 900)
+            .clamp(220, 1920)
             .min(canvas_w.saturating_sub(24));
         let ticker_lines = text
             .news_ticker2

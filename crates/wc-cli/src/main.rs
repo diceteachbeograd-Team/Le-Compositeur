@@ -1414,7 +1414,7 @@ fn widget_instance_from_config(cfg: &AppConfig, widget_type: &str) -> Result<Wid
         "news" => {
             let mut instance = WidgetInstanceConfig::new("news", "news_main");
             instance.enabled = news_widget_enabled(cfg);
-            instance.layer_z = cfg.layer_z_news;
+            instance.layer_z = cfg.layer_z_cams;
             instance.pos_x = cfg.news_pos_x;
             instance.pos_y = cfg.news_pos_y;
             instance.width = cfg.news_widget_width;
