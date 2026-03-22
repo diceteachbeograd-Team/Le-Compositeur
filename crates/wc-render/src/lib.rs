@@ -460,8 +460,7 @@ fn render_with_imagemagick(
     if !text.news.trim().is_empty() {
         let news_box_w = text.news_width.clamp(320, canvas_w.max(320));
         let news_box_h = news_box_w.saturating_mul(9) / 16;
-        let news_text_h = (text.clock_font_size.saturating_mul(8) / 5).clamp(54, 112);
-        if let Some(news_image) = text.news_image
+        let has_news_image = if let Some(news_image) = text.news_image
             && news_image.exists()
         {
             args.push("(".to_string());
@@ -479,56 +478,55 @@ fn render_with_imagemagick(
             args.push("-geometry".to_string());
             args.push(format!("+{}+{}", text.news_pos_x, text.news_pos_y));
             args.push("-composite".to_string());
-        }
-
-        let news_size = (text.clock_font_size.saturating_mul(54) / 100).max(14);
-        let news_line = text.news.replace(['\n', '\r'], " ");
-        args.push("(".to_string());
-        args.push("-size".to_string());
-        args.push(format!("{news_box_w}x{news_text_h}"));
-        args.push("xc:none".to_string());
-        args.push("-background".to_string());
-        args.push("none".to_string());
-        args.push("-fill".to_string());
-        args.push("#F4EAD4E6".to_string());
-        args.push("-stroke".to_string());
-        args.push("none".to_string());
-        args.push("-draw".to_string());
-        args.push(format!(
-            "rectangle 0,0 {},{}",
-            news_box_w.saturating_sub(1),
-            news_text_h.saturating_sub(1)
-        ));
-        args.push("-fill".to_string());
-        args.push("#111111".to_string());
-        args.push("-stroke".to_string());
-        args.push("#00000000".to_string());
-        args.push("-strokewidth".to_string());
-        args.push("1".to_string());
-        args.push("-undercolor".to_string());
-        args.push("#00000000".to_string());
-        args.push("-gravity".to_string());
-        args.push("West".to_string());
-        args.push("-font".to_string());
-        args.push("DejaVu-Serif".to_string());
-        args.push("-pointsize".to_string());
-        args.push(news_size.to_string());
-        args.push("-annotate".to_string());
-        args.push("+12+0".to_string());
-        args.push(news_line);
-        args.push(")".to_string());
-        args.push("-gravity".to_string());
-        args.push("NorthWest".to_string());
-        args.push("-geometry".to_string());
-        let news_text_y = if text.news_image.is_some() {
-            text.news_pos_y
-                .saturating_add(news_box_h as i32)
-                .saturating_add(8)
+            true
         } else {
-            text.news_pos_y
+            false
         };
-        args.push(format!("+{}+{}", text.news_pos_x, news_text_y));
-        args.push("-composite".to_string());
+
+        if !has_news_image {
+            let news_text_h = (text.clock_font_size.saturating_mul(8) / 5).clamp(54, 112);
+            let news_size = (text.clock_font_size.saturating_mul(54) / 100).max(14);
+            let news_line = text.news.replace(['\n', '\r'], " ");
+            args.push("(".to_string());
+            args.push("-size".to_string());
+            args.push(format!("{news_box_w}x{news_text_h}"));
+            args.push("xc:none".to_string());
+            args.push("-background".to_string());
+            args.push("none".to_string());
+            args.push("-fill".to_string());
+            args.push("#F4EAD4E6".to_string());
+            args.push("-stroke".to_string());
+            args.push("none".to_string());
+            args.push("-draw".to_string());
+            args.push(format!(
+                "rectangle 0,0 {},{}",
+                news_box_w.saturating_sub(1),
+                news_text_h.saturating_sub(1)
+            ));
+            args.push("-fill".to_string());
+            args.push("#111111".to_string());
+            args.push("-stroke".to_string());
+            args.push("#00000000".to_string());
+            args.push("-strokewidth".to_string());
+            args.push("1".to_string());
+            args.push("-undercolor".to_string());
+            args.push("#00000000".to_string());
+            args.push("-gravity".to_string());
+            args.push("West".to_string());
+            args.push("-font".to_string());
+            args.push("DejaVu-Serif".to_string());
+            args.push("-pointsize".to_string());
+            args.push(news_size.to_string());
+            args.push("-annotate".to_string());
+            args.push("+12+0".to_string());
+            args.push(news_line);
+            args.push(")".to_string());
+            args.push("-gravity".to_string());
+            args.push("NorthWest".to_string());
+            args.push("-geometry".to_string());
+            args.push(format!("+{}+{}", text.news_pos_x, text.news_pos_y));
+            args.push("-composite".to_string());
+        }
     }
 
     if !text.news_ticker2.trim().is_empty() {

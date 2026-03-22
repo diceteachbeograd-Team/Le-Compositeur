@@ -5,7 +5,7 @@ use image::imageops;
 use image::{DynamicImage, Rgba, RgbaImage};
 use reqwest::blocking::Client;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::fs::OpenOptions;
 use std::hash::{Hash, Hasher};
@@ -1165,6 +1165,12 @@ struct CamSourceEntry {
 }
 
 #[derive(Debug, Clone)]
+struct FeedHeadline {
+    title: String,
+    summary: String,
+}
+
+#[derive(Debug, Clone)]
 struct WidgetRenderBundle {
     quote: String,
     clock: String,
@@ -1829,9 +1835,25 @@ fn fetch_news_payload(
     let subtitle_hint = fetch_stream_title_hint(stream_url).unwrap_or_default();
     let raw_line = if let Some(feed) = feed_url {
         let mut parts = vec![compact_news_line(label)];
-        let headlines =
-            fetch_rss_headlines(feed, 6).unwrap_or_else(|| vec!["live feed".to_string()]);
-        parts.extend(headlines);
+        let headlines = fetch_rss_headlines(feed, 20)
+            .map(|items| select_top_headlines(items, 5))
+            .unwrap_or_else(|| {
+                vec![FeedHeadline {
+                    title: "live feed".to_string(),
+                    summary: String::new(),
+                }]
+            });
+        parts.extend(headlines.into_iter().map(|item| {
+            if item.summary.trim().is_empty() {
+                compact_news_line(&item.title)
+            } else {
+                format!(
+                    "{} ~~ {}",
+                    compact_news_line(&item.title),
+                    compact_news_line(&item.summary)
+                )
+            }
+        }));
         if !subtitle_hint.is_empty() {
             parts.push(compact_news_line(&subtitle_hint));
         }
@@ -2076,7 +2098,7 @@ fn news_source_profile_raw(
     ("Custom", custom_url.trim().to_string(), None)
 }
 
-fn fetch_rss_headlines(url: &str, limit: usize) -> Option<Vec<String>> {
+fn fetch_rss_headlines(url: &str, limit: usize) -> Option<Vec<FeedHeadline>> {
     let client = Client::builder()
         .timeout(Duration::from_secs(6))
         .build()
@@ -2089,24 +2111,63 @@ fn fetch_rss_headlines(url: &str, limit: usize) -> Option<Vec<String>> {
         .ok()?
         .text()
         .ok()?;
-    let mut titles = extract_rss_item_titles(&body, limit.max(1));
-    if titles.is_empty()
+    let mut entries = extract_rss_entries(&body, limit.max(1));
+    if entries.is_empty()
         && let Some(single) =
             extract_first_rss_item_title(&body).or_else(|| extract_first_xml_tag(&body, "title"))
     {
-        titles.push(single);
+        entries.push(FeedHeadline {
+            title: single,
+            summary: String::new(),
+        });
     }
-    if titles.is_empty() {
+    if entries.is_empty() {
         None
     } else {
-        Some(
-            titles
-                .into_iter()
-                .map(|t| compact_news_line(&t))
-                .filter(|t| !t.trim().is_empty())
-                .collect::<Vec<_>>(),
-        )
+        Some(entries)
     }
+}
+
+fn select_top_headlines(items: Vec<FeedHeadline>, limit: usize) -> Vec<FeedHeadline> {
+    let mut scored = items
+        .into_iter()
+        .enumerate()
+        .map(|(idx, item)| {
+            let title_len = item.title.chars().count();
+            let summary_len = item.summary.chars().count();
+            let mut score: i32 = 0;
+            if (28..=140).contains(&title_len) {
+                score += 24;
+            } else if (12..=180).contains(&title_len) {
+                score += 12;
+            }
+            if summary_len >= 24 {
+                score += 18;
+            } else if summary_len > 0 {
+                score += 8;
+            }
+            if item.title.contains(':') || item.title.contains('-') {
+                score += 4;
+            }
+            (score, idx, item)
+        })
+        .collect::<Vec<_>>();
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+
+    let mut out = Vec::<FeedHeadline>::new();
+    let mut seen = HashSet::<String>::new();
+    for (_, _, item) in scored {
+        let dedupe_key = item.title.to_ascii_lowercase();
+        if dedupe_key.trim().is_empty() || seen.contains(&dedupe_key) {
+            continue;
+        }
+        seen.insert(dedupe_key);
+        out.push(item);
+        if out.len() >= limit.max(1) {
+            break;
+        }
+    }
+    out
 }
 
 fn resolve_news_preview_image(cfg: &AppConfig, stream_url: &str, cycle: u64) -> Option<PathBuf> {
@@ -2968,26 +3029,57 @@ fn news_preview_candidates(cfg: &AppConfig, stream_url: &str, cycle: u64) -> Vec
     out
 }
 
-fn extract_rss_item_titles(raw: &str, max_items: usize) -> Vec<String> {
-    let mut out = Vec::<String>::new();
+fn extract_rss_entries(raw: &str, max_items: usize) -> Vec<FeedHeadline> {
+    let mut out = Vec::<FeedHeadline>::new();
+    out.extend(extract_xml_feed_entries(raw, "item", max_items));
+    if out.len() < max_items {
+        let remain = max_items - out.len();
+        out.extend(extract_xml_feed_entries(raw, "entry", remain));
+    }
+    out.truncate(max_items);
+    out
+}
+
+fn extract_xml_feed_entries(raw: &str, tag: &str, max_items: usize) -> Vec<FeedHeadline> {
+    let mut out = Vec::<FeedHeadline>::new();
+    let close = format!("</{tag}>");
     let mut cursor = 0usize;
     while out.len() < max_items {
-        let Some(item_rel) = raw[cursor..].find("<item") else {
+        let Some(start_rel) = raw[cursor..].find(&format!("<{tag}")) else {
             break;
         };
-        let item_start = cursor + item_rel;
-        let item_slice = &raw[item_start..];
-        let Some(title) = extract_first_xml_tag(item_slice, "title") else {
-            cursor = item_start.saturating_add(5);
-            continue;
+        let start = cursor + start_rel;
+        let slice = &raw[start..];
+        let Some(end_rel) = slice.find(&close) else {
+            break;
         };
+        let block = &slice[..end_rel + close.len()];
+        let title = extract_first_xml_tag(block, "title").unwrap_or_default();
         if !title.trim().is_empty() {
-            out.push(title);
+            let summary = extract_first_xml_tag(block, "description")
+                .or_else(|| extract_first_xml_tag(block, "summary"))
+                .or_else(|| extract_first_xml_tag(block, "content"))
+                .map(|v| strip_html_like_tags(&v))
+                .unwrap_or_default();
+            out.push(FeedHeadline {
+                title: compact_news_line(&title),
+                summary: compact_news_line(&summary),
+            });
         }
-        if let Some(end_rel) = item_slice.find("</item>") {
-            cursor = item_start + end_rel + "</item>".len();
-        } else {
-            break;
+        cursor = start + end_rel + close.len();
+    }
+    out
+}
+
+fn strip_html_like_tags(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut in_tag = false;
+    for ch in input.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(ch),
+            _ => {}
         }
     }
     out
