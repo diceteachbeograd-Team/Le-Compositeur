@@ -534,11 +534,44 @@ fn render_with_imagemagick(
     if !text.news_ticker2.trim().is_empty() {
         let ticker_w = text
             .news_ticker2_width
-            .clamp(420, 960)
+            .clamp(460, 900)
             .min(canvas_w.saturating_sub(24));
-        let ticker_h = (text.clock_font_size.saturating_mul(7) / 1).clamp(170, 280);
-        let ticker_size = (text.clock_font_size.saturating_mul(50) / 100).max(14);
-        let ticker_line = text.news_ticker2.replace('\r', "");
+        let ticker_lines = text
+            .news_ticker2
+            .replace('\r', "")
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>();
+        let header = ticker_lines
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "NEWS BULLETIN".to_string());
+        let items = ticker_lines
+            .iter()
+            .skip(1)
+            .take(5)
+            .cloned()
+            .collect::<Vec<_>>();
+        let cols = 2_u32;
+        let rows = ((items.len() as u32 + cols - 1) / cols).max(2);
+        let panel_pad = 12_u32;
+        let card_gap = 8_u32;
+        let header_h = (text.clock_font_size.saturating_mul(9) / 5).clamp(36, 56);
+        let card_h = (text.clock_font_size.saturating_mul(7) / 5).clamp(28, 42);
+        let body_h = panel_pad
+            .saturating_add(rows.saturating_mul(card_h))
+            .saturating_add(rows.saturating_sub(1).saturating_mul(card_gap))
+            .saturating_add(panel_pad);
+        let ticker_h = header_h
+            .saturating_add(body_h)
+            .clamp(170, 270)
+            .min(canvas_h.saturating_sub(24));
+        let inner_w = ticker_w.saturating_sub(panel_pad.saturating_mul(2));
+        let card_w = inner_w.saturating_sub(card_gap.saturating_mul(cols.saturating_sub(1))) / cols;
+        let header_size = (text.clock_font_size.saturating_mul(48) / 100).clamp(13, 24);
+        let card_size = (text.clock_font_size.saturating_mul(42) / 100).clamp(12, 18);
         args.push("(".to_string());
         args.push("-size".to_string());
         args.push(format!("{ticker_w}x{ticker_h}"));
@@ -556,24 +589,66 @@ fn render_with_imagemagick(
             ticker_h.saturating_sub(1)
         ));
         args.push("-fill".to_string());
-        args.push("#111111".to_string());
+        args.push("#1B2A38E6".to_string());
+        args.push("-draw".to_string());
+        args.push(format!(
+            "rectangle 0,0 {},{}",
+            ticker_w.saturating_sub(1),
+            header_h
+        ));
+        args.push("-fill".to_string());
+        args.push("#F4EAD4".to_string());
         args.push("-stroke".to_string());
-        args.push("#00000000".to_string());
-        args.push("-strokewidth".to_string());
-        args.push("0".to_string());
-        args.push("-undercolor".to_string());
-        args.push("#00000000".to_string());
-        args.push("-gravity".to_string());
-        args.push("NorthWest".to_string());
+        args.push("none".to_string());
         args.push("-font".to_string());
         args.push("DejaVu-Serif".to_string());
         args.push("-pointsize".to_string());
-        args.push(ticker_size.to_string());
-        args.push("-interline-spacing".to_string());
-        args.push("4".to_string());
+        args.push(header_size.to_string());
+        args.push("-gravity".to_string());
+        args.push("NorthWest".to_string());
         args.push("-annotate".to_string());
-        args.push("+12+18".to_string());
-        args.push(ticker_line);
+        args.push("+12+24".to_string());
+        args.push(header);
+
+        for (idx, item) in items.iter().enumerate() {
+            let col = (idx as u32) % cols;
+            let row = (idx as u32) / cols;
+            let card_x = panel_pad + col.saturating_mul(card_w.saturating_add(card_gap));
+            let card_y = header_h
+                .saturating_add(panel_pad)
+                .saturating_add(row.saturating_mul(card_h.saturating_add(card_gap)));
+            args.push("-fill".to_string());
+            args.push("#FFFDF7E8".to_string());
+            args.push("-stroke".to_string());
+            args.push("#B7A78C".to_string());
+            args.push("-strokewidth".to_string());
+            args.push("1".to_string());
+            args.push("-draw".to_string());
+            args.push(format!(
+                "rectangle {},{} {},{}",
+                card_x,
+                card_y,
+                card_x.saturating_add(card_w).saturating_sub(1),
+                card_y.saturating_add(card_h).saturating_sub(1)
+            ));
+            args.push("-fill".to_string());
+            args.push("#111111".to_string());
+            args.push("-stroke".to_string());
+            args.push("none".to_string());
+            args.push("-font".to_string());
+            args.push("DejaVu-Serif".to_string());
+            args.push("-pointsize".to_string());
+            args.push(card_size.to_string());
+            args.push("-gravity".to_string());
+            args.push("NorthWest".to_string());
+            args.push("-annotate".to_string());
+            args.push(format!(
+                "+{}+{}",
+                card_x.saturating_add(8),
+                card_y.saturating_add(card_h / 2 + 5)
+            ));
+            args.push(item.clone());
+        }
         args.push(")".to_string());
         args.push("-gravity".to_string());
         args.push("NorthWest".to_string());

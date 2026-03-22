@@ -2372,20 +2372,15 @@ fn news_ticker_frame(input: &str) -> String {
         .into_iter()
         .take(5)
         .map(|item| compact_news_line(&item))
-        .map(|item| trim_to_chars(&item, 34))
+        .map(|item| trim_to_chars(&item, 46))
         .collect::<Vec<_>>();
-    let mut lines = vec![format!("{} BULLETIN", trim_to_chars(&source, 22))];
-    let mut idx = 0_usize;
-    while idx < items.len() {
-        let left = format!("{}. {}", idx + 1, items[idx]);
-        if idx + 1 < items.len() {
-            let right = format!("{}. {}", idx + 2, items[idx + 1]);
-            lines.push(format!("{left:<42} | {right}"));
-        } else {
-            lines.push(left);
-        }
-        idx += 2;
-    }
+    let mut lines = vec![format!("{} BULLETIN", trim_to_chars(&source, 24))];
+    lines.extend(
+        items
+            .into_iter()
+            .enumerate()
+            .map(|(idx, item)| format!("{}. {}", idx + 1, item)),
+    );
     lines.join("\n")
 }
 
