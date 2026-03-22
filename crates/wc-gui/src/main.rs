@@ -2566,7 +2566,7 @@ impl WcGuiApp {
             "Live weather data with controllable refresh budget and source location mode.",
             |ui| {
                 ui.checkbox(&mut self.cfg.show_weather_layer, "Enable weather widget");
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Refresh seconds");
                     ui.add(
                         egui::DragValue::new(&mut self.cfg.weather_refresh_seconds)
@@ -2578,18 +2578,26 @@ impl WcGuiApp {
                         self.refresh_weather_now();
                     }
                 });
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.checkbox(
                         &mut self.cfg.weather_use_system_location,
                         "Use system location",
                     )
                     .on_hover_text(self.hover_text("weather_use_system_location"));
+                    ui.small(if self.cfg.weather_use_system_location {
+                        "Using device geolocation provider."
+                    } else {
+                        "Using manual location override."
+                    });
                 });
                 if !self.cfg.weather_use_system_location {
                     ui.horizontal(|ui| {
                         ui.label("Location override");
-                        ui.text_edit_singleline(&mut self.cfg.weather_location_override)
-                            .on_hover_text(self.hover_text("weather_location_override"));
+                        ui.add_sized(
+                            [ui.available_width().max(220.0), 0.0],
+                            egui::TextEdit::singleline(&mut self.cfg.weather_location_override),
+                        )
+                        .on_hover_text(self.hover_text("weather_location_override"));
                     });
                 }
             },
@@ -2601,6 +2609,31 @@ impl WcGuiApp {
             "Layout & Style",
             "Visual style for the weather overlay.",
             |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Quick style");
+                    if ui.button("Calm").clicked() {
+                        self.cfg.weather_color = "#F2F8FF".to_string();
+                        self.cfg.weather_undercolor = "#08131CD9".to_string();
+                        self.cfg.weather_stroke_color = "#132D3F".to_string();
+                        self.cfg.weather_stroke_width = 1;
+                        self.cfg.weather_font_family = "DejaVu-Sans".to_string();
+                    }
+                    if ui.button("High Contrast").clicked() {
+                        self.cfg.weather_color = "#FFFFFF".to_string();
+                        self.cfg.weather_undercolor = "#000000E6".to_string();
+                        self.cfg.weather_stroke_color = "#000000".to_string();
+                        self.cfg.weather_stroke_width = 2;
+                        self.cfg.weather_font_family = "Noto-Sans".to_string();
+                    }
+                    if ui.button("Soft Serif").clicked() {
+                        self.cfg.weather_color = "#FFF6E8".to_string();
+                        self.cfg.weather_undercolor = "#101922D1".to_string();
+                        self.cfg.weather_stroke_color = "#2A4155".to_string();
+                        self.cfg.weather_stroke_width = 1;
+                        self.cfg.weather_font_family = "Serif".to_string();
+                    }
+                });
+                ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label("Font family");
                     egui::ComboBox::from_id_salt("weather_font_family_tab")
@@ -2665,9 +2698,23 @@ impl WcGuiApp {
             "Live Snapshot",
             "Current snapshot state and provider diagnostics.",
             |ui| {
-                ui.label(&self.weather_status);
+                let status = if self.weather_status.trim().is_empty() {
+                    "No weather snapshot yet. Press Refresh now.".to_string()
+                } else {
+                    self.weather_status.clone()
+                };
+                let is_error = status.to_ascii_lowercase().contains("error")
+                    || status.to_ascii_lowercase().contains("failed");
+                if is_error {
+                    ui.colored_label(egui::Color32::from_rgb(255, 180, 160), status);
+                } else {
+                    ui.label(status);
+                }
                 for line in &self.weather_details {
-                    ui.label(line);
+                    ui.horizontal(|ui| {
+                        ui.small("•");
+                        ui.small(line);
+                    });
                 }
             },
         );
@@ -2954,11 +3001,11 @@ impl WcGuiApp {
 
         settings_section(
             ui,
-            "Ticker Sources",
-            "Configure headline feeds and ticker layout without live video windows.",
+            "News Ticker",
+            "Configure source, cadence, and readable layout for mixed-language headlines.",
             |ui| {
                 ui.checkbox(&mut self.cfg.show_news_ticker2, "Enable news");
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Quick presets");
                     if ui.button("Global").clicked() {
                         self.cfg.news_ticker2_source = "google_world_en".to_string();
@@ -2973,6 +3020,7 @@ impl WcGuiApp {
                         self.cfg.news_ticker2_source = "un_news".to_string();
                     }
                 });
+                ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label("Source");
                     egui::ComboBox::from_id_salt("news_ticker_only_source")
@@ -2990,10 +3038,14 @@ impl WcGuiApp {
                 if self.cfg.news_ticker2_source == "custom" {
                     ui.horizontal(|ui| {
                         ui.label("Custom RSS/URL");
-                        ui.text_edit_singleline(&mut self.cfg.news_ticker2_custom_url);
+                        ui.add_sized(
+                            [ui.available_width().max(220.0), 0.0],
+                            egui::TextEdit::singleline(&mut self.cfg.news_ticker2_custom_url),
+                        );
                     });
                 }
-                ui.horizontal(|ui| {
+                ui.separator();
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Refresh sec");
                     ui.add(
                         egui::DragValue::new(&mut self.cfg.news_ticker2_refresh_seconds)
@@ -3007,6 +3059,21 @@ impl WcGuiApp {
                             .range(0.05..=30.0),
                     );
                 });
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Position X");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_x).speed(1));
+                    ui.label("Y");
+                    ui.add(egui::DragValue::new(&mut self.cfg.news_ticker2_pos_y).speed(1));
+                    ui.label("Width");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.news_ticker2_width)
+                            .speed(4)
+                            .range(220..=1920),
+                    );
+                });
+                ui.small(
+                    "Tip: for long mixed headlines, prefer wider ticker width and moderate refresh cadence.",
+                );
             },
         );
     }
@@ -3055,7 +3122,7 @@ impl WcGuiApp {
             "Static URL Background",
             "Use URL snapshots for background refresh instead of browser/video embeds.",
             |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Image source");
                     ui.selectable_value(&mut self.cfg.image_source, "local".to_string(), "Local");
                     ui.selectable_value(&mut self.cfg.image_source, "preset".to_string(), "Preset");
@@ -3065,7 +3132,10 @@ impl WcGuiApp {
                     let image_url = self.cfg.image_source_url.get_or_insert_with(String::new);
                     ui.horizontal(|ui| {
                         ui.label("Image URL");
-                        ui.text_edit_singleline(image_url);
+                        ui.add_sized(
+                            [ui.available_width().max(220.0), 0.0],
+                            egui::TextEdit::singleline(image_url),
+                        );
                     });
                 }
                 ui.horizontal(|ui| {
@@ -3086,7 +3156,7 @@ impl WcGuiApp {
             "Enable a non-video static URL panel with selectable known feeds or custom URLs.",
             |ui| {
                 ui.checkbox(&mut self.cfg.show_news_layer, "Enable static URL panel");
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Quick presets");
                     if ui.button("Global").clicked() {
                         self.cfg.news_source = "google_world_en".to_string();
@@ -3104,7 +3174,7 @@ impl WcGuiApp {
                         self.cfg.news_source = "un_news".to_string();
                     }
                 });
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Snapshot presets");
                     if ui.button("Belgrade Cam").clicked() {
                         self.cfg.news_source = "custom".to_string();
@@ -3149,7 +3219,10 @@ impl WcGuiApp {
                 if self.cfg.news_source == "custom" {
                     ui.horizontal(|ui| {
                         ui.label("Custom static URL");
-                        ui.text_edit_singleline(&mut self.cfg.news_custom_url);
+                        ui.add_sized(
+                            [ui.available_width().max(220.0), 0.0],
+                            egui::TextEdit::singleline(&mut self.cfg.news_custom_url),
+                        );
                     });
                 }
                 ui.horizontal(|ui| {
@@ -3173,7 +3246,7 @@ impl WcGuiApp {
             "Static Text URL",
             "Use URL text source for quotes/server info lines.",
             |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Quote source");
                     ui.selectable_value(&mut self.cfg.quote_source, "local".to_string(), "Local");
                     ui.selectable_value(&mut self.cfg.quote_source, "preset".to_string(), "Preset");
@@ -3183,7 +3256,10 @@ impl WcGuiApp {
                     let quote_url = self.cfg.quote_source_url.get_or_insert_with(String::new);
                     ui.horizontal(|ui| {
                         ui.label("Quote URL");
-                        ui.text_edit_singleline(quote_url);
+                        ui.add_sized(
+                            [ui.available_width().max(220.0), 0.0],
+                            egui::TextEdit::singleline(quote_url),
+                        );
                     });
                 }
                 ui.small("Background browser embedding is avoided for stability.");

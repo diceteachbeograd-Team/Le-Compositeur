@@ -970,8 +970,8 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<WeatherWidgetPayload> {
         .unwrap_or(0.0);
     let (_, wind_dir) = compass_arrow(wind_deg);
     let temp_unit = match units {
-        UnitSystem::Metric => "C",
-        UnitSystem::Imperial => "F",
+        UnitSystem::Metric => "°C",
+        UnitSystem::Imperial => "°F",
     };
     let wind_unit = match units {
         UnitSystem::Metric => "km/h",
@@ -1098,7 +1098,7 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
                 .and_then(Value::as_str)
                 .and_then(|v| v.parse::<f64>().ok())
                 .unwrap_or(wind / 1.609_34),
-            "F",
+            "°F",
             "mph",
         ),
         UnitSystem::Metric => (
@@ -1109,7 +1109,7 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
                 .and_then(|v| v.parse::<f64>().ok())
                 .unwrap_or(temp),
             wind,
-            "C",
+            "°C",
             "km/h",
         ),
     };
@@ -2397,7 +2397,7 @@ fn compass_degrees_for_name(dir: &str) -> f64 {
 }
 
 fn compact_news_line(input: &str) -> String {
-    let line = input.replace('\n', " ").replace("  ", " ");
+    let line = input.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut out = String::new();
     for c in line.chars() {
         if c.is_control() {
@@ -2433,7 +2433,7 @@ fn news_ticker_frame(input: &str) -> String {
         .into_iter()
         .take(5)
         .map(|item| compact_news_line(&item))
-        .map(|item| trim_to_chars(&item, 46))
+        .map(|item| trim_to_chars(&item, 68))
         .collect::<Vec<_>>();
     let mut lines = vec![format!("{} BULLETIN", trim_to_chars(&source, 24))];
     lines.extend(

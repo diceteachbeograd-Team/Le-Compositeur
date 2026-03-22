@@ -169,6 +169,127 @@ fn metadata_path_for(output_image: &Path) -> PathBuf {
     output_image.with_file_name(name)
 }
 
+fn push_solid_layer(args: &mut Vec<String>, width: u32, height: u32, fill: &str) {
+    args.push("(".to_string());
+    args.push("-size".to_string());
+    args.push(format!("{}x{}", width, height));
+    args.push(format!("xc:{fill}"));
+    args.push(")".to_string());
+}
+
+fn push_layer_at(args: &mut Vec<String>, x: i32, y: i32) {
+    args.push("-gravity".to_string());
+    args.push("NorthWest".to_string());
+    args.push("-geometry".to_string());
+    args.push(format!("+{}+{}", x, y));
+    args.push("-composite".to_string());
+}
+
+fn push_caption_layer(
+    args: &mut Vec<String>,
+    width: u32,
+    height: u32,
+    fill: &str,
+    stroke: &str,
+    stroke_width: u32,
+    undercolor: &str,
+    font: &str,
+    pointsize: u32,
+    interline_spacing: Option<u32>,
+    text: &str,
+) {
+    args.push("(".to_string());
+    args.push("-background".to_string());
+    args.push("none".to_string());
+    args.push("-size".to_string());
+    args.push(format!("{}x{}", width, height));
+    args.push("-fill".to_string());
+    args.push(fill.to_string());
+    args.push("-stroke".to_string());
+    args.push(stroke.to_string());
+    args.push("-strokewidth".to_string());
+    args.push(stroke_width.to_string());
+    args.push("-undercolor".to_string());
+    args.push(undercolor.to_string());
+    if let Some(spacing) = interline_spacing {
+        args.push("-interline-spacing".to_string());
+        args.push(spacing.to_string());
+    }
+    args.push("-gravity".to_string());
+    args.push("West".to_string());
+    args.push("-font".to_string());
+    args.push(font.to_string());
+    args.push("-pointsize".to_string());
+    args.push(pointsize.to_string());
+    args.push(format!("caption:{text}"));
+    args.push(")".to_string());
+}
+
+fn split_card_segments(input: &str) -> Vec<String> {
+    let mut segments = Vec::<String>::new();
+    for line in input.replace('\r', "").lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some((headline, summary)) = trimmed.split_once("~~") {
+            let headline = headline.trim();
+            let summary = summary.trim();
+            if !headline.is_empty() {
+                segments.push(headline.to_string());
+            }
+            if !summary.is_empty() {
+                segments.push(summary.to_string());
+            }
+            continue;
+        }
+        segments.push(trimmed.to_string());
+    }
+    segments
+}
+
+fn wrap_segment_to_lines(segment: &str, max_chars_per_line: usize) -> Vec<String> {
+    let max_chars = max_chars_per_line.max(8);
+    let mut lines = Vec::<String>::new();
+    let mut current = String::new();
+
+    for word in segment.split_whitespace() {
+        let candidate = if current.is_empty() {
+            word.to_string()
+        } else {
+            format!("{current} {word}")
+        };
+        if candidate.chars().count() <= max_chars {
+            current = candidate;
+            continue;
+        }
+
+        if !current.is_empty() {
+            lines.push(std::mem::take(&mut current));
+        }
+
+        if word.chars().count() > max_chars {
+            let mut chunk = String::new();
+            for ch in word.chars() {
+                chunk.push(ch);
+                if chunk.chars().count() >= max_chars {
+                    lines.push(chunk);
+                    chunk = String::new();
+                }
+            }
+            current = chunk;
+        } else {
+            current = word.to_string();
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+
+    lines
+}
+
 fn render_with_imagemagick(
     source_image: &Path,
     output_image: &Path,
@@ -377,29 +498,75 @@ fn render_with_imagemagick(
         let weather_size = text.weather_font_size.clamp(10, 220);
         let weather_box_w = text.weather_width.clamp(120, canvas_w.max(120));
         let weather_box_h = text.weather_height.clamp(80, canvas_h.max(80));
+        let weather_text = text.weather.replace('\r', "");
+        let weather_lines = weather_text
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        let weather_title = weather_lines.first().copied().unwrap_or("Weather");
+        let weather_summary = weather_lines.get(1).copied().unwrap_or_default();
+        let weather_metrics = if weather_lines.len() > 2 {
+            weather_lines[2..].join("\n")
+        } else {
+            String::new()
+        };
 
-        // Cyber panel background behind weather minimap + metrics.
-        args.push("(".to_string());
-        args.push("-size".to_string());
-        args.push(format!("{}x{}", weather_box_w, weather_box_h));
-        args.push("xc:#02131CB8".to_string());
-        args.push(")".to_string());
-        args.push("-gravity".to_string());
-        args.push("NorthWest".to_string());
-        args.push("-geometry".to_string());
-        args.push(format!("+{}+{}", text.weather_pos_x, text.weather_pos_y));
-        args.push("-composite".to_string());
+        // Softer weather panel with a clear header, map, and stacked text blocks.
+        push_solid_layer(&mut args, weather_box_w, weather_box_h, "#08131DE6");
+        push_layer_at(&mut args, text.weather_pos_x, text.weather_pos_y);
 
-        let mut weather_text_x = text.weather_pos_x;
-        let mut weather_text_w = weather_box_w;
+        push_solid_layer(&mut args, weather_box_w, 14, "#5DB9D11F");
+        push_layer_at(&mut args, text.weather_pos_x, text.weather_pos_y);
+
+        let has_map = text.weather_map_image.is_some_and(|map| map.exists());
+        let map_w = if has_map {
+            (weather_box_w.saturating_mul(44) / 100)
+                .max(132)
+                .min(weather_box_w.saturating_sub(88))
+        } else {
+            0
+        };
+        let map_h = if has_map {
+            weather_box_h.saturating_sub(22).max(84)
+        } else {
+            0
+        };
+        let weather_content_x = if has_map {
+            text.weather_pos_x
+                .saturating_add(map_w as i32)
+                .saturating_add(20)
+        } else {
+            text.weather_pos_x.saturating_add(18)
+        };
+        let weather_content_w = if has_map {
+            weather_box_w.saturating_sub(map_w).saturating_sub(38)
+        } else {
+            weather_box_w.saturating_sub(36)
+        };
+        let weather_content_y = text.weather_pos_y.saturating_add(14);
+        let title_size = (weather_size.saturating_mul(112) / 100).clamp(18, 38);
+        let summary_size = (weather_size.saturating_mul(82) / 100).clamp(14, 26);
+        let metrics_size = (weather_size.saturating_mul(64) / 100).clamp(12, 20);
+        let title_h = (title_size.saturating_mul(20) / 10).clamp(28, 56);
+        let summary_h = (summary_size.saturating_mul(20) / 10).clamp(24, 48);
+        let title_y = weather_content_y;
+        let summary_y = weather_content_y
+            .saturating_add(title_h as i32)
+            .saturating_add(4);
+        let metrics_y = weather_content_y
+            .saturating_add(title_h as i32)
+            .saturating_add(summary_h as i32)
+            .saturating_add(10);
+        let metrics_h = weather_box_h
+            .saturating_sub(title_h)
+            .saturating_sub(summary_h)
+            .saturating_sub(42)
+            .max(32);
+
         if let Some(map_img) = text.weather_map_image
             && map_img.exists()
         {
-            let map_w = (weather_box_w.saturating_mul(48) / 100)
-                .max(140)
-                .min(weather_box_w.saturating_sub(70));
-            let map_h = weather_box_h.saturating_sub(16).max(64);
-
             args.push("(".to_string());
             args.push(map_img.display().to_string());
             args.push("-auto-orient".to_string());
@@ -410,51 +577,86 @@ fn render_with_imagemagick(
             args.push("-extent".to_string());
             args.push(format!("{map_w}x{map_h}"));
             args.push("-modulate".to_string());
-            args.push("110,95,105".to_string());
+            args.push("104,78,100".to_string());
             args.push(")".to_string());
-            args.push("-gravity".to_string());
-            args.push("NorthWest".to_string());
-            args.push("-geometry".to_string());
-            args.push(format!(
-                "+{}+{}",
-                text.weather_pos_x.saturating_add(8),
-                text.weather_pos_y.saturating_add(8)
-            ));
-            args.push("-composite".to_string());
+            push_layer_at(
+                &mut args,
+                text.weather_pos_x.saturating_add(10),
+                text.weather_pos_y.saturating_add(10),
+            );
 
-            weather_text_x = text
-                .weather_pos_x
-                .saturating_add(map_w as i32)
-                .saturating_add(16);
-            weather_text_w = weather_box_w.saturating_sub(map_w).saturating_sub(22);
+            args.push("(".to_string());
+            args.push("-size".to_string());
+            args.push(format!("{}x{}", map_w, map_h));
+            args.push("xc:#0B111AE0".to_string());
+            args.push("-stroke".to_string());
+            args.push("#B6F1FF66".to_string());
+            args.push("-strokewidth".to_string());
+            args.push("1".to_string());
+            args.push("-fill".to_string());
+            args.push("#00000000".to_string());
+            args.push("-draw".to_string());
+            args.push(format!(
+                "rectangle 0,0 {},{}",
+                map_w.saturating_sub(1),
+                map_h.saturating_sub(1)
+            ));
+            args.push(")".to_string());
+            push_layer_at(
+                &mut args,
+                text.weather_pos_x.saturating_add(10),
+                text.weather_pos_y.saturating_add(10),
+            );
         }
 
-        args.push("(".to_string());
-        args.push("-background".to_string());
-        args.push("none".to_string());
-        args.push("-size".to_string());
-        args.push(format!("{}x{}", weather_text_w, weather_box_h));
-        args.push("-fill".to_string());
-        args.push(text.weather_color.to_string());
-        args.push("-stroke".to_string());
-        args.push(text.weather_stroke_color.to_string());
-        args.push("-strokewidth".to_string());
-        args.push(text.weather_stroke_width.min(20).to_string());
-        args.push("-undercolor".to_string());
-        args.push(text.weather_undercolor.to_string());
-        args.push("-gravity".to_string());
-        args.push("West".to_string());
-        args.push("-font".to_string());
-        args.push(text.weather_font_family.to_string());
-        args.push("-pointsize".to_string());
-        args.push(weather_size.to_string());
-        args.push(format!("caption:{}", text.weather));
-        args.push(")".to_string());
-        args.push("-gravity".to_string());
-        args.push("NorthWest".to_string());
-        args.push("-geometry".to_string());
-        args.push(format!("+{}+{}", weather_text_x, text.weather_pos_y));
-        args.push("-composite".to_string());
+        push_caption_layer(
+            &mut args,
+            weather_content_w,
+            title_h,
+            "#F7F4EA",
+            "#000000CC",
+            1,
+            "#00000000",
+            "DejaVu-Serif",
+            title_size,
+            Some(1),
+            weather_title,
+        );
+        push_layer_at(&mut args, weather_content_x, title_y);
+
+        if !weather_summary.is_empty() {
+            push_caption_layer(
+                &mut args,
+                weather_content_w,
+                summary_h,
+                "#A8E6F1",
+                "#14313F",
+                1,
+                "#00000000",
+                text.weather_font_family,
+                summary_size,
+                Some(2),
+                weather_summary,
+            );
+            push_layer_at(&mut args, weather_content_x, summary_y);
+        }
+
+        if !weather_metrics.is_empty() {
+            push_caption_layer(
+                &mut args,
+                weather_content_w,
+                metrics_h,
+                "#D9E6EE",
+                "#000000AA",
+                0,
+                "#00000000",
+                "DejaVu-Sans-Mono",
+                metrics_size,
+                Some(1),
+                &weather_metrics,
+            );
+            push_layer_at(&mut args, weather_content_x, metrics_y);
+        }
     }
 
     if !text.news.trim().is_empty() {
@@ -561,22 +763,22 @@ fn render_with_imagemagick(
             _ => 2_u32,
         };
         let rows = ((items.len() as u32 + cols - 1) / cols).max(1);
-        let panel_pad = 12_u32;
-        let card_gap = 8_u32;
-        let header_h = (text.clock_font_size.saturating_mul(9) / 5).clamp(36, 56);
-        let card_h = (text.clock_font_size.saturating_mul(12) / 5).clamp(54, 88);
+        let panel_pad = 14_u32;
+        let card_gap = 10_u32;
+        let header_h = (text.clock_font_size.saturating_mul(10) / 5).clamp(40, 60);
+        let card_h = (text.clock_font_size.saturating_mul(14) / 5).clamp(62, 104);
         let body_h = panel_pad
             .saturating_add(rows.saturating_mul(card_h))
             .saturating_add(rows.saturating_sub(1).saturating_mul(card_gap))
             .saturating_add(panel_pad);
         let ticker_h = header_h
             .saturating_add(body_h)
-            .clamp(128, 320)
+            .clamp(150, 360)
             .min(canvas_h.saturating_sub(24));
         let inner_w = ticker_w.saturating_sub(panel_pad.saturating_mul(2));
         let card_w = inner_w.saturating_sub(card_gap.saturating_mul(cols.saturating_sub(1))) / cols;
-        let header_size = (text.clock_font_size.saturating_mul(48) / 100).clamp(13, 24);
-        let card_size = (text.clock_font_size.saturating_mul(42) / 100).clamp(12, 18);
+        let header_size = (text.clock_font_size.saturating_mul(52) / 100).clamp(14, 26);
+        let card_size = (text.clock_font_size.saturating_mul(44) / 100).clamp(12, 19);
         args.push("(".to_string());
         args.push("-size".to_string());
         args.push(format!("{ticker_w}x{ticker_h}"));
@@ -584,7 +786,7 @@ fn render_with_imagemagick(
         args.push("-background".to_string());
         args.push("none".to_string());
         args.push("-fill".to_string());
-        args.push("#F4EAD4E6".to_string());
+        args.push("#F6F1E6E8".to_string());
         args.push("-stroke".to_string());
         args.push("none".to_string());
         args.push("-draw".to_string());
@@ -594,7 +796,7 @@ fn render_with_imagemagick(
             ticker_h.saturating_sub(1)
         ));
         args.push("-fill".to_string());
-        args.push("#1B2A38E6".to_string());
+        args.push("#233646E8".to_string());
         args.push("-draw".to_string());
         args.push(format!(
             "rectangle 0,0 {},{}",
@@ -602,7 +804,7 @@ fn render_with_imagemagick(
             header_h
         ));
         args.push("-fill".to_string());
-        args.push("#F4EAD4".to_string());
+        args.push("#FFF5E4".to_string());
         args.push("-stroke".to_string());
         args.push("none".to_string());
         args.push("-font".to_string());
@@ -623,9 +825,9 @@ fn render_with_imagemagick(
                 .saturating_add(panel_pad)
                 .saturating_add(row.saturating_mul(card_h.saturating_add(card_gap)));
             args.push("-fill".to_string());
-            args.push("#FFFDF7E8".to_string());
+            args.push("#FFFDF8EE".to_string());
             args.push("-stroke".to_string());
-            args.push("#B7A78C".to_string());
+            args.push("#C4B498".to_string());
             args.push("-strokewidth".to_string());
             args.push("1".to_string());
             args.push("-draw".to_string());
@@ -649,8 +851,8 @@ fn render_with_imagemagick(
             args.push("-gravity".to_string());
             args.push("NorthWest".to_string());
             args.push("-annotate".to_string());
-            let max_chars_per_line = (card_w / 10).clamp(16, 34) as usize;
-            let wrapped = wrap_text_for_card(item, max_chars_per_line, 3);
+            let max_chars_per_line = (card_w / 9).clamp(16, 38) as usize;
+            let wrapped = wrap_text_for_card(item, max_chars_per_line, 4);
             args.push(format!(
                 "+{}+{}",
                 card_x.saturating_add(8),
@@ -792,52 +994,38 @@ fn split_quote_and_author(input: &str) -> (String, Option<String>) {
 fn wrap_text_for_card(input: &str, max_chars_per_line: usize, max_lines: usize) -> String {
     let max_chars = max_chars_per_line.max(8);
     let max_rows = max_lines.max(1);
-    let words = input.split_whitespace().collect::<Vec<_>>();
-    if words.is_empty() {
+    let segments = split_card_segments(input);
+    if segments.is_empty() {
         return String::new();
     }
 
     let mut lines = Vec::<String>::new();
-    let mut current = String::new();
-    for word in words {
-        let candidate = if current.is_empty() {
-            word.to_string()
+    let mut overflowed = false;
+    for segment in segments {
+        let wrapped = wrap_segment_to_lines(&segment, max_chars);
+        if wrapped.is_empty() {
+            continue;
+        }
+        if lines.len() + wrapped.len() > max_rows {
+            let remaining = max_rows.saturating_sub(lines.len());
+            lines.extend(wrapped.into_iter().take(remaining));
+            overflowed = true;
+            break;
         } else {
-            format!("{current} {word}")
-        };
-        if candidate.chars().count() <= max_chars {
-            current = candidate;
-        } else {
-            if !current.is_empty() {
-                lines.push(current);
-            }
-            current = word.to_string();
-            if lines.len() >= max_rows {
-                break;
-            }
+            lines.extend(wrapped);
         }
     }
-    if !current.is_empty() && lines.len() < max_rows {
-        lines.push(current);
-    }
-    if lines.is_empty() {
-        return String::new();
-    }
-    if lines.len() > max_rows {
-        lines.truncate(max_rows);
-    }
-    if input.chars().count() > lines.join(" ").chars().count() {
+
+    if overflowed && !lines.is_empty() {
         let last = lines.last_mut().expect("non-empty lines");
-        if last.chars().count() + 3 > max_chars {
-            let trimmed = last
-                .chars()
-                .take(max_chars.saturating_sub(3))
-                .collect::<String>();
-            *last = format!("{trimmed}...");
-        } else {
-            last.push_str("...");
+        if last.chars().count() > max_chars.saturating_sub(1) {
+            *last = last.chars().take(max_chars.saturating_sub(1)).collect();
+        }
+        if !last.ends_with('…') {
+            last.push('…');
         }
     }
+
     lines.join("\n")
 }
 
