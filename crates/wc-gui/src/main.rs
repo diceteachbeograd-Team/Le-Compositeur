@@ -384,6 +384,7 @@ enum GuiTab {
     LayoutPositions,
     SourceImages,
     SourceQuotes,
+    SourceVisuals,
     SourceWeather,
     SourceNews,
     SourceStaticUrl,
@@ -414,6 +415,14 @@ enum LayoutElement {
     Weather,
     NewsTicker,
     StaticUrl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LiteVisualPreset {
+    AuroraMint,
+    CinemaAmber,
+    MonoSlate,
+    PaperWarm,
 }
 
 #[derive(Clone, Copy)]
@@ -519,7 +528,13 @@ impl WcGuiApp {
                     | GuiTab::SourceStaticUrl
                     | GuiTab::SourceScriptTicker
             ) {
-                self.active_tab = GuiTab::SourceImages;
+                self.active_tab = GuiTab::SourceVisuals;
+            }
+            if matches!(
+                self.selected_element,
+                LayoutElement::Weather | LayoutElement::NewsTicker | LayoutElement::StaticUrl
+            ) {
+                self.selected_element = LayoutElement::Quote;
             }
         }
     }
@@ -541,6 +556,7 @@ impl WcGuiApp {
             }
             GuiTab::SourceImages
             | GuiTab::SourceQuotes
+            | GuiTab::SourceVisuals
             | GuiTab::SourceWeather
             | GuiTab::SourceNews
             | GuiTab::SourceStaticUrl
@@ -553,7 +569,13 @@ impl WcGuiApp {
         self.active_tab = match main {
             MainTab::Compose => GuiTab::ComposeRun,
             MainTab::Layout => GuiTab::LayoutCanvas,
-            MainTab::Sources => GuiTab::SourceImages,
+            MainTab::Sources => {
+                if lite_profile_enabled() {
+                    GuiTab::SourceVisuals
+                } else {
+                    GuiTab::SourceImages
+                }
+            }
             MainTab::System => GuiTab::System,
         };
     }
@@ -568,6 +590,7 @@ impl WcGuiApp {
             GuiTab::LayoutPositions => "Layout / Positions",
             GuiTab::SourceImages => "Sources / Images",
             GuiTab::SourceQuotes => "Sources / Quotes",
+            GuiTab::SourceVisuals => "Sources / Visuals",
             GuiTab::SourceWeather => "Sources / Weather",
             GuiTab::SourceNews => "Sources / News",
             GuiTab::SourceStaticUrl => "Sources / Static URL",
@@ -586,6 +609,7 @@ impl WcGuiApp {
             GuiTab::LayoutPositions => "Set exact X/Y positions and widget dimensions.",
             GuiTab::SourceImages => "Configure background image sources and wallpaper behavior.",
             GuiTab::SourceQuotes => "Configure quote sources and typography.",
+            GuiTab::SourceVisuals => "Lightweight look presets and style preview (RAM-safe).",
             GuiTab::SourceWeather => "Configure weather source and visual style.",
             GuiTab::SourceNews => "Configure news ticker feed behavior.",
             GuiTab::SourceStaticUrl => "Configure static URL snapshot panels.",
@@ -597,6 +621,46 @@ impl WcGuiApp {
     fn clamp_news_widget_size(&mut self) {
         self.cfg.news_widget_width = self.cfg.news_widget_width.clamp(180, 1920);
         self.cfg.news_widget_height = self.cfg.news_widget_height.clamp(120, 1080);
+    }
+
+    fn apply_lite_visual_preset(&mut self, preset: LiteVisualPreset) {
+        match preset {
+            LiteVisualPreset::AuroraMint => {
+                self.cfg.font_family = "DejaVu-Sans".to_string();
+                self.cfg.quote_color = "#D9FFF4".to_string();
+                self.cfg.clock_color = "#7DFFD5".to_string();
+                self.cfg.text_undercolor = "#042019B8".to_string();
+                self.cfg.text_stroke_color = "#012A1E".to_string();
+                self.cfg.text_shadow_enabled = true;
+                self.cfg.text_shadow_color = "#00120CA6".to_string();
+            }
+            LiteVisualPreset::CinemaAmber => {
+                self.cfg.font_family = "Noto-Sans".to_string();
+                self.cfg.quote_color = "#FFE9CF".to_string();
+                self.cfg.clock_color = "#FFC45D".to_string();
+                self.cfg.text_undercolor = "#1A120AE0".to_string();
+                self.cfg.text_stroke_color = "#090603".to_string();
+                self.cfg.text_shadow_enabled = true;
+                self.cfg.text_shadow_color = "#000000BF".to_string();
+            }
+            LiteVisualPreset::MonoSlate => {
+                self.cfg.font_family = "Monospace".to_string();
+                self.cfg.quote_color = "#E4ECF3".to_string();
+                self.cfg.clock_color = "#A7CBFF".to_string();
+                self.cfg.text_undercolor = "#08111CCC".to_string();
+                self.cfg.text_stroke_color = "#03080E".to_string();
+                self.cfg.text_shadow_enabled = false;
+            }
+            LiteVisualPreset::PaperWarm => {
+                self.cfg.font_family = "Serif".to_string();
+                self.cfg.quote_color = "#F7F2E8".to_string();
+                self.cfg.clock_color = "#FFCF7A".to_string();
+                self.cfg.text_undercolor = "#2B2114C8".to_string();
+                self.cfg.text_stroke_color = "#100A05".to_string();
+                self.cfg.text_shadow_enabled = true;
+                self.cfg.text_shadow_color = "#150F08A8".to_string();
+            }
+        }
     }
 
     fn layout_element_label(element: LayoutElement) -> &'static str {
@@ -2154,6 +2218,246 @@ impl WcGuiApp {
         });
     }
 
+    fn render_visuals_tab(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let color_help = self.hover_text("color_format").to_string();
+        settings_section(
+            ui,
+            "Lite Visuals",
+            "Lightweight styling without weather/news/static render paths.",
+            |ui| {
+                ui.label(
+                    "Use one-click presets to keep the output sharp while staying memory-safe.",
+                );
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("Aurora Mint").clicked() {
+                        self.apply_lite_visual_preset(LiteVisualPreset::AuroraMint);
+                        self.status = "Applied visual preset: Aurora Mint".to_string();
+                    }
+                    if ui.button("Cinema Amber").clicked() {
+                        self.apply_lite_visual_preset(LiteVisualPreset::CinemaAmber);
+                        self.status = "Applied visual preset: Cinema Amber".to_string();
+                    }
+                    if ui.button("Mono Slate").clicked() {
+                        self.apply_lite_visual_preset(LiteVisualPreset::MonoSlate);
+                        self.status = "Applied visual preset: Mono Slate".to_string();
+                    }
+                    if ui.button("Paper Warm").clicked() {
+                        self.apply_lite_visual_preset(LiteVisualPreset::PaperWarm);
+                        self.status = "Applied visual preset: Paper Warm".to_string();
+                    }
+                });
+            },
+        );
+
+        settings_section(
+            ui,
+            "Fast Contrast Controls",
+            "Directly tune quote + clock contrast for desktop readability.",
+            |ui| {
+                ui.horizontal(|ui| {
+                    edit_color_field(ui, "Quote", &mut self.cfg.quote_color, false, &color_help);
+                    edit_color_field(ui, "Clock", &mut self.cfg.clock_color, false, &color_help);
+                });
+                ui.horizontal(|ui| {
+                    edit_color_field(
+                        ui,
+                        "Undercolor",
+                        &mut self.cfg.text_undercolor,
+                        true,
+                        &color_help,
+                    );
+                    edit_color_field(
+                        ui,
+                        "Stroke",
+                        &mut self.cfg.text_stroke_color,
+                        false,
+                        &color_help,
+                    );
+                    ui.label("Stroke width");
+                    ui.add(
+                        egui::DragValue::new(&mut self.cfg.text_stroke_width)
+                            .range(0..=8)
+                            .speed(1),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.cfg.text_shadow_enabled, "Shadow");
+                    ui.add_enabled_ui(self.cfg.text_shadow_enabled, |ui| {
+                        edit_color_field(
+                            ui,
+                            "Shadow color",
+                            &mut self.cfg.text_shadow_color,
+                            true,
+                            &color_help,
+                        );
+                        ui.label("dx");
+                        ui.add(
+                            egui::DragValue::new(&mut self.cfg.text_shadow_offset_x)
+                                .range(-20..=20)
+                                .speed(1),
+                        );
+                        ui.label("dy");
+                        ui.add(
+                            egui::DragValue::new(&mut self.cfg.text_shadow_offset_y)
+                                .range(-20..=20)
+                                .speed(1),
+                        );
+                    });
+                });
+            },
+        );
+
+        settings_section(
+            ui,
+            "Composition Focus",
+            "Swap between compact and cinematic quote-box proportions.",
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Text box");
+                    for (value, label) in [
+                        ("quarter", "Quarter"),
+                        ("third", "Third"),
+                        ("half", "Half"),
+                        ("full", "Full"),
+                    ] {
+                        ui.selectable_value(&mut self.cfg.text_box_size, value.to_string(), label);
+                    }
+                    ui.selectable_value(
+                        &mut self.cfg.text_box_size,
+                        "custom".to_string(),
+                        "Custom",
+                    );
+                });
+                if self.cfg.text_box_size == "custom" {
+                    ui.horizontal(|ui| {
+                        ui.label("Width %");
+                        ui.add(
+                            egui::DragValue::new(&mut self.cfg.text_box_width_pct).range(10..=100),
+                        );
+                        ui.label("Height %");
+                        ui.add(
+                            egui::DragValue::new(&mut self.cfg.text_box_height_pct).range(10..=100),
+                        );
+                    });
+                }
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.cfg.show_quote_layer, "Show Quote");
+                    ui.checkbox(&mut self.cfg.show_clock_layer, "Show Clock");
+                });
+            },
+        );
+
+        settings_section(
+            ui,
+            "Live Lite Preview",
+            "Pure egui vector preview (no image decode) to test contrast + rhythm.",
+            |ui| {
+                let preview_w = ui.available_width().clamp(360.0, 860.0);
+                let preview_h = (preview_w * 9.0 / 16.0).clamp(200.0, 420.0);
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(preview_w, preview_h), egui::Sense::hover());
+                let painter = ui.painter_at(rect);
+
+                let top = parse_color_value(&self.cfg.text_stroke_color)
+                    .unwrap_or(egui::Color32::from_rgb(10, 20, 36));
+                let mid = parse_color_value(&self.cfg.text_undercolor)
+                    .unwrap_or(egui::Color32::from_rgba_premultiplied(14, 26, 48, 220));
+                let bot = parse_color_value(&self.cfg.quote_color)
+                    .unwrap_or(egui::Color32::from_rgb(180, 200, 220))
+                    .linear_multiply(0.22);
+                let bands = [(top, 0.0_f32), (mid, 0.52_f32), (bot, 1.0_f32)];
+                for idx in 0..(bands.len() - 1) {
+                    let (c0, p0) = bands[idx];
+                    let (c1, p1) = bands[idx + 1];
+                    let y0 = egui::lerp(rect.top()..=rect.bottom(), p0);
+                    let y1 = egui::lerp(rect.top()..=rect.bottom(), p1);
+                    let band_rect = egui::Rect::from_min_max(
+                        egui::pos2(rect.left(), y0),
+                        egui::pos2(rect.right(), y1),
+                    );
+                    painter.rect_filled(band_rect, 0.0, c0.linear_multiply(0.82));
+                    painter.rect_filled(
+                        band_rect.shrink2(egui::vec2(0.0, 2.0)),
+                        0.0,
+                        c1.linear_multiply(0.25),
+                    );
+                }
+                painter.rect_stroke(
+                    rect,
+                    10.0,
+                    egui::Stroke::new(1.0, egui::Color32::from_gray(120)),
+                    egui::StrokeKind::Middle,
+                );
+
+                let quote_box = egui::Rect::from_min_size(
+                    egui::pos2(
+                        rect.left() + rect.width() * 0.06,
+                        rect.bottom() - rect.height() * 0.36,
+                    ),
+                    egui::vec2(rect.width() * 0.56, rect.height() * 0.26),
+                );
+                painter.rect_filled(
+                    quote_box,
+                    8.0,
+                    parse_color_value(&self.cfg.text_undercolor)
+                        .unwrap_or(egui::Color32::from_rgba_premultiplied(0, 0, 0, 160)),
+                );
+                painter.rect_stroke(
+                    quote_box,
+                    8.0,
+                    egui::Stroke::new(
+                        self.cfg.text_stroke_width.clamp(1, 4) as f32,
+                        parse_color_value(&self.cfg.text_stroke_color)
+                            .unwrap_or(egui::Color32::from_gray(220)),
+                    ),
+                    egui::StrokeKind::Middle,
+                );
+
+                if self.cfg.show_quote_layer {
+                    painter.text(
+                        quote_box.left_top() + egui::vec2(12.0, 12.0),
+                        egui::Align2::LEFT_TOP,
+                        "This setup is light, sharp and VM-safe.",
+                        egui::FontId::proportional(
+                            (self.cfg.quote_font_size as f32 * 0.52).clamp(14.0, 26.0),
+                        ),
+                        parse_color_value(&self.cfg.quote_color).unwrap_or(egui::Color32::WHITE),
+                    );
+                }
+                if self.cfg.show_clock_layer {
+                    painter.text(
+                        rect.right_top() - egui::vec2(20.0, -18.0),
+                        egui::Align2::RIGHT_TOP,
+                        "23:59",
+                        egui::FontId::proportional(
+                            (self.cfg.clock_font_size as f32 * 0.55).clamp(16.0, 34.0),
+                        ),
+                        parse_color_value(&self.cfg.clock_color)
+                            .unwrap_or(egui::Color32::from_rgb(255, 215, 0)),
+                    );
+                }
+
+                let now = ctx.input(|i| i.time as f32);
+                let wave_color = parse_color_value(&self.cfg.clock_color)
+                    .unwrap_or(egui::Color32::from_rgb(120, 220, 255))
+                    .linear_multiply(0.75);
+                let baseline = rect.bottom() - 14.0;
+                let wave_w = rect.width().max(1.0);
+                let mut prev = egui::pos2(rect.left(), baseline);
+                for step in 1..=48 {
+                    let t = step as f32 / 48.0;
+                    let x = rect.left() + wave_w * t;
+                    let phase = (now * 1.6) + t * std::f32::consts::TAU * 3.0;
+                    let y = baseline - phase.sin() * 4.0;
+                    let next = egui::pos2(x, y);
+                    painter.line_segment([prev, next], egui::Stroke::new(1.5, wave_color));
+                    prev = next;
+                }
+                ctx.request_repaint_after(Duration::from_millis(90));
+            },
+        );
+    }
+
     fn render_ordering_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Selected element");
@@ -2166,21 +2470,23 @@ impl WcGuiApp {
                         "Quote Box",
                     );
                     ui.selectable_value(&mut self.selected_element, LayoutElement::Clock, "Clock");
-                    ui.selectable_value(
-                        &mut self.selected_element,
-                        LayoutElement::Weather,
-                        "Weather",
-                    );
-                    ui.selectable_value(
-                        &mut self.selected_element,
-                        LayoutElement::NewsTicker,
-                        "News",
-                    );
-                    ui.selectable_value(
-                        &mut self.selected_element,
-                        LayoutElement::StaticUrl,
-                        "Static URL",
-                    );
+                    if !lite_profile_enabled() {
+                        ui.selectable_value(
+                            &mut self.selected_element,
+                            LayoutElement::Weather,
+                            "Weather",
+                        );
+                        ui.selectable_value(
+                            &mut self.selected_element,
+                            LayoutElement::NewsTicker,
+                            "News",
+                        );
+                        ui.selectable_value(
+                            &mut self.selected_element,
+                            LayoutElement::StaticUrl,
+                            "Static URL",
+                        );
+                    }
                 });
             ui.label(format!(
                 "Grid: {}px ({}x{})",
@@ -2457,7 +2763,7 @@ impl WcGuiApp {
                 self.selected_element = LayoutElement::Clock;
             }
         });
-        ui.add_enabled_ui(!lite, |ui| {
+        if !lite {
             ui.horizontal(|ui| {
                 ui.checkbox(&mut self.cfg.show_weather_layer, "Weather");
                 ui.label("Z");
@@ -2482,9 +2788,8 @@ impl WcGuiApp {
                     self.selected_element = LayoutElement::StaticUrl;
                 }
             });
-        });
-        if lite {
-            ui.small("Lite profile: Weather, News and Static URL layers are disabled.");
+        } else {
+            ui.small("Lite profile: Weather/News/Static URL layers are hidden in this build.");
         }
     }
 
@@ -4561,23 +4866,13 @@ impl eframe::App for WcGuiApp {
                                 GuiTab::SourceQuotes,
                                 "Quotes",
                             );
+                            ui.selectable_value(
+                                &mut self.active_tab,
+                                GuiTab::SourceVisuals,
+                                "Visuals",
+                            );
                             if lite {
-                                ui.add_enabled(
-                                    false,
-                                    egui::SelectableLabel::new(false, "Weather (Lite off)"),
-                                );
-                                ui.add_enabled(
-                                    false,
-                                    egui::SelectableLabel::new(false, "News (Lite off)"),
-                                );
-                                ui.add_enabled(
-                                    false,
-                                    egui::SelectableLabel::new(false, "Static URL (Lite off)"),
-                                );
-                                ui.add_enabled(
-                                    false,
-                                    egui::SelectableLabel::new(false, "Script Ticker (Lite off)"),
-                                );
+                                ui.small("Lite mode: advanced source tabs are removed.");
                             } else {
                                 ui.selectable_value(
                                     &mut self.active_tab,
@@ -4610,7 +4905,7 @@ impl eframe::App for WcGuiApp {
                     if lite_profile_enabled() {
                         ui.colored_label(
                             egui::Color32::from_rgb(255, 200, 110),
-                            "Lite profile active: Weather, News, Static URL and Script Ticker are disabled for low-memory stability.",
+                            "Lite profile active: advanced source tabs removed; use Visuals for lightweight styling.",
                         );
                     } else {
                         ui.colored_label(
@@ -4679,6 +4974,7 @@ impl eframe::App for WcGuiApp {
                     GuiTab::LayoutPositions => self.render_layout_positions_tab(ui),
                     GuiTab::SourceImages => self.render_images_tab(ui, ctx),
                     GuiTab::SourceQuotes => self.render_quotes_tab(ui),
+                    GuiTab::SourceVisuals => self.render_visuals_tab(ui, ctx),
                     GuiTab::SourceWeather => self.render_weather_tab(ui),
                     GuiTab::SourceNews => self.render_news_ticker_tab(ui),
                     GuiTab::SourceStaticUrl => self.render_static_url_tab(ui),
@@ -5153,10 +5449,11 @@ mod tests {
         assert!(!app.cfg.show_cams_layer);
         assert_eq!(app.cfg.cams_render_mode, "overlay");
         if super::lite_profile_enabled() {
-            assert_eq!(app.active_tab, GuiTab::SourceImages);
+            assert_eq!(app.active_tab, GuiTab::SourceVisuals);
+            assert_eq!(app.selected_element, LayoutElement::Quote);
         } else {
             assert_eq!(app.active_tab, GuiTab::SourceNews);
+            assert_eq!(app.selected_element, LayoutElement::StaticUrl);
         }
-        assert_eq!(app.selected_element, LayoutElement::StaticUrl);
     }
 }

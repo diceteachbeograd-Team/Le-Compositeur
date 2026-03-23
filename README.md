@@ -18,6 +18,8 @@ Temporary quality note (keep until explicit user approval):
 - `Static URL` panel
 - `Script Ticker`
 - `Cams` (already disabled in stable path)
+- Related source tabs are removed from the Lite GUI navigation.
+- New replacement: `Visuals` tab (lightweight style presets + vector preview).
 
 ### Why We Disable These
 - They rely on expensive image/network/render paths that can trigger high transient memory use on small VMs.
@@ -64,10 +66,9 @@ See [docs/LITE_PROFILE.md](docs/LITE_PROFILE.md) for limits and tuning env vars.
 - `LAY Ordering`: layer toggles, z-order, drag/snap placement
 - `IMG Images`: background source + timing
 - `QTE Quotes`: quote source and style
-- `WTH Weather`: weather source/map/panel settings
-- `NWS News`: ticker source, refresh, fps, placement, width
-- `URL Static`: snapshot URL source list/custom URLs and placement
+- `VIS Visuals`: lightweight presets + contrast tuning + low-cost live preview
 - `SYS System`: runtime control, update checks, startup/integration toggles
+- `Weather` / `News` / `Static URL` / `Script Ticker` source tabs are only shown in full mode (`WC_LITE_PROFILE=0`).
 
 ## Build locally
 

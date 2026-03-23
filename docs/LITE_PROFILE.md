@@ -28,6 +28,8 @@ Reason: already non-final in stable path and not suitable for low-memory baselin
 - Stronger ImageMagick limits (memory/map/disk/thread) in renderer.
 - GUI starts with local image source and avoids unnecessary preview thumbnail loading.
 - Refresh defaults are more conservative (`600s`) to reduce churn.
+- Source navigation removes disabled tabs instead of showing inactive placeholders.
+- New lightweight `Visuals` tab provides style presets and a pure-vector mini preview.
 
 ## Full mode (opt-in)
 If your machine has enough RAM and you accept higher risk of memory spikes:
