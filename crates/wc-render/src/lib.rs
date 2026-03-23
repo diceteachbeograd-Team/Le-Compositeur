@@ -305,12 +305,39 @@ fn render_with_imagemagick(
         args.push("convert".to_string());
     }
 
+    let low_mem_enabled = env_flag_enabled("WC_LOW_MEMORY_MODE", true);
+    let magick_memory_mb = env_u32("WC_MAGICK_MEMORY_MB", 64).clamp(16, 1024);
+    let magick_map_mb = env_u32("WC_MAGICK_MAP_MB", 96).clamp(16, 2048);
+    let magick_disk_mb = env_u32("WC_MAGICK_DISK_MB", 384).clamp(64, 16_384);
+    let magick_thread_limit = env_u32("WC_MAGICK_THREAD_LIMIT", 1).clamp(1, 8);
+    let magick_tmp_dir = imagemagick_temp_dir();
+
     let (quote_body, author) = split_quote_and_author(text.quote);
     let rtl = is_rtl_text(&quote_body);
     let quote_gravity = if rtl { "East" } else { "West" };
     let author_gravity = if rtl { "West" } else { "East" };
     let canvas_w = text.canvas_width.max(1);
     let canvas_h = text.canvas_height.max(1);
+
+    if low_mem_enabled {
+        args.push("-limit".to_string());
+        args.push("memory".to_string());
+        args.push(format!("{magick_memory_mb}MiB"));
+        args.push("-limit".to_string());
+        args.push("map".to_string());
+        args.push(format!("{magick_map_mb}MiB"));
+        args.push("-limit".to_string());
+        args.push("disk".to_string());
+        args.push(format!("{magick_disk_mb}MiB"));
+        args.push("-limit".to_string());
+        args.push("thread".to_string());
+        args.push(magick_thread_limit.to_string());
+        args.push("-define".to_string());
+        args.push(format!(
+            "registry:temporary-path={}",
+            magick_tmp_dir.display()
+        ));
+    }
 
     // Build an explicit background layer first so image scaling/placement is independent
     // from the quote box/text layer rendered afterwards.
@@ -947,12 +974,59 @@ fn render_with_imagemagick(
 
     args.push(output_image.display().to_string());
 
-    let status = Command::new(cmd)
-        .args(args)
+    let mut command = Command::new(cmd);
+    command.args(args);
+    if low_mem_enabled {
+        command.env("MAGICK_MEMORY_LIMIT", format!("{magick_memory_mb}MiB"));
+        command.env("MAGICK_MAP_LIMIT", format!("{magick_map_mb}MiB"));
+        command.env("MAGICK_DISK_LIMIT", format!("{magick_disk_mb}MiB"));
+        command.env("MAGICK_THREAD_LIMIT", magick_thread_limit.to_string());
+        command.env("MAGICK_TEMPORARY_PATH", &magick_tmp_dir);
+    }
+    let status = command
         .status()
         .map_err(|e| format!("failed to run {cmd}: {e}"))?;
 
     Ok(status.success())
+}
+
+fn env_flag_enabled(key: &str, default: bool) -> bool {
+    match std::env::var(key) {
+        Ok(v) => {
+            let t = v.trim().to_ascii_lowercase();
+            if matches!(t.as_str(), "0" | "false" | "off" | "no") {
+                false
+            } else if matches!(t.as_str(), "1" | "true" | "on" | "yes") {
+                true
+            } else {
+                default
+            }
+        }
+        Err(_) => default,
+    }
+}
+
+fn env_u32(key: &str, default: u32) -> u32 {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .unwrap_or(default)
+}
+
+fn imagemagick_temp_dir() -> PathBuf {
+    let path = std::env::var("WC_MAGICK_TMPDIR")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|home| PathBuf::from(home).join(".cache/wallpaper-composer/imagemagick-tmp"))
+        })
+        .unwrap_or_else(|| std::env::temp_dir().join("wallpaper-composer-imagemagick"));
+    let _ = fs::create_dir_all(&path);
+    path
 }
 
 fn split_quote_and_author(input: &str) -> (String, Option<String>) {

@@ -4597,6 +4597,7 @@ fn load_thumbnail(
     path: &Path,
     idx: usize,
 ) -> Result<egui::TextureHandle, String> {
+    ensure_preview_source_size(path)?;
     let img = image::open(path).map_err(|e| format!("decode failed: {e}"))?;
     let thumb = img.thumbnail(480, 270).to_rgba8();
     let size = [thumb.width() as usize, thumb.height() as usize];
@@ -4613,8 +4614,9 @@ fn load_ordering_background_texture(
     ctx: &egui::Context,
     path: &Path,
 ) -> Result<egui::TextureHandle, String> {
+    ensure_preview_source_size(path)?;
     let img = image::open(path).map_err(|e| format!("decode failed: {e}"))?;
-    let gray = img.thumbnail(1280, 720).grayscale().to_rgba8();
+    let gray = img.thumbnail(960, 540).grayscale().to_rgba8();
     let size = [gray.width() as usize, gray.height() as usize];
     let pixels = gray.into_raw();
     let color = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
@@ -4623,6 +4625,23 @@ fn load_ordering_background_texture(
         color,
         egui::TextureOptions::LINEAR,
     ))
+}
+
+fn ensure_preview_source_size(path: &Path) -> Result<(), String> {
+    let max_pixels = std::env::var("WC_GUI_MAX_PREVIEW_PIXELS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(24_000_000_u64);
+    let (w, h) =
+        image::image_dimensions(path).map_err(|e| format!("read dimensions failed: {e}"))?;
+    let pixels = (w as u64).saturating_mul(h as u64);
+    if pixels > max_pixels {
+        return Err(format!(
+            "source image too large for preview: {}x{} ({} px) > limit {} px",
+            w, h, pixels, max_pixels
+        ));
+    }
+    Ok(())
 }
 
 fn default_cfg() -> AppConfig {

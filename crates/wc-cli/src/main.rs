@@ -708,13 +708,33 @@ fn now_epoch_seconds() -> u64 {
 }
 
 fn detect_canvas_size() -> (u32, u32) {
-    if let Some(size) = detect_resolution_via_xrandr() {
-        return size;
+    let detected = detect_resolution_via_xrandr()
+        .or_else(detect_resolution_via_xdpyinfo)
+        .unwrap_or((1920, 1080));
+    let (max_w, max_h) = max_canvas_limits();
+    let clamped_w = detected.0.clamp(640, max_w);
+    let clamped_h = detected.1.clamp(360, max_h);
+    if (clamped_w, clamped_h) != detected {
+        eprintln!(
+            "canvas clamp applied: detected={}x{}, using={}x{} (limits {}x{})",
+            detected.0, detected.1, clamped_w, clamped_h, max_w, max_h
+        );
     }
-    if let Some(size) = detect_resolution_via_xdpyinfo() {
-        return size;
-    }
-    (1920, 1080)
+    (clamped_w, clamped_h)
+}
+
+fn max_canvas_limits() -> (u32, u32) {
+    let max_w = std::env::var("WC_MAX_CANVAS_WIDTH")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .unwrap_or(1920)
+        .clamp(640, 8192);
+    let max_h = std::env::var("WC_MAX_CANVAS_HEIGHT")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .unwrap_or(1080)
+        .clamp(360, 8192);
+    (max_w, max_h)
 }
 
 fn detect_resolution_via_xrandr() -> Option<(u32, u32)> {
