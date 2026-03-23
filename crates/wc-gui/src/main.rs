@@ -22,6 +22,22 @@ const ORDERING_COLLISION_ITERS: usize = 32;
 const OVERLAY_RELOAD_SECS: u64 = 1;
 const LIVE_MEDIA_EXPERIMENTAL_ENABLED: bool = cfg!(target_os = "linux");
 
+fn lite_profile_enabled() -> bool {
+    match std::env::var("WC_LITE_PROFILE") {
+        Ok(v) => {
+            let t = v.trim().to_ascii_lowercase();
+            if matches!(t.as_str(), "0" | "false" | "off" | "no") {
+                false
+            } else if matches!(t.as_str(), "1" | "true" | "on" | "yes") {
+                true
+            } else {
+                cfg!(target_os = "linux")
+            }
+        }
+        Err(_) => cfg!(target_os = "linux"),
+    }
+}
+
 #[derive(Clone)]
 struct OverlayTickerState {
     label: String,
@@ -491,6 +507,21 @@ impl WcGuiApp {
     fn enforce_stable_feature_gates(&mut self) {
         self.cfg.show_cams_layer = false;
         self.cfg.cams_render_mode = "overlay".to_string();
+        if lite_profile_enabled() {
+            self.cfg.show_weather_layer = false;
+            self.cfg.show_news_layer = false;
+            self.cfg.show_news_ticker2 = false;
+            self.cfg.overlay_script_ticker_enabled = false;
+            if matches!(
+                self.active_tab,
+                GuiTab::SourceWeather
+                    | GuiTab::SourceNews
+                    | GuiTab::SourceStaticUrl
+                    | GuiTab::SourceScriptTicker
+            ) {
+                self.active_tab = GuiTab::SourceImages;
+            }
+        }
     }
 
     fn t<'a>(&self, en: &'a str, de: &'a str, sr: &'a str, zh: &'a str) -> &'a str {
@@ -2400,6 +2431,7 @@ impl WcGuiApp {
     }
 
     fn render_layout_layers_tab(&mut self, ui: &mut egui::Ui) {
+        let lite = lite_profile_enabled();
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.cfg.show_background_layer, "Background");
             if ui.button("Normalize Z").clicked() {
@@ -2425,30 +2457,35 @@ impl WcGuiApp {
                 self.selected_element = LayoutElement::Clock;
             }
         });
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut self.cfg.show_weather_layer, "Weather");
-            ui.label("Z");
-            ui.add(egui::DragValue::new(&mut self.cfg.layer_z_weather).range(0..=100));
-            if ui.button("Select").clicked() {
-                self.selected_element = LayoutElement::Weather;
-            }
+        ui.add_enabled_ui(!lite, |ui| {
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.cfg.show_weather_layer, "Weather");
+                ui.label("Z");
+                ui.add(egui::DragValue::new(&mut self.cfg.layer_z_weather).range(0..=100));
+                if ui.button("Select").clicked() {
+                    self.selected_element = LayoutElement::Weather;
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.cfg.show_news_ticker2, "News");
+                ui.label("Z");
+                ui.add(egui::DragValue::new(&mut self.cfg.layer_z_news).range(0..=100));
+                if ui.button("Select").clicked() {
+                    self.selected_element = LayoutElement::NewsTicker;
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.cfg.show_news_layer, "Static URL");
+                ui.label("Z");
+                ui.add(egui::DragValue::new(&mut self.cfg.layer_z_cams).range(0..=100));
+                if ui.button("Select").clicked() {
+                    self.selected_element = LayoutElement::StaticUrl;
+                }
+            });
         });
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut self.cfg.show_news_ticker2, "News");
-            ui.label("Z");
-            ui.add(egui::DragValue::new(&mut self.cfg.layer_z_news).range(0..=100));
-            if ui.button("Select").clicked() {
-                self.selected_element = LayoutElement::NewsTicker;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut self.cfg.show_news_layer, "Static URL");
-            ui.label("Z");
-            ui.add(egui::DragValue::new(&mut self.cfg.layer_z_cams).range(0..=100));
-            if ui.button("Select").clicked() {
-                self.selected_element = LayoutElement::StaticUrl;
-            }
-        });
+        if lite {
+            ui.small("Lite profile: Weather, News and Static URL layers are disabled.");
+        }
     }
 
     fn render_layout_positions_tab(&mut self, ui: &mut egui::Ui) {
@@ -2559,6 +2596,21 @@ impl WcGuiApp {
     }
 
     fn render_weather_tab(&mut self, ui: &mut egui::Ui) {
+        if lite_profile_enabled() {
+            settings_section(
+                ui,
+                "Weather Disabled (Lite)",
+                "Weather is disabled in Lite profile to avoid RAM/SWAP spikes on small VMs.",
+                |ui| {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 200, 110),
+                        "Set WC_LITE_PROFILE=0 to re-enable Weather in full mode.",
+                    );
+                },
+            );
+            return;
+        }
+
         let color_help = self.hover_text("color_format").to_string();
         settings_section(
             ui,
@@ -2996,6 +3048,21 @@ impl WcGuiApp {
     }
 
     fn render_news_ticker_tab(&mut self, ui: &mut egui::Ui) {
+        if lite_profile_enabled() {
+            settings_section(
+                ui,
+                "News Disabled (Lite)",
+                "News ticker is disabled in Lite profile to keep background rendering memory-safe.",
+                |ui| {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 200, 110),
+                        "Set WC_LITE_PROFILE=0 to re-enable News in full mode.",
+                    );
+                },
+            );
+            return;
+        }
+
         self.cfg.show_cams_layer = false;
         self.cfg.cams_render_mode = "overlay".to_string();
 
@@ -3079,6 +3146,21 @@ impl WcGuiApp {
     }
 
     fn render_script_ticker_tab(&mut self, ui: &mut egui::Ui) {
+        if lite_profile_enabled() {
+            settings_section(
+                ui,
+                "Script Ticker Disabled (Lite)",
+                "Command-fed script ticker is disabled in Lite profile for predictable low memory.",
+                |ui| {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 200, 110),
+                        "Set WC_LITE_PROFILE=0 to re-enable Script Ticker in full mode.",
+                    );
+                },
+            );
+            return;
+        }
+
         settings_section(
             ui,
             "Custom Script Ticker",
@@ -3115,6 +3197,21 @@ impl WcGuiApp {
     }
 
     fn render_static_url_tab(&mut self, ui: &mut egui::Ui) {
+        if lite_profile_enabled() {
+            settings_section(
+                ui,
+                "Static URL Disabled (Lite)",
+                "Static URL panels are disabled in Lite profile to avoid heavy snapshot processing.",
+                |ui| {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 200, 110),
+                        "Set WC_LITE_PROFILE=0 to re-enable Static URL in full mode.",
+                    );
+                },
+            );
+            return;
+        }
+
         self.cfg.show_cams_layer = false;
         self.cfg.cams_render_mode = "overlay".to_string();
         settings_section(
@@ -4362,7 +4459,13 @@ impl eframe::App for WcGuiApp {
             self.ui_style_compact_applied = Some(self.ui_compact_mode);
         }
 
-        if self.thumbnails.is_empty() || self.thumbnails_for_dir != self.cfg.image_dir {
+        let preview_assets_needed = matches!(
+            self.active_tab,
+            GuiTab::ComposePreview | GuiTab::LayoutCanvas
+        ) || self.show_preview_panel;
+        if preview_assets_needed
+            && (self.thumbnails.is_empty() || self.thumbnails_for_dir != self.cfg.image_dir)
+        {
             self.refresh_thumbnails(ctx);
         }
         if self.quote_preview.is_empty() {
@@ -4447,6 +4550,7 @@ impl eframe::App for WcGuiApp {
                             );
                         }
                         MainTab::Sources => {
+                            let lite = lite_profile_enabled();
                             ui.selectable_value(
                                 &mut self.active_tab,
                                 GuiTab::SourceImages,
@@ -4457,26 +4561,45 @@ impl eframe::App for WcGuiApp {
                                 GuiTab::SourceQuotes,
                                 "Quotes",
                             );
-                            ui.selectable_value(
-                                &mut self.active_tab,
-                                GuiTab::SourceWeather,
-                                "Weather",
-                            );
-                            ui.selectable_value(
-                                &mut self.active_tab,
-                                GuiTab::SourceNews,
-                                "News",
-                            );
-                            ui.selectable_value(
-                                &mut self.active_tab,
-                                GuiTab::SourceStaticUrl,
-                                "Static URL",
-                            );
-                            ui.selectable_value(
-                                &mut self.active_tab,
-                                GuiTab::SourceScriptTicker,
-                                "Script Ticker",
-                            );
+                            if lite {
+                                ui.add_enabled(
+                                    false,
+                                    egui::SelectableLabel::new(false, "Weather (Lite off)"),
+                                );
+                                ui.add_enabled(
+                                    false,
+                                    egui::SelectableLabel::new(false, "News (Lite off)"),
+                                );
+                                ui.add_enabled(
+                                    false,
+                                    egui::SelectableLabel::new(false, "Static URL (Lite off)"),
+                                );
+                                ui.add_enabled(
+                                    false,
+                                    egui::SelectableLabel::new(false, "Script Ticker (Lite off)"),
+                                );
+                            } else {
+                                ui.selectable_value(
+                                    &mut self.active_tab,
+                                    GuiTab::SourceWeather,
+                                    "Weather",
+                                );
+                                ui.selectable_value(
+                                    &mut self.active_tab,
+                                    GuiTab::SourceNews,
+                                    "News",
+                                );
+                                ui.selectable_value(
+                                    &mut self.active_tab,
+                                    GuiTab::SourceStaticUrl,
+                                    "Static URL",
+                                );
+                                ui.selectable_value(
+                                    &mut self.active_tab,
+                                    GuiTab::SourceScriptTicker,
+                                    "Script Ticker",
+                                );
+                            }
                         }
                         MainTab::System => {
                             ui.label("System settings");
@@ -4484,10 +4607,17 @@ impl eframe::App for WcGuiApp {
                     }
                 });
                 if matches!(self.active_main_tab(), MainTab::Sources) {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(255, 200, 110),
-                        "Live video/cams are disabled. Use News + Static URL modes for stable operation.",
-                    );
+                    if lite_profile_enabled() {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 200, 110),
+                            "Lite profile active: Weather, News, Static URL and Script Ticker are disabled for low-memory stability.",
+                        );
+                    } else {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 200, 110),
+                            "Live video/cams are disabled. Use News + Static URL modes for stable operation.",
+                        );
+                    }
                 }
             });
             ui.add_space(2.0);
@@ -4645,13 +4775,18 @@ fn ensure_preview_source_size(path: &Path) -> Result<(), String> {
 }
 
 fn default_cfg() -> AppConfig {
+    let lite = lite_profile_enabled();
     AppConfig {
         config_version: 1,
         image_dir: "~/Pictures/Wallpapers".to_string(),
         quotes_path: "~/Documents/wallpaper-composer/quotes.md".to_string(),
-        image_source: "preset".to_string(),
+        image_source: if lite { "local" } else { "preset" }.to_string(),
         image_source_url: None,
-        image_source_preset: Some("placecats_1920_1080".to_string()),
+        image_source_preset: if lite {
+            None
+        } else {
+            Some("placecats_1920_1080".to_string())
+        },
         quote_source: "local".to_string(),
         quote_source_url: None,
         quote_source_preset: Some("zenquotes_daily".to_string()),
@@ -4684,9 +4819,9 @@ fn default_cfg() -> AppConfig {
         rotation_use_persistent_state: true,
         rotation_state_file: "~/.local/state/wallpaper-composer/rotation.state".to_string(),
         output_image: "~/.local/state/wallpaper-composer/current.png".to_string(),
-        refresh_seconds: 300,
-        image_refresh_seconds: 300,
-        quote_refresh_seconds: 300,
+        refresh_seconds: if lite { 600 } else { 300 },
+        image_refresh_seconds: if lite { 600 } else { 300 },
+        quote_refresh_seconds: if lite { 600 } else { 300 },
         time_format: "%H:%M".to_string(),
         apply_wallpaper: false,
         wallpaper_backend: "auto".to_string(),
@@ -5008,10 +5143,20 @@ mod tests {
         let mut app = test_app();
         app.enforce_stable_feature_gates();
 
-        assert!(app.cfg.show_news_layer);
+        if super::lite_profile_enabled() {
+            assert!(!app.cfg.show_news_layer);
+            assert!(!app.cfg.show_news_ticker2);
+            assert!(!app.cfg.show_weather_layer);
+        } else {
+            assert!(app.cfg.show_news_layer);
+        }
         assert!(!app.cfg.show_cams_layer);
         assert_eq!(app.cfg.cams_render_mode, "overlay");
-        assert_eq!(app.active_tab, GuiTab::SourceNews);
+        if super::lite_profile_enabled() {
+            assert_eq!(app.active_tab, GuiTab::SourceImages);
+        } else {
+            assert_eq!(app.active_tab, GuiTab::SourceNews);
+        }
         assert_eq!(app.selected_element, LayoutElement::StaticUrl);
     }
 }

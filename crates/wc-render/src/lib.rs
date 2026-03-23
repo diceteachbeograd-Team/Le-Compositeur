@@ -305,10 +305,14 @@ fn render_with_imagemagick(
         args.push("convert".to_string());
     }
 
-    let low_mem_enabled = env_flag_enabled("WC_LOW_MEMORY_MODE", true);
-    let magick_memory_mb = env_u32("WC_MAGICK_MEMORY_MB", 64).clamp(16, 1024);
-    let magick_map_mb = env_u32("WC_MAGICK_MAP_MB", 96).clamp(16, 2048);
-    let magick_disk_mb = env_u32("WC_MAGICK_DISK_MB", 384).clamp(64, 16_384);
+    let lite_default = lite_profile_enabled();
+    let low_mem_enabled = env_flag_enabled("WC_LOW_MEMORY_MODE", lite_default);
+    let magick_memory_mb =
+        env_u32("WC_MAGICK_MEMORY_MB", if lite_default { 24 } else { 64 }).clamp(16, 1024);
+    let magick_map_mb =
+        env_u32("WC_MAGICK_MAP_MB", if lite_default { 32 } else { 96 }).clamp(16, 2048);
+    let magick_disk_mb =
+        env_u32("WC_MAGICK_DISK_MB", if lite_default { 96 } else { 384 }).clamp(64, 16_384);
     let magick_thread_limit = env_u32("WC_MAGICK_THREAD_LIMIT", 1).clamp(1, 8);
     let magick_tmp_dir = imagemagick_temp_dir();
 
@@ -1004,6 +1008,10 @@ fn env_flag_enabled(key: &str, default: bool) -> bool {
         }
         Err(_) => default,
     }
+}
+
+fn lite_profile_enabled() -> bool {
+    env_flag_enabled("WC_LITE_PROFILE", cfg!(target_os = "linux"))
 }
 
 fn env_u32(key: &str, default: u32) -> u32 {

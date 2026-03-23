@@ -724,15 +724,16 @@ fn detect_canvas_size() -> (u32, u32) {
 }
 
 fn max_canvas_limits() -> (u32, u32) {
+    let lite_default = lite_profile_enabled();
     let max_w = std::env::var("WC_MAX_CANVAS_WIDTH")
         .ok()
         .and_then(|v| v.trim().parse::<u32>().ok())
-        .unwrap_or(1920)
+        .unwrap_or(if lite_default { 1280 } else { 1920 })
         .clamp(640, 8192);
     let max_h = std::env::var("WC_MAX_CANVAS_HEIGHT")
         .ok()
         .and_then(|v| v.trim().parse::<u32>().ok())
-        .unwrap_or(1080)
+        .unwrap_or(if lite_default { 720 } else { 1080 })
         .clamp(360, 8192);
     (max_w, max_h)
 }
@@ -1268,7 +1269,7 @@ fn resolve_widgets_legacy(
     } else {
         String::new()
     };
-    let weather = if cfg.show_weather_layer {
+    let weather = if weather_widget_enabled(cfg) {
         resolve_weather_widget(cfg).unwrap_or_else(weather_unavailable_payload)
     } else {
         WeatherWidgetPayload {
@@ -3406,14 +3407,35 @@ fn is_youtube_url(url: &str) -> bool {
     l.contains("youtube.com") || l.contains("youtu.be")
 }
 
+fn lite_profile_enabled() -> bool {
+    match std::env::var("WC_LITE_PROFILE") {
+        Ok(v) => {
+            let t = v.trim().to_ascii_lowercase();
+            if matches!(t.as_str(), "0" | "false" | "off" | "no") {
+                false
+            } else if matches!(t.as_str(), "1" | "true" | "on" | "yes") {
+                true
+            } else {
+                cfg!(target_os = "linux")
+            }
+        }
+        Err(_) => cfg!(target_os = "linux"),
+    }
+}
+
+fn weather_widget_enabled(cfg: &AppConfig) -> bool {
+    cfg.show_weather_layer && !lite_profile_enabled()
+}
+
 fn news_widget_enabled(cfg: &AppConfig) -> bool {
     cfg.show_news_layer
         && cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay")
         && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+        && !lite_profile_enabled()
 }
 
 fn news_ticker2_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_news_ticker2 && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+    cfg.show_news_ticker2 && LIVE_MEDIA_EXPERIMENTAL_ENABLED && !lite_profile_enabled()
 }
 
 fn news_overlay_enabled(cfg: &AppConfig) -> bool {
@@ -3421,18 +3443,21 @@ fn news_overlay_enabled(cfg: &AppConfig) -> bool {
         && cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay")
         && news_source_supports_live_video_source(&cfg.news_source, &cfg.news_custom_url)
         && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+        && !lite_profile_enabled()
 }
 
 fn cams_widget_enabled(cfg: &AppConfig) -> bool {
     cfg.show_cams_layer
         && cfg.cams_render_mode.trim().eq_ignore_ascii_case("overlay")
         && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+        && !lite_profile_enabled()
 }
 
 fn cams_overlay_enabled(cfg: &AppConfig) -> bool {
     cfg.show_cams_layer
         && cfg.cams_render_mode.trim().eq_ignore_ascii_case("overlay")
         && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+        && !lite_profile_enabled()
 }
 
 fn command_exists(cmd: &str) -> bool {

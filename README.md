@@ -8,6 +8,29 @@ Temporary quality note (keep until explicit user approval):
 - `Weather`, `News`, and `Static URL` are actively improved and not yet considered visually final.
 - Stable mode is intentionally focused on deterministic snapshot + text workflows.
 
+## Lite Profile (Linux Default)
+- Starting with release line `2026.03.23-3`, Linux runs in **Lite profile** by default (`WC_LITE_PROFILE=1` unless overridden).
+- Goal: avoid VM freezes and large RAM/SWAP spikes during startup/render loops.
+
+### What Is Disabled In Lite
+- `Weather` widget
+- `News` ticker
+- `Static URL` panel
+- `Script Ticker`
+- `Cams` (already disabled in stable path)
+
+### Why We Disable These
+- They rely on expensive image/network/render paths that can trigger high transient memory use on small VMs.
+- The Lite baseline prioritizes deterministic low-memory behavior over feature breadth.
+
+### Re-enable Full Mode (advanced, higher RAM risk)
+```bash
+export WC_LITE_PROFILE=0
+le-compositeur
+```
+
+See [docs/LITE_PROFILE.md](docs/LITE_PROFILE.md) for limits and tuning env vars.
+
 ## Download (Latest)
 - Direct link: [github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest](https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest)
 
@@ -80,6 +103,7 @@ cargo run -p wc-gui
 
 ## Docs
 - [docs/README_FULL.md](docs/README_FULL.md)
+- [docs/LITE_PROFILE.md](docs/LITE_PROFILE.md)
 - [docs/TODO.md](docs/TODO.md)
 - [docs/SESSION_PLAN.md](docs/SESSION_PLAN.md)
 - [docs/RELEASE.md](docs/RELEASE.md)
