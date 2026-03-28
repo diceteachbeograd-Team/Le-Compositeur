@@ -1231,7 +1231,6 @@ impl WcGuiApp {
             std::thread::spawn(move || {
                 let _ = tx.send(run_linux_self_update(&release));
             });
-            return;
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -1426,10 +1425,10 @@ impl WcGuiApp {
                 return Vec::new();
             };
             let base = PathBuf::from(home).join(".config").join("autostart");
-            return vec![
+            vec![
                 base.join("le-compositeur.desktop"),
                 base.join("wallpaper-composer.desktop"),
-            ];
+            ]
         }
         #[cfg(not(target_os = "linux"))]
         {
