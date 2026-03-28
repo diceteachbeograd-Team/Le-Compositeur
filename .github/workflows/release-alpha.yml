@@ -10,6 +10,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   verify-ci-success:
     name: Verify CI Status
@@ -97,7 +100,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y rpm rsync desktop-file-utils dpkg-dev
-          chmod +x scripts/build-alpha-rpm.sh scripts/build-alpha-deb.sh
+          chmod +x scripts/build-alpha-rpm.sh scripts/build-alpha-deb.sh scripts/smoke-linux-packages.sh
 
           TAG="${GITHUB_REF_NAME#v}"
           if [[ "$TAG" == *-* ]]; then
@@ -141,6 +144,8 @@ jobs:
             exit 1
           fi
           cp "${RPM_PKG}" dist/le-compositeur-linux-x86_64.rpm
+
+          ./scripts/smoke-linux-packages.sh
 
       - name: Build Windows bundles (.zip + .exe)
         if: matrix.name == 'windows-x86_64'
@@ -283,6 +288,9 @@ jobs:
           Release process guarantees:
           - Tag release is blocked until CI (`fmt`, `clippy`, `test`) is green for the tagged commit.
           - Linux `.deb` / `.rpm` are produced from the same repo scripts used for local package validation.
+          - Linux package smoke checks run automatically in CI:
+            - `.deb` install + `wc-cli doctor` on Ubuntu runner
+            - `.rpm` install + `wc-cli doctor` in clean Fedora 43 container
           - Linux/Windows/macOS artifacts include both GUI and CLI binaries plus bundled local quotes.
           - Linux default profile is Lite (`WC_LITE_PROFILE=1`) with low-memory visual workflow.
 

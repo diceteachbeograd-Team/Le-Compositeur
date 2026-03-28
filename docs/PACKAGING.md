@@ -16,12 +16,16 @@ This document tracks packaging status and next steps for distribution.
 - Alpha build scripts:
   - `scripts/build-alpha-rpm.sh`
   - `scripts/build-alpha-deb.sh`
+  - `scripts/smoke-linux-packages.sh`
 - Cross-platform alpha artifact workflow:
   - `.github/workflows/release-alpha.yml`
   - artifacts: Linux x86_64 (`.tar.gz`, `.deb`, `.rpm`), Windows x86_64 (`.zip`), macOS arm64 (`.dmg`)
   - each platform bundle now includes both GUI and CLI binaries
   - tag release path now waits for green CI (`fmt`, `clippy`, `test`) for the same commit
   - Linux packages in CI are produced via repo scripts (`build-alpha-rpm.sh`, `build-alpha-deb.sh`) for parity with local VM validation
+  - Linux release artifacts are smoke-tested before upload (`smoke-linux-packages.sh`):
+    - `.deb` install + `wc-cli doctor` on Ubuntu runner
+    - `.rpm` install + `wc-cli doctor` in Fedora 43 container
 
 ## What is still missing
 1. Final maintainer identity:
@@ -39,5 +43,5 @@ This document tracks packaging status and next steps for distribution.
 ## Suggested order
 1. Run alpha artifacts via `release-alpha.yml` and test on all target VMs/devices.
 2. Build native RPM/DEB using scripts and validate install/remove flows.
-3. Add VM smoke tests for package install + GUI launch.
+3. Keep VM smoke tests for package install + GUI launch (CI now covers CLI/package install smoke checks).
 4. Add signed release process for beta/stable.

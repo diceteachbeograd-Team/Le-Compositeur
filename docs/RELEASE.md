@@ -20,6 +20,7 @@ Trigger:
 Release publish strategy:
 - verify CI is green for the tagged commit first (`fmt`, `clippy`, `test`)
 - build in matrix jobs
+- run Linux package smoke validation (`.deb` install on Ubuntu, `.rpm` install in Fedora container)
 - upload artifacts per platform
 - publish GitHub release in one dedicated job
 
@@ -45,6 +46,11 @@ Bundle/runtime notes:
 - Linux release `.deb` and `.rpm` are built via the same repo scripts used for local validation:
   - `scripts/build-alpha-deb.sh`
   - `scripts/build-alpha-rpm.sh`
+- Linux release artifacts are smoke-tested in CI:
+  - `scripts/smoke-linux-packages.sh`
+  - validates tar layout
+  - installs and runs `wc-cli doctor` from `.deb` on Ubuntu
+  - installs and runs `wc-cli doctor` from `.rpm` in Fedora 43 container
 
 Note:
 - `macos-x86_64` is currently excluded from CI due to unsupported runner image in this project setup.
