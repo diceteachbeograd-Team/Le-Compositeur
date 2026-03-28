@@ -124,7 +124,7 @@ jobs:
           tar -C dist -czf dist/le-compositeur-linux-x86_64.tar.gz le-compositeur-linux-x86_64-bundle
 
           WC_SKIP_CARGO_BUILD=1 ./scripts/build-alpha-deb.sh "${TAG}"
-          WC_SKIP_CARGO_BUILD=1 ./scripts/build-alpha-rpm.sh "${TAG}"
+          WC_SKIP_CARGO_BUILD=1 WC_RPM_NODEPS=1 ./scripts/build-alpha-rpm.sh "${TAG}"
 
           DEB_PKG="dist/le-compositeur_${TAG}_amd64.deb"
           if [[ ! -f "${DEB_PKG}" ]]; then
