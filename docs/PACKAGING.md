@@ -26,6 +26,8 @@ This document tracks packaging status and next steps for distribution.
   - Linux release artifacts are smoke-tested before upload (`smoke-linux-packages.sh`):
     - `.deb` install + `wc-cli doctor` on Ubuntu runner
     - `.rpm` install + `wc-cli doctor` in Fedora 43 container
+  - Windows release zip is smoke-tested after archive creation (`wc-cli.exe doctor` from extracted zip)
+  - macOS ARM dmg is smoke-tested after build (mount dmg + bundled `wc-cli doctor`)
 
 ## What is still missing
 1. Final maintainer identity:

@@ -21,6 +21,7 @@ Release publish strategy:
 - verify CI is green for the tagged commit first (`fmt`, `clippy`, `test`)
 - build in matrix jobs
 - run Linux package smoke validation (`.deb` install on Ubuntu, `.rpm` install in Fedora container)
+- run packaged artifact smoke validation for Windows zip and macOS dmg (`wc-cli doctor` from packaged output)
 - upload artifacts per platform
 - publish GitHub release in one dedicated job
 

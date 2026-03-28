@@ -161,6 +161,11 @@ jobs:
           Copy-Item README.md, LICENSE dist/le-compositeur-windows-x86_64/
           Compress-Archive -Path dist/le-compositeur-windows-x86_64 -DestinationPath dist/le-compositeur-windows-x86_64.zip -Force
 
+          # Smoke-check the packaged zip output, not only the build tree binary.
+          Remove-Item -Recurse -Force dist/smoke-unzip -ErrorAction SilentlyContinue
+          Expand-Archive -Path dist/le-compositeur-windows-x86_64.zip -DestinationPath dist/smoke-unzip -Force
+          & dist/smoke-unzip/le-compositeur-windows-x86_64/bin/wc-cli.exe doctor | Out-Null
+
       - name: Build macOS ARM bundle (.dmg)
         if: matrix.name == 'macos-arm64'
         run: |
@@ -232,6 +237,15 @@ jobs:
           ln -s /Applications dist/dmg-root/Applications
           hdiutil create -volname "Le Compositeur" -srcfolder "dist/dmg-root" -ov -format UDZO "dist/le-compositeur-macos-arm64.dmg"
 
+          # Smoke-check the dmg output by mounting and running bundled CLI.
+          MOUNT_DIR="$(mktemp -d)"
+          trap 'hdiutil detach "${MOUNT_DIR}" -quiet >/dev/null 2>&1 || true; rmdir "${MOUNT_DIR}" >/dev/null 2>&1 || true' EXIT
+          hdiutil attach "dist/le-compositeur-macos-arm64.dmg" -mountpoint "${MOUNT_DIR}" -nobrowse -quiet
+          "${MOUNT_DIR}/Le Compositeur.app/Contents/MacOS/wc-cli" doctor >/dev/null
+          hdiutil detach "${MOUNT_DIR}" -quiet
+          rmdir "${MOUNT_DIR}" >/dev/null 2>&1 || true
+          trap - EXIT
+
       - name: Upload Linux release files
         if: matrix.name == 'linux-x86_64'
         uses: actions/upload-artifact@v4
@@ -291,6 +305,8 @@ jobs:
           - Linux package smoke checks run automatically in CI:
             - `.deb` install + `wc-cli doctor` on Ubuntu runner
             - `.rpm` install + `wc-cli doctor` in clean Fedora 43 container
+          - Windows release zip is smoke-tested after archive creation (`wc-cli.exe doctor` from extracted zip).
+          - macOS ARM dmg is smoke-tested by mounting the dmg and running bundled `wc-cli doctor`.
           - Linux/Windows/macOS artifacts include both GUI and CLI binaries plus bundled local quotes.
           - Linux default profile is Lite (`WC_LITE_PROFILE=1`) with low-memory visual workflow.
 
