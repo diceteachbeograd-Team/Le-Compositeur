@@ -4675,9 +4675,9 @@ mod tests {
     use super::{
         LIVE_MEDIA_EXPERIMENTAL_ENABLED, OVERLAY_HELPERS_DISABLED_ENV,
         build_builtin_widget_registry, build_overlay_runtime_plan, cycle_pick_state_path,
-        determine_cycle, loop_tick_duration, overlay_helpers_disabled, read_cycle_pick_state,
-        read_recent_indices, widget_instance_from_config, write_cycle_pick_state,
-        write_recent_indices,
+        determine_cycle, lite_profile_enabled, loop_tick_duration, overlay_helpers_disabled,
+        read_cycle_pick_state, read_recent_indices, widget_instance_from_config,
+        write_cycle_pick_state, write_recent_indices,
     };
     use std::fs;
     use std::time::Duration;
@@ -4791,7 +4791,8 @@ mod tests {
         cfg.show_news_ticker2 = true;
         let ticker2 =
             widget_instance_from_config(&cfg, "news_ticker2").expect("news ticker2 instance");
-        assert_eq!(ticker2.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
+        let live_media_runtime_enabled = LIVE_MEDIA_EXPERIMENTAL_ENABLED && !lite_profile_enabled();
+        assert_eq!(ticker2.enabled, live_media_runtime_enabled);
 
         let cams = widget_instance_from_config(&cfg, "cams").expect("cams instance");
         assert_eq!(cams.refresh_seconds, 75);
@@ -4816,13 +4817,14 @@ mod tests {
         cfg.overlay_script_ticker_enabled = true;
         cfg.overlay_script_ticker_command = "printf 'dynamic headline\\n'".to_string();
 
+        let live_media_runtime_enabled = LIVE_MEDIA_EXPERIMENTAL_ENABLED && !lite_profile_enabled();
         let news = widget_instance_from_config(&cfg, "news").expect("news instance");
-        assert_eq!(news.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
+        assert_eq!(news.enabled, live_media_runtime_enabled);
         let cams = widget_instance_from_config(&cfg, "cams").expect("cams instance");
-        assert_eq!(cams.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
+        assert_eq!(cams.enabled, live_media_runtime_enabled);
 
         let plan = build_overlay_runtime_plan(&cfg, 0).expect("overlay plan");
-        if LIVE_MEDIA_EXPERIMENTAL_ENABLED {
+        if live_media_runtime_enabled {
             assert!(!plan.videos.is_empty());
             assert!(plan.tickers.iter().any(|ticker| ticker.id == "script"));
         } else {
@@ -4847,11 +4849,12 @@ mod tests {
         cfg.news_render_mode = "overlay".to_string();
         cfg.news_source = "google_world_en".to_string();
 
+        let live_media_runtime_enabled = LIVE_MEDIA_EXPERIMENTAL_ENABLED && !lite_profile_enabled();
         let news = widget_instance_from_config(&cfg, "news").expect("news instance");
-        assert_eq!(news.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
+        assert_eq!(news.enabled, live_media_runtime_enabled);
 
         let plan = build_overlay_runtime_plan(&cfg, 0).expect("overlay plan");
-        if LIVE_MEDIA_EXPERIMENTAL_ENABLED {
+        if live_media_runtime_enabled {
             assert!(!plan.videos.is_empty() || !plan.tickers.is_empty());
         } else {
             assert!(plan.videos.is_empty());
