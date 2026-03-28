@@ -11,8 +11,64 @@ permissions:
   contents: write
 
 jobs:
+  verify-ci-success:
+    name: Verify CI Status
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require green CI for tag releases
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isTagRef = context.ref.startsWith("refs/tags/");
+            if (!isTagRef) {
+              core.info(`Non-tag run (${context.ref}), skipping CI gate.`);
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const sha = context.sha;
+            const workflowId = "ci.yml";
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+            const timeoutMs = 20 * 60 * 1000;
+            const pollMs = 15 * 1000;
+            const start = Date.now();
+
+            core.info(`Waiting for CI workflow (${workflowId}) on commit ${sha}...`);
+            while (Date.now() - start < timeoutMs) {
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: workflowId,
+                event: "push",
+                per_page: 20,
+              });
+              const run = data.workflow_runs.find((item) => item.head_sha === sha);
+              if (!run) {
+                core.info("No CI run found for this commit yet.");
+                await sleep(pollMs);
+                continue;
+              }
+
+              core.info(`Found CI run ${run.id}: status=${run.status} conclusion=${run.conclusion}`);
+              if (run.status !== "completed") {
+                await sleep(pollMs);
+                continue;
+              }
+              if (run.conclusion === "success") {
+                core.info(`CI gate passed: ${run.html_url}`);
+                return;
+              }
+
+              core.setFailed(`CI gate failed: ${run.html_url} (conclusion=${run.conclusion})`);
+              return;
+            }
+
+            core.setFailed(`Timed out waiting for green CI on commit ${sha}.`);
+
   build-artifacts:
     name: Build ${{ matrix.name }}
+    needs: verify-ci-success
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -40,9 +96,8 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y ruby ruby-dev build-essential
-          sudo gem install --no-document fpm
-          chmod +x packaging/linux/autostart-cleanup.sh
+          sudo apt-get install -y rpm rsync desktop-file-utils dpkg-dev
+          chmod +x scripts/build-alpha-rpm.sh scripts/build-alpha-deb.sh
 
           TAG="${GITHUB_REF_NAME#v}"
           if [[ "$TAG" == *-* ]]; then
@@ -57,75 +112,41 @@ jobs:
           mkdir -p dist/le-compositeur-linux-x86_64-bundle/quotes
           cp target/release/wc-gui dist/le-compositeur-linux-x86_64-bundle/bin/le-compositeur
           cp target/release/wc-cli dist/le-compositeur-linux-x86_64-bundle/bin/le-compositeur-cli
+          ln -sf le-compositeur dist/le-compositeur-linux-x86_64-bundle/bin/wc-gui
+          ln -sf le-compositeur-cli dist/le-compositeur-linux-x86_64-bundle/bin/wc-cli
           cp assets/quotes/local/local-quotes.md dist/le-compositeur-linux-x86_64-bundle/quotes/local-quotes.md
           chmod +x dist/le-compositeur-linux-x86_64-bundle/bin/le-compositeur
           chmod +x dist/le-compositeur-linux-x86_64-bundle/bin/le-compositeur-cli
           cp README.md LICENSE dist/le-compositeur-linux-x86_64-bundle/
           tar -C dist -czf dist/le-compositeur-linux-x86_64.tar.gz le-compositeur-linux-x86_64-bundle
 
-          mkdir -p dist/linux-root/usr/bin
-          mkdir -p dist/linux-root/usr/share/applications
-          mkdir -p dist/linux-root/usr/share/icons/hicolor/512x512/apps
-          mkdir -p dist/linux-root/usr/share/le-compositeur/quotes
-          mkdir -p dist/linux-root/usr/share/doc/le-compositeur
-          cp target/release/wc-gui dist/linux-root/usr/bin/le-compositeur
-          cp target/release/wc-cli dist/linux-root/usr/bin/le-compositeur-cli
-          ln -sf le-compositeur-cli dist/linux-root/usr/bin/wc-cli
-          chmod +x dist/linux-root/usr/bin/le-compositeur
-          chmod +x dist/linux-root/usr/bin/le-compositeur-cli
-          cp assets/icons/le-compositeur.png dist/linux-root/usr/share/icons/hicolor/512x512/apps/le-compositeur.png
-          cp assets/quotes/local/local-quotes.md dist/linux-root/usr/share/le-compositeur/quotes/local-quotes.md
-          cp README.md dist/linux-root/usr/share/doc/le-compositeur/README.md
-          cat > dist/linux-root/usr/share/applications/le-compositeur.desktop <<'EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=Le Compositeur
-          Comment=Dynamic desktop compositor with quotes, weather and news widgets
-          Exec=le-compositeur
-          Icon=le-compositeur
-          Terminal=false
-          Categories=Graphics;Utility;
-          Keywords=wallpaper;desktop;widgets;quotes;clock;
-          EOF
+          WC_SKIP_CARGO_BUILD=1 ./scripts/build-alpha-deb.sh "${TAG}"
+          WC_SKIP_CARGO_BUILD=1 ./scripts/build-alpha-rpm.sh "${TAG}"
 
-          fpm -s dir -t deb \
-            -n le-compositeur \
-            -v "${BASE}" \
-            --iteration "${IDX}" \
-            --architecture amd64 \
-            --license "GPL-3.0-or-later" \
-            --description "Le Compositeur desktop GUI" \
-            --url "https://github.com/${GITHUB_REPOSITORY}" \
-            --after-remove packaging/linux/autostart-cleanup.sh \
-            -C dist/linux-root \
-            usr
-
-          fpm -s dir -t rpm \
-            -n le-compositeur \
-            -v "${BASE}" \
-            --iteration "${IDX}" \
-            --architecture x86_64 \
-            --license "GPL-3.0-or-later" \
-            --description "Le Compositeur desktop GUI" \
-            --url "https://github.com/${GITHUB_REPOSITORY}" \
-            --after-remove packaging/linux/autostart-cleanup.sh \
-            -C dist/linux-root \
-            usr
-
-          DEB_PKG="$(find . -maxdepth 2 -type f -name 'le-compositeur*.deb' | head -n1)"
-          RPM_PKG="$(find . -maxdepth 2 -type f -name 'le-compositeur*.rpm' | head -n1)"
-          if [[ -z "${DEB_PKG}" || -z "${RPM_PKG}" ]]; then
-            echo "Expected .deb/.rpm not found after fpm build"
-            find . -maxdepth 2 -type f | sort
+          DEB_PKG="dist/le-compositeur_${TAG}_amd64.deb"
+          if [[ ! -f "${DEB_PKG}" ]]; then
+            echo "Expected deb package not found: ${DEB_PKG}"
+            find dist -maxdepth 3 -type f | sort
             exit 1
           fi
           cp "${DEB_PKG}" dist/le-compositeur-linux-x86_64.deb
+
+          RPM_PKG="$(find "$HOME/rpmbuild/RPMS" -type f -name "le-compositeur-${BASE}-${IDX}*.rpm" | sort | tail -n1)"
+          if [[ -z "${RPM_PKG}" || ! -f "${RPM_PKG}" ]]; then
+            RPM_PKG="$(find "$HOME/rpmbuild/RPMS" -type f -name "le-compositeur-*.rpm" | sort | tail -n1)"
+          fi
+          if [[ -z "${RPM_PKG}" || ! -f "${RPM_PKG}" ]]; then
+            echo "Expected rpm package not found in \$HOME/rpmbuild/RPMS"
+            find "$HOME/rpmbuild/RPMS" -type f | sort || true
+            exit 1
+          fi
           cp "${RPM_PKG}" dist/le-compositeur-linux-x86_64.rpm
 
       - name: Build Windows bundles (.zip + .exe)
         if: matrix.name == 'windows-x86_64'
         shell: pwsh
         run: |
+          & target/release/wc-cli.exe doctor | Out-Null
           New-Item -ItemType Directory -Force -Path dist/le-compositeur-windows-x86_64/bin | Out-Null
           Copy-Item target/release/wc-gui.exe dist/le-compositeur-windows-x86_64/bin/LeCompositeur.exe
           Copy-Item target/release/wc-cli.exe dist/le-compositeur-windows-x86_64/bin/le-compositeur-cli.exe
@@ -139,6 +160,7 @@ jobs:
         if: matrix.name == 'macos-arm64'
         run: |
           set -euo pipefail
+          target/release/wc-cli doctor >/dev/null
           APP_NAME="Le Compositeur.app"
           APP_ROOT="dist/${APP_NAME}/Contents"
           ICONSET_DIR="dist/le-compositeur.iconset"
@@ -258,39 +280,19 @@ jobs:
           - Windows: `le-compositeur-windows-x86_64.zip`
           - macOS ARM: `le-compositeur-macos-arm64.dmg`
 
-          What changed in this release line:
-          - Hotfixes for packaged runtime reliability:
-            - release artifacts now always include both GUI + CLI binaries
-            - packaged local quotes file is shipped in Linux package + platform bundles
-            - GUI command launcher no longer falls back to `cargo` in packaged/release mode
-            - improved runner error output in GUI status panel for faster diagnosis
-          - Local quote reliability:
-            - local quote path auto-recovery in CLI+GUI
-            - packaged default quotes are auto-rebound when paths are missing
-          - Update flow:
-            - GUI startup release check
-            - one-click update action (`Check Updates` / `Update Now`) with distro-aware command fallback
-          - Widget system:
-            - secondary independent news ticker (`show_news_ticker2`) with own source/FPS/position/width
-            - ordering editor grid snap + per-widget layer-z + anti-overlap drag correction
-            - per-widget performance caps with cache throttling (`news/news_ticker2/cams`)
-          - Renderer quality safety:
-            - snapshot/hash regression guard (`native_bmp_overlay_output_hash_is_stable`)
-            - expanded Linux distro smoke/test matrix runbook
-          - GUI UX pass:
-            - shell hierarchy grouped into `Session/Actions/Workspace/Updates`
-            - tab-internal section-card hierarchy in Weather/News/Cams/System
-          - Plugin registry migration (in progress):
-            - architecture draft (`docs/PLUGIN_REGISTRY_DRAFT.md`)
-            - stage-A scaffold in `wc-core/src/widget_registry.rs`
-            - stage-B dual-path registry integration in `wc-cli` with automatic legacy fallback
+          Release process guarantees:
+          - Tag release is blocked until CI (`fmt`, `clippy`, `test`) is green for the tagged commit.
+          - Linux `.deb` / `.rpm` are produced from the same repo scripts used for local package validation.
+          - Linux/Windows/macOS artifacts include both GUI and CLI binaries plus bundled local quotes.
+          - Linux default profile is Lite (`WC_LITE_PROFILE=1`) with low-memory visual workflow.
 
           Operator notes:
           - If upgrading manually from package files, prefer install-over-upgrade to keep desktop entry/icon refresh deterministic.
           - Recommended quick verification after install:
             - `wc-cli validate`
             - `wc-cli run --once`
-            - start `wc-gui` and verify weather/news/cams visibility in Ordering layout.
+            - start `le-compositeur` and verify Compose + Sources/Visuals workflow.
+          - macOS artifact is ad-hoc signed in CI and can require explicit trust action on first launch.
 
           Project notes:
           - End-user application name: **Le Compositeur**

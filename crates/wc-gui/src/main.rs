@@ -26,12 +26,10 @@ fn lite_profile_enabled() -> bool {
     match std::env::var("WC_LITE_PROFILE") {
         Ok(v) => {
             let t = v.trim().to_ascii_lowercase();
-            if matches!(t.as_str(), "0" | "false" | "off" | "no") {
-                false
-            } else if matches!(t.as_str(), "1" | "true" | "on" | "yes") {
-                true
-            } else {
-                cfg!(target_os = "linux")
+            match t.as_str() {
+                "0" | "false" | "off" | "no" => false,
+                "1" | "true" | "on" | "yes" => true,
+                _ => cfg!(target_os = "linux"),
             }
         }
         Err(_) => cfg!(target_os = "linux"),
@@ -1621,31 +1619,45 @@ impl WcGuiApp {
 
     fn wc_cli_command_candidates(&self) -> Vec<String> {
         let mut bins = Vec::<String>::new();
+        let binary_names: &[&str] = if cfg!(target_os = "windows") {
+            &[
+                "wc-cli.exe",
+                "le-compositeur-cli.exe",
+                "wc-cli",
+                "le-compositeur-cli",
+            ]
+        } else {
+            &["wc-cli", "le-compositeur-cli"]
+        };
+
         if let Ok(custom) = std::env::var("WC_CLI_BIN") {
             let custom = custom.trim();
             if !custom.is_empty() {
                 bins.push(custom.to_string());
             }
         }
-        for bin in [
-            "wc-cli",
-            "le-compositeur-cli",
-            "/usr/bin/wc-cli",
-            "/usr/bin/le-compositeur-cli",
-            "/usr/libexec/le-compositeur/le-compositeur-cli",
-        ] {
-            bins.push(bin.to_string());
+        for bin in binary_names {
+            bins.push((*bin).to_string());
+        }
+        if cfg!(target_os = "linux") {
+            for bin in [
+                "/usr/bin/wc-cli",
+                "/usr/bin/le-compositeur-cli",
+                "/usr/libexec/le-compositeur/le-compositeur-cli",
+            ] {
+                bins.push(bin.to_string());
+            }
         }
 
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
-                for bin in ["wc-cli", "le-compositeur-cli"] {
+                for bin in binary_names {
                     bins.push(dir.join(bin).display().to_string());
                     bins.push(dir.join("..").join(bin).display().to_string());
                 }
             }
             if let Some(dir) = exe.parent().and_then(|d| d.parent()) {
-                for bin in ["wc-cli", "le-compositeur-cli"] {
+                for bin in binary_names {
                     bins.push(dir.join(bin).display().to_string());
                 }
             }

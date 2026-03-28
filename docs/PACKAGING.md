@@ -20,6 +20,8 @@ This document tracks packaging status and next steps for distribution.
   - `.github/workflows/release-alpha.yml`
   - artifacts: Linux x86_64 (`.tar.gz`, `.deb`, `.rpm`), Windows x86_64 (`.zip`), macOS arm64 (`.dmg`)
   - each platform bundle now includes both GUI and CLI binaries
+  - tag release path now waits for green CI (`fmt`, `clippy`, `test`) for the same commit
+  - Linux packages in CI are produced via repo scripts (`build-alpha-rpm.sh`, `build-alpha-deb.sh`) for parity with local VM validation
 
 ## What is still missing
 1. Final maintainer identity:

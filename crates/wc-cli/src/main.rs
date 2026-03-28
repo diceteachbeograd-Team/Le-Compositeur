@@ -3411,12 +3411,10 @@ fn lite_profile_enabled() -> bool {
     match std::env::var("WC_LITE_PROFILE") {
         Ok(v) => {
             let t = v.trim().to_ascii_lowercase();
-            if matches!(t.as_str(), "0" | "false" | "off" | "no") {
-                false
-            } else if matches!(t.as_str(), "1" | "true" | "on" | "yes") {
-                true
-            } else {
-                cfg!(target_os = "linux")
+            match t.as_str() {
+                "0" | "false" | "off" | "no" => false,
+                "1" | "true" | "on" | "yes" => true,
+                _ => cfg!(target_os = "linux"),
             }
         }
         Err(_) => cfg!(target_os = "linux"),

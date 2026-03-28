@@ -185,6 +185,7 @@ fn push_layer_at(args: &mut Vec<String>, x: i32, y: i32) {
     args.push("-composite".to_string());
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_caption_layer(
     args: &mut Vec<String>,
     width: u32,
@@ -793,7 +794,7 @@ fn render_with_imagemagick(
             3 => 3_u32,
             _ => 2_u32,
         };
-        let rows = ((items.len() as u32 + cols - 1) / cols).max(1);
+        let rows = (items.len() as u32).div_ceil(cols).max(1);
         let panel_pad = 14_u32;
         let card_gap = 10_u32;
         let header_h = (text.clock_font_size.saturating_mul(10) / 5).clamp(40, 60);

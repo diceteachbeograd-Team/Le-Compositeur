@@ -44,7 +44,9 @@ EOF
   exit 1
 }
 
-cargo build --release -p wc-cli -p wc-gui
+if [[ "${WC_SKIP_CARGO_BUILD:-0}" != "1" ]]; then
+  cargo build --release -p wc-cli -p wc-gui
+fi
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT

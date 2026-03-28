@@ -6,6 +6,8 @@ Project status: active early-stage prototype.
 Documentation note: the English section is the canonical up-to-date reference during rapid iteration.
 Planning note: for the latest actionable status, always check `docs/TODO.md` and `docs/SESSION_PLAN.md`.
 Important: hobby project, use at your own risk ("auf eigene Gefahr"). Bugs can be reported, but fix timing is not guaranteed.
+Release note: authoritative install artifact names and packaging flow are tracked in `README.md`, `docs/RELEASE.md`, and `docs/PACKAGING.md`.
+If any command/examples in this long-form document conflict with those files, follow the newer release docs.
 
 ## Support / Unterstutzung / Podrska / 支持
 
