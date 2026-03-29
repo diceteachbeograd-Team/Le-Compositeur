@@ -235,12 +235,12 @@ jobs:
           mkdir -p dist/dmg-root
           cp -R "dist/${APP_NAME}" dist/dmg-root/
           ln -s /Applications dist/dmg-root/Applications
-          hdiutil create -volname "Le Compositeur" -srcfolder "dist/dmg-root" -ov -format UDZO "dist/le-compositeur-macos-arm64.dmg"
+          hdiutil create -volname "Le Compositeur" -srcfolder "dist/dmg-root" -ov -format UDZO "dist/le-compositeur-macos-apple-silicon-arm64.dmg"
 
           # Smoke-check the dmg output by mounting and running bundled CLI.
           MOUNT_DIR="$(mktemp -d)"
           trap 'hdiutil detach "${MOUNT_DIR}" -quiet >/dev/null 2>&1 || true; rmdir "${MOUNT_DIR}" >/dev/null 2>&1 || true' EXIT
-          hdiutil attach "dist/le-compositeur-macos-arm64.dmg" -mountpoint "${MOUNT_DIR}" -nobrowse -quiet
+          hdiutil attach "dist/le-compositeur-macos-apple-silicon-arm64.dmg" -mountpoint "${MOUNT_DIR}" -nobrowse -quiet
           "${MOUNT_DIR}/Le Compositeur.app/Contents/MacOS/wc-cli" doctor >/dev/null
           hdiutil detach "${MOUNT_DIR}" -quiet
           rmdir "${MOUNT_DIR}" >/dev/null 2>&1 || true
@@ -270,7 +270,7 @@ jobs:
         with:
           name: release-macos-arm64
           path: |
-            dist/le-compositeur-macos-arm64.dmg
+            dist/le-compositeur-macos-apple-silicon-arm64.dmg
 
   publish-release:
     name: Publish GitHub Release
@@ -297,7 +297,7 @@ jobs:
           Included artifacts:
           - Linux: `le-compositeur-linux-x86_64.tar.gz`, `le-compositeur-linux-x86_64.deb`, `le-compositeur-linux-x86_64.rpm`
           - Windows: `le-compositeur-windows-x86_64.zip`
-          - macOS ARM: `le-compositeur-macos-arm64.dmg`
+          - macOS ARM (Apple Silicon): `le-compositeur-macos-apple-silicon-arm64.dmg`
 
           Release process guarantees:
           - Tag release is blocked until CI (`fmt`, `clippy`, `test`) is green for the tagged commit.

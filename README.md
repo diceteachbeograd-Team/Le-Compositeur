@@ -40,7 +40,7 @@ See [docs/LITE_PROFILE.md](docs/LITE_PROFILE.md) for limits and tuning env vars.
 - Linux: `le-compositeur-linux-x86_64.deb` or `le-compositeur-linux-x86_64.rpm`
 - Linux portable bundle: `le-compositeur-linux-x86_64.tar.gz`
 - Windows: `le-compositeur-windows-x86_64.zip`
-- macOS ARM: `le-compositeur-macos-arm64.dmg`
+- macOS ARM (Apple Silicon): `le-compositeur-macos-apple-silicon-arm64.dmg`
 
 ## Current Product Mode
 - Stable UX path on branch `codex/fedora-first` uses:

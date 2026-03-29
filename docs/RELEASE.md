@@ -38,7 +38,7 @@ GitHub release assets currently include:
 - Windows:
   - `le-compositeur-windows-x86_64.zip`
 - macOS ARM:
-  - `le-compositeur-macos-arm64.dmg`
+  - `le-compositeur-macos-apple-silicon-arm64.dmg`
 
 Bundle/runtime notes:
 - Linux/Windows/macOS bundles include GUI + CLI binaries together.
