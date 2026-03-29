@@ -8,6 +8,31 @@ Temporary quality note (keep until explicit user approval):
 - `Weather`, `News`, and `Static URL` are actively improved and not yet considered visually final.
 - Stable mode is intentionally focused on deterministic snapshot + text workflows.
 
+## Lite Profile (Linux Default)
+- Starting with release line `2026.03.23-3`, Linux runs in **Lite profile** by default (`WC_LITE_PROFILE=1` unless overridden).
+- Goal: avoid VM freezes and large RAM/SWAP spikes during startup/render loops.
+
+### What Is Disabled In Lite
+- `Weather` widget
+- `News` ticker
+- `Static URL` panel
+- `Script Ticker`
+- `Cams` (already disabled in stable path)
+- Related source tabs are removed from the Lite GUI navigation.
+- New replacement: `Visuals` tab (lightweight style presets + vector preview).
+
+### Why We Disable These
+- They rely on expensive image/network/render paths that can trigger high transient memory use on small VMs.
+- The Lite baseline prioritizes deterministic low-memory behavior over feature breadth.
+
+### Re-enable Full Mode (advanced, higher RAM risk)
+```bash
+export WC_LITE_PROFILE=0
+le-compositeur
+```
+
+See [docs/LITE_PROFILE.md](docs/LITE_PROFILE.md) for limits and tuning env vars.
+
 ## Download (Latest)
 - Direct link: [github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest](https://github.com/diceteachbeograd-Team/Le-Compositeur/releases/latest)
 
@@ -15,7 +40,7 @@ Temporary quality note (keep until explicit user approval):
 - Linux: `le-compositeur-linux-x86_64.deb` or `le-compositeur-linux-x86_64.rpm`
 - Linux portable bundle: `le-compositeur-linux-x86_64.tar.gz`
 - Windows: `le-compositeur-windows-x86_64.zip`
-- macOS ARM: `le-compositeur-macos-arm64.dmg`
+- macOS ARM (Apple Silicon): `le-compositeur-macos-apple-silicon-arm64.dmg`
 
 ## Current Product Mode
 - Stable UX path on branch `codex/fedora-first` uses:
@@ -41,10 +66,9 @@ Temporary quality note (keep until explicit user approval):
 - `LAY Ordering`: layer toggles, z-order, drag/snap placement
 - `IMG Images`: background source + timing
 - `QTE Quotes`: quote source and style
-- `WTH Weather`: weather source/map/panel settings
-- `NWS News`: ticker source, refresh, fps, placement, width
-- `URL Static`: snapshot URL source list/custom URLs and placement
+- `VIS Visuals`: lightweight presets + contrast tuning + low-cost live preview
 - `SYS System`: runtime control, update checks, startup/integration toggles
+- `Weather` / `News` / `Static URL` / `Script Ticker` source tabs are only shown in full mode (`WC_LITE_PROFILE=0`).
 
 ## Build locally
 
@@ -75,11 +99,16 @@ cargo run -p wc-gui
 - Keep package release suffix unique per VM validation cycle (`YYYY.MM.DD-N`) to avoid stale-installs.
 - Some widgets need internet access (`Weather`, `News`, remote image/quote/static URL sources).
 - `Static URL` is snapshot-oriented by design; it is not a live browser renderer.
+- `Apply wallpaper` now supports platform-native backends via `auto`:
+  - macOS: `macos` (`osascript`)
+  - Windows: `windows` (PowerShell + Win32 `SystemParametersInfo`)
+  - Linux: `gnome`, `sway`, `feh`
 - Self-update flow in GUI is package-based and relies on distro package tools + auth dialog behavior.
 - Default local quotes seed is packaged and auto-recovered if missing.
 
 ## Docs
 - [docs/README_FULL.md](docs/README_FULL.md)
+- [docs/LITE_PROFILE.md](docs/LITE_PROFILE.md)
 - [docs/TODO.md](docs/TODO.md)
 - [docs/SESSION_PLAN.md](docs/SESSION_PLAN.md)
 - [docs/RELEASE.md](docs/RELEASE.md)

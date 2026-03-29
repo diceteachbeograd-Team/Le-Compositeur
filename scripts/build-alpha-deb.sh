@@ -40,7 +40,9 @@ EOF
   exit 1
 }
 
-cargo build --release -p wc-cli -p wc-gui
+if [[ "${WC_SKIP_CARGO_BUILD:-0}" != "1" ]]; then
+  cargo build --release -p wc-cli -p wc-gui
+fi
 
 rm -rf "$PKG_DIR"
 mkdir -p "$PKG_DIR/DEBIAN" "$PKG_DIR/usr/bin" "$PKG_DIR/usr/libexec/le-compositeur" "$PKG_DIR/usr/share/applications" "$PKG_DIR/usr/share/icons/hicolor/512x512/apps" "$PKG_DIR/usr/share/le-compositeur/quotes"

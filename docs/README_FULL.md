@@ -6,6 +6,8 @@ Project status: active early-stage prototype.
 Documentation note: the English section is the canonical up-to-date reference during rapid iteration.
 Planning note: for the latest actionable status, always check `docs/TODO.md` and `docs/SESSION_PLAN.md`.
 Important: hobby project, use at your own risk ("auf eigene Gefahr"). Bugs can be reported, but fix timing is not guaranteed.
+Release note: authoritative install artifact names and packaging flow are tracked in `README.md`, `docs/RELEASE.md`, and `docs/PACKAGING.md`.
+If any command/examples in this long-form document conflict with those files, follow the newer release docs.
 
 ## Support / Unterstutzung / Podrska / 支持
 
@@ -455,7 +457,7 @@ Field meanings:
 - `refresh_seconds`: regeneration interval
 - `time_format`: clock format (`chrono` style)
 - `apply_wallpaper`: if `true`, attempts to set desktop wallpaper
-- `wallpaper_backend`: `auto`, `noop`, `gnome`, `sway`, `feh`
+- `wallpaper_backend`: `auto`, `noop`, `macos`, `windows`, `gnome`, `sway`, `feh`
 
 Quote file authoring rules are documented in:
 - `docs/USER_CONTENT_FORMAT.md`

@@ -18,7 +18,10 @@ Trigger:
 - manual `workflow_dispatch`
 
 Release publish strategy:
+- verify CI is green for the tagged commit first (`fmt`, `clippy`, `test`)
 - build in matrix jobs
+- run Linux package smoke validation (`.deb` install on Ubuntu, `.rpm` install in Fedora container)
+- run packaged artifact smoke validation for Windows zip and macOS dmg (`wc-cli doctor` from packaged output)
 - upload artifacts per platform
 - publish GitHub release in one dedicated job
 
@@ -35,12 +38,20 @@ GitHub release assets currently include:
 - Windows:
   - `le-compositeur-windows-x86_64.zip`
 - macOS ARM:
-  - `le-compositeur-macos-arm64.dmg`
+  - `le-compositeur-macos-apple-silicon-arm64.dmg`
 
 Bundle/runtime notes:
 - Linux/Windows/macOS bundles include GUI + CLI binaries together.
 - Linux package path for default quotes: `/usr/share/le-compositeur/quotes/local-quotes.md`.
 - Linux tar/Windows zip/macOS app bundle also include `quotes/local-quotes.md` seed content.
+- Linux release `.deb` and `.rpm` are built via the same repo scripts used for local validation:
+  - `scripts/build-alpha-deb.sh`
+  - `scripts/build-alpha-rpm.sh`
+- Linux release artifacts are smoke-tested in CI:
+  - `scripts/smoke-linux-packages.sh`
+  - validates tar layout
+  - installs and runs `wc-cli doctor` from `.deb` on Ubuntu
+  - installs and runs `wc-cli doctor` from `.rpm` in Fedora 43 container
 
 Note:
 - `macos-x86_64` is currently excluded from CI due to unsupported runner image in this project setup.

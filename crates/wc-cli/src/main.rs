@@ -569,9 +569,9 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     }
 
     let backend = cfg.wallpaper_backend.trim().to_ascii_lowercase();
-    if !["auto", "noop", "gnome", "sway", "feh"].contains(&backend.as_str()) {
+    if !["auto", "noop", "macos", "windows", "gnome", "sway", "feh"].contains(&backend.as_str()) {
         anyhow::bail!(
-            "unsupported wallpaper_backend={}; use auto, noop, gnome, sway, or feh",
+            "unsupported wallpaper_backend={}; use auto, noop, macos, windows, gnome, sway, or feh",
             cfg.wallpaper_backend
         );
     }
@@ -708,13 +708,34 @@ fn now_epoch_seconds() -> u64 {
 }
 
 fn detect_canvas_size() -> (u32, u32) {
-    if let Some(size) = detect_resolution_via_xrandr() {
-        return size;
+    let detected = detect_resolution_via_xrandr()
+        .or_else(detect_resolution_via_xdpyinfo)
+        .unwrap_or((1920, 1080));
+    let (max_w, max_h) = max_canvas_limits();
+    let clamped_w = detected.0.clamp(640, max_w);
+    let clamped_h = detected.1.clamp(360, max_h);
+    if (clamped_w, clamped_h) != detected {
+        eprintln!(
+            "canvas clamp applied: detected={}x{}, using={}x{} (limits {}x{})",
+            detected.0, detected.1, clamped_w, clamped_h, max_w, max_h
+        );
     }
-    if let Some(size) = detect_resolution_via_xdpyinfo() {
-        return size;
-    }
-    (1920, 1080)
+    (clamped_w, clamped_h)
+}
+
+fn max_canvas_limits() -> (u32, u32) {
+    let lite_default = lite_profile_enabled();
+    let max_w = std::env::var("WC_MAX_CANVAS_WIDTH")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .unwrap_or(if lite_default { 1280 } else { 1920 })
+        .clamp(640, 8192);
+    let max_h = std::env::var("WC_MAX_CANVAS_HEIGHT")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .unwrap_or(if lite_default { 720 } else { 1080 })
+        .clamp(360, 8192);
+    (max_w, max_h)
 }
 
 fn detect_resolution_via_xrandr() -> Option<(u32, u32)> {
@@ -970,8 +991,8 @@ fn resolve_weather_widget(cfg: &AppConfig) -> Result<WeatherWidgetPayload> {
         .unwrap_or(0.0);
     let (_, wind_dir) = compass_arrow(wind_deg);
     let temp_unit = match units {
-        UnitSystem::Metric => "C",
-        UnitSystem::Imperial => "F",
+        UnitSystem::Metric => "°C",
+        UnitSystem::Imperial => "°F",
     };
     let wind_unit = match units {
         UnitSystem::Metric => "km/h",
@@ -1098,7 +1119,7 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
                 .and_then(Value::as_str)
                 .and_then(|v| v.parse::<f64>().ok())
                 .unwrap_or(wind / 1.609_34),
-            "F",
+            "°F",
             "mph",
         ),
         UnitSystem::Metric => (
@@ -1109,7 +1130,7 @@ fn resolve_weather_widget_wttr(client: &Client) -> Result<WeatherWidgetPayload> 
                 .and_then(|v| v.parse::<f64>().ok())
                 .unwrap_or(temp),
             wind,
-            "C",
+            "°C",
             "km/h",
         ),
     };
@@ -1248,7 +1269,7 @@ fn resolve_widgets_legacy(
     } else {
         String::new()
     };
-    let weather = if cfg.show_weather_layer {
+    let weather = if weather_widget_enabled(cfg) {
         resolve_weather_widget(cfg).unwrap_or_else(weather_unavailable_payload)
     } else {
         WeatherWidgetPayload {
@@ -1414,7 +1435,7 @@ fn widget_instance_from_config(cfg: &AppConfig, widget_type: &str) -> Result<Wid
         "news" => {
             let mut instance = WidgetInstanceConfig::new("news", "news_main");
             instance.enabled = news_widget_enabled(cfg);
-            instance.layer_z = cfg.layer_z_news;
+            instance.layer_z = cfg.layer_z_cams;
             instance.pos_x = cfg.news_pos_x;
             instance.pos_y = cfg.news_pos_y;
             instance.width = cfg.news_widget_width;
@@ -2397,7 +2418,7 @@ fn compass_degrees_for_name(dir: &str) -> f64 {
 }
 
 fn compact_news_line(input: &str) -> String {
-    let line = input.replace('\n', " ").replace("  ", " ");
+    let line = input.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut out = String::new();
     for c in line.chars() {
         if c.is_control() {
@@ -2433,7 +2454,7 @@ fn news_ticker_frame(input: &str) -> String {
         .into_iter()
         .take(5)
         .map(|item| compact_news_line(&item))
-        .map(|item| trim_to_chars(&item, 46))
+        .map(|item| trim_to_chars(&item, 68))
         .collect::<Vec<_>>();
     let mut lines = vec![format!("{} BULLETIN", trim_to_chars(&source, 24))];
     lines.extend(
@@ -3386,14 +3407,33 @@ fn is_youtube_url(url: &str) -> bool {
     l.contains("youtube.com") || l.contains("youtu.be")
 }
 
+fn lite_profile_enabled() -> bool {
+    match std::env::var("WC_LITE_PROFILE") {
+        Ok(v) => {
+            let t = v.trim().to_ascii_lowercase();
+            match t.as_str() {
+                "0" | "false" | "off" | "no" => false,
+                "1" | "true" | "on" | "yes" => true,
+                _ => cfg!(target_os = "linux"),
+            }
+        }
+        Err(_) => cfg!(target_os = "linux"),
+    }
+}
+
+fn weather_widget_enabled(cfg: &AppConfig) -> bool {
+    cfg.show_weather_layer && !lite_profile_enabled()
+}
+
 fn news_widget_enabled(cfg: &AppConfig) -> bool {
     cfg.show_news_layer
         && cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay")
         && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+        && !lite_profile_enabled()
 }
 
 fn news_ticker2_enabled(cfg: &AppConfig) -> bool {
-    cfg.show_news_ticker2 && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+    cfg.show_news_ticker2 && LIVE_MEDIA_EXPERIMENTAL_ENABLED && !lite_profile_enabled()
 }
 
 fn news_overlay_enabled(cfg: &AppConfig) -> bool {
@@ -3401,18 +3441,21 @@ fn news_overlay_enabled(cfg: &AppConfig) -> bool {
         && cfg.news_render_mode.trim().eq_ignore_ascii_case("overlay")
         && news_source_supports_live_video_source(&cfg.news_source, &cfg.news_custom_url)
         && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+        && !lite_profile_enabled()
 }
 
 fn cams_widget_enabled(cfg: &AppConfig) -> bool {
     cfg.show_cams_layer
         && cfg.cams_render_mode.trim().eq_ignore_ascii_case("overlay")
         && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+        && !lite_profile_enabled()
 }
 
 fn cams_overlay_enabled(cfg: &AppConfig) -> bool {
     cfg.show_cams_layer
         && cfg.cams_render_mode.trim().eq_ignore_ascii_case("overlay")
         && LIVE_MEDIA_EXPERIMENTAL_ENABLED
+        && !lite_profile_enabled()
 }
 
 fn command_exists(cmd: &str) -> bool {
@@ -4632,9 +4675,9 @@ mod tests {
     use super::{
         LIVE_MEDIA_EXPERIMENTAL_ENABLED, OVERLAY_HELPERS_DISABLED_ENV,
         build_builtin_widget_registry, build_overlay_runtime_plan, cycle_pick_state_path,
-        determine_cycle, loop_tick_duration, overlay_helpers_disabled, read_cycle_pick_state,
-        read_recent_indices, widget_instance_from_config, write_cycle_pick_state,
-        write_recent_indices,
+        determine_cycle, lite_profile_enabled, loop_tick_duration, overlay_helpers_disabled,
+        read_cycle_pick_state, read_recent_indices, widget_instance_from_config,
+        write_cycle_pick_state, write_recent_indices,
     };
     use std::fs;
     use std::time::Duration;
@@ -4748,7 +4791,8 @@ mod tests {
         cfg.show_news_ticker2 = true;
         let ticker2 =
             widget_instance_from_config(&cfg, "news_ticker2").expect("news ticker2 instance");
-        assert_eq!(ticker2.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
+        let live_media_runtime_enabled = LIVE_MEDIA_EXPERIMENTAL_ENABLED && !lite_profile_enabled();
+        assert_eq!(ticker2.enabled, live_media_runtime_enabled);
 
         let cams = widget_instance_from_config(&cfg, "cams").expect("cams instance");
         assert_eq!(cams.refresh_seconds, 75);
@@ -4773,13 +4817,14 @@ mod tests {
         cfg.overlay_script_ticker_enabled = true;
         cfg.overlay_script_ticker_command = "printf 'dynamic headline\\n'".to_string();
 
+        let live_media_runtime_enabled = LIVE_MEDIA_EXPERIMENTAL_ENABLED && !lite_profile_enabled();
         let news = widget_instance_from_config(&cfg, "news").expect("news instance");
-        assert_eq!(news.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
+        assert_eq!(news.enabled, live_media_runtime_enabled);
         let cams = widget_instance_from_config(&cfg, "cams").expect("cams instance");
-        assert_eq!(cams.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
+        assert_eq!(cams.enabled, live_media_runtime_enabled);
 
         let plan = build_overlay_runtime_plan(&cfg, 0).expect("overlay plan");
-        if LIVE_MEDIA_EXPERIMENTAL_ENABLED {
+        if live_media_runtime_enabled {
             assert!(!plan.videos.is_empty());
             assert!(plan.tickers.iter().any(|ticker| ticker.id == "script"));
         } else {
@@ -4804,11 +4849,12 @@ mod tests {
         cfg.news_render_mode = "overlay".to_string();
         cfg.news_source = "google_world_en".to_string();
 
+        let live_media_runtime_enabled = LIVE_MEDIA_EXPERIMENTAL_ENABLED && !lite_profile_enabled();
         let news = widget_instance_from_config(&cfg, "news").expect("news instance");
-        assert_eq!(news.enabled, LIVE_MEDIA_EXPERIMENTAL_ENABLED);
+        assert_eq!(news.enabled, live_media_runtime_enabled);
 
         let plan = build_overlay_runtime_plan(&cfg, 0).expect("overlay plan");
-        if LIVE_MEDIA_EXPERIMENTAL_ENABLED {
+        if live_media_runtime_enabled {
             assert!(!plan.videos.is_empty() || !plan.tickers.is_empty());
         } else {
             assert!(plan.videos.is_empty());

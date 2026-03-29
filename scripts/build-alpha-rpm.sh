@@ -44,7 +44,9 @@ EOF
   exit 1
 }
 
-cargo build --release -p wc-cli -p wc-gui
+if [[ "${WC_SKIP_CARGO_BUILD:-0}" != "1" ]]; then
+  cargo build --release -p wc-cli -p wc-gui
+fi
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -57,10 +59,18 @@ tar -C "$tmpdir" -czf "$tmpdir/$TARBALL" "${PKG_NAME}-${RPM_VERSION}"
 mkdir -p "$HOME/rpmbuild/SOURCES"
 cp "$tmpdir/$TARBALL" "$HOME/rpmbuild/SOURCES/"
 
-rpmbuild -ba packaging/rpm/le-compositeur.spec \
-  --define "_topdir $HOME/rpmbuild" \
-  --define "version $RPM_VERSION" \
+RPMBUILD_ARGS=(
+  -ba packaging/rpm/le-compositeur.spec
+  --define "_topdir $HOME/rpmbuild"
+  --define "version $RPM_VERSION"
   --define "release $RPM_RELEASE"
+)
+
+if [[ "${WC_RPM_NODEPS:-0}" == "1" ]]; then
+  RPMBUILD_ARGS+=(--nodeps)
+fi
+
+rpmbuild "${RPMBUILD_ARGS[@]}"
 
 echo "RPM build complete."
 echo "Packages:"

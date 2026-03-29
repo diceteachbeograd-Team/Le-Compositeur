@@ -441,7 +441,7 @@ pub fn settings_schema_json() -> &'static str {
     {"key":"rotation_state_file","group":"rotation","label":"Rotation State File","type":"string","required":false,"default":"~/.local/state/wallpaper-composer/rotation.state","ui_widget":"file-save","visible_when":{"field":"rotation_use_persistent_state","equals":true},"enabled_when":{"field":"rotation_use_persistent_state","equals":true}},
 
     {"key":"apply_wallpaper","group":"wallpaper","label":"Apply Wallpaper","type":"bool","required":false,"default":false},
-    {"key":"wallpaper_backend","group":"wallpaper","label":"Wallpaper Backend","type":"enum","required":false,"default":"auto","options":["auto","noop","gnome","sway","feh"],"visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}},
+    {"key":"wallpaper_backend","group":"wallpaper","label":"Wallpaper Backend","type":"enum","required":false,"default":"auto","options":["auto","noop","macos","windows","gnome","sway","feh"],"visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}},
     {"key":"wallpaper_fit_mode","group":"wallpaper","label":"Wallpaper Fit Mode","type":"enum","required":false,"default":"zoom","options":["zoom","scaled","stretched","spanned","centered","wallpaper"],"visible_when":{"field":"apply_wallpaper","equals":true},"enabled_when":{"field":"apply_wallpaper","equals":true}},
     {"key":"show_background_layer","group":"wallpaper","label":"Show Background Layer","type":"bool","required":false,"default":true},
     {"key":"show_quote_layer","group":"wallpaper","label":"Show Quote Layer","type":"bool","required":false,"default":true},

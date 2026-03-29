@@ -3,11 +3,11 @@
 - `wc-cli`: Kommandozeileninterface und User-Interaktion.
 - `wc-core`: Domänenlogik (Config, Auswahl, Scheduling-Logik).
 - `wc-render`: Bild/Overlay Rendering.
-- `wc-backend`: Wallpaper-Anwendung pro Desktop/Compositor (`auto`, `gnome`, `sway`, `feh`, `noop`).
+- `wc-backend`: Wallpaper-Anwendung pro OS/Desktop (`auto`, `macos`, `windows`, `gnome`, `sway`, `feh`, `noop`).
 - `wc-source`: Remote-Quellen (Preset/URL), Fetching, Caching und Provider-spezifisches Parsing.
 
 Geplante Ergänzung:
-- `wc-backend`: Desktop-/Compositor-Adapter (GNOME, KDE, Sway).
+- `wc-backend`: zusätzliche Linux-Desktop-/Compositor-Adapter (z. B. KDE/XFCE).
 
 Source strategy:
 - Local sources are active now (`image_dir`, `quotes_path`).
