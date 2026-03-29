@@ -90,6 +90,12 @@ fn has_command(cmd: &str) -> bool {
 }
 
 fn apply_macos_wallpaper(image: &Path) -> Result<(), String> {
+    if !image.exists() {
+        return Err(format!(
+            "macos wallpaper target does not exist: {}",
+            image.display()
+        ));
+    }
     let img = image.display().to_string();
     run_cmd(
         "osascript",
@@ -106,9 +112,16 @@ end run"#,
             &img,
         ],
     )
+    .map_err(|err| annotate_macos_wallpaper_error(err))
 }
 
 fn apply_windows_wallpaper(image: &Path, fit_mode: &str) -> Result<(), String> {
+    if !image.exists() {
+        return Err(format!(
+            "windows wallpaper target does not exist: {}",
+            image.display()
+        ));
+    }
     let img = image
         .canonicalize()
         .unwrap_or_else(|_| image.to_path_buf())
@@ -227,19 +240,58 @@ fn normalize_windows_fit_mode(mode: &str) -> (&'static str, &'static str) {
 }
 
 fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
-    let status = Command::new(cmd)
+    let output = Command::new(cmd)
         .args(args)
-        .status()
+        .output()
         .map_err(|e| format!("failed to run {cmd}: {e}"))?;
-    if !status.success() {
-        return Err(format!("command failed: {} {}", cmd, args.join(" ")));
+    if !output.status.success() {
+        let stderr = trim_multiline(&String::from_utf8_lossy(&output.stderr), 5);
+        let stdout = trim_multiline(&String::from_utf8_lossy(&output.stdout), 3);
+        let mut msg = format!("command failed: {} {}", cmd, args.join(" "));
+        if !stderr.is_empty() {
+            msg.push_str(&format!("\nstderr:\n{stderr}"));
+        }
+        if !stdout.is_empty() {
+            msg.push_str(&format!("\nstdout:\n{stdout}"));
+        }
+        return Err(msg);
     }
     Ok(())
 }
 
+fn annotate_macos_wallpaper_error(err: String) -> String {
+    let lower = err.to_ascii_lowercase();
+    let looks_like_automation_denied = lower.contains("not authorized to send apple events")
+        || lower.contains("(-1743)")
+        || lower.contains("event not permitted")
+        || lower.contains("osascript is not allowed");
+    if !looks_like_automation_denied {
+        return err;
+    }
+    format!(
+        "{err}\n\nmacOS permission hint:\nAllow automation access for Le Compositeur (or Terminal/wc-cli) to control \"System Events\".\nPath: System Settings -> Privacy & Security -> Automation.",
+    )
+}
+
+fn trim_multiline(raw: &str, max_lines: usize) -> String {
+    let lines: Vec<&str> = raw
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+    if lines.len() <= max_lines {
+        return lines.join("\n");
+    }
+    let start = lines.len().saturating_sub(max_lines);
+    format!("...\n{}", lines[start..].join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{apply_wallpaper, normalize_windows_fit_mode};
+    use super::{annotate_macos_wallpaper_error, apply_wallpaper, normalize_windows_fit_mode};
     use std::path::Path;
 
     #[test]
@@ -258,5 +310,13 @@ mod tests {
         assert_eq!(normalize_windows_fit_mode("centered"), ("0", "0"));
         assert_eq!(normalize_windows_fit_mode("wallpaper"), ("0", "1"));
         assert_eq!(normalize_windows_fit_mode("tiled"), ("0", "1"));
+    }
+
+    #[test]
+    fn macos_permission_errors_get_actionable_hint() {
+        let base = "execution error: Not authorized to send Apple events to System Events. (-1743)";
+        let msg = annotate_macos_wallpaper_error(base.to_string());
+        assert!(msg.contains("Privacy & Security -> Automation"));
+        assert!(msg.contains("System Events"));
     }
 }
