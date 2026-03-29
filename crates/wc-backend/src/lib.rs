@@ -37,7 +37,7 @@ fn detect_backend() -> String {
         if has_command("osascript") {
             return "macos".to_string();
         }
-        return "noop".to_string();
+        "noop".to_string()
     }
 
     #[cfg(target_os = "windows")]
@@ -112,7 +112,7 @@ end run"#,
             &img,
         ],
     )
-    .map_err(|err| annotate_macos_wallpaper_error(err))
+    .map_err(annotate_macos_wallpaper_error)
 }
 
 fn apply_windows_wallpaper(image: &Path, fit_mode: &str) -> Result<(), String> {
