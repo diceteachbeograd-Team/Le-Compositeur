@@ -39,7 +39,9 @@ This document tracks packaging status and next steps for distribution.
 - Ubuntu/Debian native DEB build/publish
 
 3. Runtime dependency verification:
-- desktop utilities (`gsettings`, `swaymsg`, `feh`) are runtime-optional
+- Linux desktop utilities (`gsettings`, `swaymsg`, `feh`) are runtime-optional
+- macOS backend uses built-in `osascript` (no extra package dependency)
+- Windows backend uses built-in PowerShell + Win32 API call (no extra package dependency)
 - document optional dependencies in package descriptions
 
 ## Suggested order

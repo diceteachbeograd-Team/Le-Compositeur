@@ -2038,7 +2038,7 @@ impl WcGuiApp {
             egui::ComboBox::from_id_salt("backend_images_tab")
                 .selected_text(&self.cfg.wallpaper_backend)
                 .show_ui(ui, |ui| {
-                    for mode in ["auto", "gnome", "sway", "feh", "noop"] {
+                    for mode in ["auto", "macos", "windows", "gnome", "sway", "feh", "noop"] {
                         ui.selectable_value(
                             &mut self.cfg.wallpaper_backend,
                             mode.to_string(),

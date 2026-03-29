@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+- Added cross-platform wallpaper apply backends so `Run Once` / `Apply Now` can set desktop backgrounds on every exported OS target:
+  - macOS backend (`macos`) via `osascript` and `System Events`
+  - Windows backend (`windows`) via PowerShell + Win32 `SystemParametersInfo`
+  - existing Linux backends (`gnome`, `sway`, `feh`) remain available
+- Updated `auto` backend selection:
+  - macOS prefers `macos`
+  - Windows prefers `windows` (PowerShell / pwsh)
+  - Linux keeps desktop/compositor detection (`sway` -> `gnome` -> `feh` -> `noop`)
+- Updated GUI, config schema, and CLI validation to accept:
+  - `auto`, `noop`, `macos`, `windows`, `gnome`, `sway`, `feh`
+- Updated docs (`README`, `README_FULL`, `ARCHITECTURE`, `PACKAGING`) to document the new backend matrix and runtime expectations.
+
 ## 2026.03.13-1 - 2026-03-13
 - Backported stability fixes from the Fedora/live-media work branch onto `main` while keeping `main` feature-gated:
   - GUI action buttons (`Validate`, `Render Preview`, `Run Once`, `Apply Now`, `Migrate`) now execute in background workers so the settings window stays responsive instead of blocking on synchronous command execution.

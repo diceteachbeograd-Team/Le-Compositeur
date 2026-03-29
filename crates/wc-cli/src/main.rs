@@ -569,9 +569,9 @@ fn validate_config(cfg: &AppConfig) -> Result<()> {
     }
 
     let backend = cfg.wallpaper_backend.trim().to_ascii_lowercase();
-    if !["auto", "noop", "gnome", "sway", "feh"].contains(&backend.as_str()) {
+    if !["auto", "noop", "macos", "windows", "gnome", "sway", "feh"].contains(&backend.as_str()) {
         anyhow::bail!(
-            "unsupported wallpaper_backend={}; use auto, noop, gnome, sway, or feh",
+            "unsupported wallpaper_backend={}; use auto, noop, macos, windows, gnome, sway, or feh",
             cfg.wallpaper_backend
         );
     }

@@ -99,6 +99,10 @@ cargo run -p wc-gui
 - Keep package release suffix unique per VM validation cycle (`YYYY.MM.DD-N`) to avoid stale-installs.
 - Some widgets need internet access (`Weather`, `News`, remote image/quote/static URL sources).
 - `Static URL` is snapshot-oriented by design; it is not a live browser renderer.
+- `Apply wallpaper` now supports platform-native backends via `auto`:
+  - macOS: `macos` (`osascript`)
+  - Windows: `windows` (PowerShell + Win32 `SystemParametersInfo`)
+  - Linux: `gnome`, `sway`, `feh`
 - Self-update flow in GUI is package-based and relies on distro package tools + auth dialog behavior.
 - Default local quotes seed is packaged and auto-recovered if missing.
 

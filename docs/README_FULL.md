@@ -457,7 +457,7 @@ Field meanings:
 - `refresh_seconds`: regeneration interval
 - `time_format`: clock format (`chrono` style)
 - `apply_wallpaper`: if `true`, attempts to set desktop wallpaper
-- `wallpaper_backend`: `auto`, `noop`, `gnome`, `sway`, `feh`
+- `wallpaper_backend`: `auto`, `noop`, `macos`, `windows`, `gnome`, `sway`, `feh`
 
 Quote file authoring rules are documented in:
 - `docs/USER_CONTENT_FORMAT.md`
