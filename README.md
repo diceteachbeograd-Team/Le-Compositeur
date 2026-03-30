@@ -103,6 +103,10 @@ cargo run -p wc-gui
   - macOS: `macos` (`osascript`)
   - Windows: `windows` (PowerShell + Win32 `SystemParametersInfo`)
   - Linux: `gnome`, `sway`, `feh`
+- Runner wallpaper safety:
+  - `Start Loop` / `Run Detached` now save the previous system wallpaper state per config.
+  - `Stop Loop` restores that saved wallpaper state and clears the snapshot.
+  - Lightweight backends (`noop`, `sway`, `feh`) are restore-noop by design.
 - Self-update flow in GUI is package-based and relies on distro package tools + auth dialog behavior.
 - Default local quotes seed is packaged and auto-recovered if missing.
 

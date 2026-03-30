@@ -1354,9 +1354,12 @@ impl WcGuiApp {
             self.status = format!("Cannot start runner before save: {e}");
             return;
         }
-        let replaced_external = self.kill_external_runner_processes();
-
         let path = self.config_path.clone();
+        if let Err(e) = self.save_wallpaper_snapshot(&path) {
+            self.status = format!("Cannot start runner before wallpaper snapshot: {e}");
+            return;
+        }
+        let replaced_external = self.kill_external_runner_processes();
         let child = match self.spawn_runner_command(&["run", "--replace-existing"], &path, true) {
             Ok(child) => child,
             Err(e) => {
@@ -1378,9 +1381,12 @@ impl WcGuiApp {
             self.status = format!("Cannot start detached runner before save: {e}");
             return;
         }
-        let replaced_external = self.kill_external_runner_processes();
-
         let path = self.config_path.clone();
+        if let Err(e) = self.save_wallpaper_snapshot(&path) {
+            self.status = format!("Cannot start detached runner before wallpaper snapshot: {e}");
+            return;
+        }
+        let replaced_external = self.kill_external_runner_processes();
         let result = self
             .spawn_runner_command(&["run", "--replace-existing"], &path, false)
             .map(|_child| ());
@@ -1411,10 +1417,14 @@ impl WcGuiApp {
         if let Ok(mut child) = self.spawn_runner_command(&["overlay-stop"], &path, false) {
             let _ = child.wait();
         }
+        let restore_note = match self.restore_wallpaper_snapshot(&path) {
+            Ok(msg) => msg,
+            Err(err) => format!("Wallpaper restore skipped/failed: {err}"),
+        };
         self.status = if stopped_any {
-            "Runner stopped".to_string()
+            format!("Runner stopped\n{restore_note}")
         } else {
-            "Runner is not active".to_string()
+            format!("Runner is not active\n{restore_note}")
         };
     }
 
@@ -1739,6 +1749,25 @@ impl WcGuiApp {
             "could not start CLI command.\n{}\nHint: install `le-compositeur-cli`/`wc-cli`, or set WC_CLI_BIN to full path.",
             launch_errors.join("\n")
         ))
+    }
+
+    fn run_wc_cli_sync(&self, args: &[&str], path: &str) -> Result<String, String> {
+        let bins = self.wc_cli_command_candidates();
+        let allow_cargo = self.allow_cargo_fallback();
+        let args_vec = args
+            .iter()
+            .map(|arg| (*arg).to_string())
+            .collect::<Vec<_>>();
+        run_wc_cli_command_task(&bins, allow_cargo, &args_vec, path)
+    }
+
+    fn save_wallpaper_snapshot(&self, path: &str) -> Result<(), String> {
+        self.run_wc_cli_sync(&["wallpaper-state-save"], path)
+            .map(|_| ())
+    }
+
+    fn restore_wallpaper_snapshot(&self, path: &str) -> Result<String, String> {
+        self.run_wc_cli_sync(&["wallpaper-state-restore"], path)
     }
 
     fn pick_image_dir(&mut self, ctx: &egui::Context) {

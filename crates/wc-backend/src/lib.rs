@@ -1,4 +1,6 @@
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn apply_wallpaper(
@@ -21,6 +23,51 @@ pub fn apply_wallpaper(
         "feh" => apply_feh_wallpaper(image, fit_mode).map(|_| "feh".to_string()),
         other => Err(format!("unsupported wallpaper backend: {other}")),
     }
+}
+
+pub fn save_wallpaper_state(backend: &str, state_path: &Path) -> Result<String, String> {
+    let selected = select_backend(backend);
+    if selected == "noop" || selected == "sway" || selected == "feh" {
+        return Ok(format!("skipped:{selected}"));
+    }
+
+    let mut state = BTreeMap::<String, String>::new();
+    state.insert("version".to_string(), "1".to_string());
+    state.insert("backend".to_string(), selected.clone());
+    match selected.as_str() {
+        "macos" => capture_macos_wallpaper_state(&mut state)?,
+        "windows" => capture_windows_wallpaper_state(&mut state)?,
+        "gnome" => capture_gnome_wallpaper_state(&mut state)?,
+        other => {
+            return Err(format!(
+                "unsupported wallpaper backend for state save: {other}"
+            ));
+        }
+    }
+
+    write_state_file(state_path, &state)?;
+    Ok(selected)
+}
+
+pub fn restore_wallpaper_state(state_path: &Path) -> Result<String, String> {
+    let state = read_state_file(state_path)?;
+    let backend = state
+        .get("backend")
+        .map(|s| s.trim().to_ascii_lowercase())
+        .ok_or_else(|| "wallpaper state missing backend field".to_string())?;
+
+    match backend.as_str() {
+        "macos" => restore_macos_wallpaper_state(&state)?,
+        "windows" => restore_windows_wallpaper_state(&state)?,
+        "gnome" => restore_gnome_wallpaper_state(&state)?,
+        "noop" | "sway" | "feh" => {}
+        other => {
+            return Err(format!(
+                "unsupported wallpaper backend for state restore: {other}"
+            ));
+        }
+    }
+    Ok(backend)
 }
 
 fn select_backend(requested: &str) -> String {
@@ -115,6 +162,36 @@ end run"#,
     .map_err(annotate_macos_wallpaper_error)
 }
 
+fn capture_macos_wallpaper_state(state: &mut BTreeMap<String, String>) -> Result<(), String> {
+    let out = run_cmd_capture(
+        "osascript",
+        &[
+            "-e",
+            r#"tell application "System Events"
+set currentPicture to picture of desktop 1
+return POSIX path of currentPicture
+end tell"#,
+        ],
+    )
+    .map_err(annotate_macos_wallpaper_error)?;
+    let picture = out.trim();
+    if picture.is_empty() {
+        return Err("macos wallpaper state capture returned empty picture path".to_string());
+    }
+    state.insert("picture".to_string(), picture.to_string());
+    Ok(())
+}
+
+fn restore_macos_wallpaper_state(state: &BTreeMap<String, String>) -> Result<(), String> {
+    let picture = state
+        .get("picture")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "macos wallpaper state missing picture".to_string())?;
+    let picture_path = PathBuf::from(picture);
+    apply_macos_wallpaper(&picture_path)
+}
+
 fn apply_windows_wallpaper(image: &Path, fit_mode: &str) -> Result<(), String> {
     if !image.exists() {
         return Err(format!(
@@ -143,6 +220,71 @@ Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name TileWallpaper -Value 
 Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class NativeMethods { [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Unicode)] public static extern bool SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni); }';
 if (-not [NativeMethods]::SystemParametersInfo(20, 0, $path, 3)) { throw 'SystemParametersInfo failed' }"#,
             &img,
+            style,
+            tile,
+        ],
+    )
+}
+
+fn capture_windows_wallpaper_state(state: &mut BTreeMap<String, String>) -> Result<(), String> {
+    let out = run_cmd_capture(
+        windows_shell(),
+        &[
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            r#"$desktop = Get-ItemProperty -Path 'HKCU:\Control Panel\Desktop';
+$wallpaper = [string]$desktop.Wallpaper;
+$style = [string]$desktop.WallpaperStyle;
+$tile = [string]$desktop.TileWallpaper;
+Write-Output ("wallpaper=" + $wallpaper);
+Write-Output ("wallpaper_style=" + $style);
+Write-Output ("tile_wallpaper=" + $tile);"#,
+        ],
+    )?;
+    for line in out.lines() {
+        if let Some((key, value)) = line.split_once('=') {
+            state.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+    if state.get("wallpaper").is_none_or(|v| v.is_empty()) {
+        return Err("windows wallpaper state missing wallpaper path".to_string());
+    }
+    Ok(())
+}
+
+fn restore_windows_wallpaper_state(state: &BTreeMap<String, String>) -> Result<(), String> {
+    let wallpaper = state
+        .get("wallpaper")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "windows wallpaper state missing wallpaper path".to_string())?;
+    let style = state
+        .get("wallpaper_style")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("10");
+    let tile = state
+        .get("tile_wallpaper")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("0");
+    run_cmd(
+        windows_shell(),
+        &[
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            r#"$path = [System.IO.Path]::GetFullPath($args[0]);
+$style = $args[1];
+$tile = $args[2];
+Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name WallpaperStyle -Value $style;
+Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name TileWallpaper -Value $tile;
+Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class NativeMethods { [DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Unicode)] public static extern bool SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni); }';
+if (-not [NativeMethods]::SystemParametersInfo(20, 0, $path, 3)) { throw 'SystemParametersInfo failed' }"#,
+            wallpaper,
             style,
             tile,
         ],
@@ -182,6 +324,81 @@ fn apply_gnome_wallpaper(image: &Path, fit_mode: &str) -> Result<(), String> {
         ],
     )?;
     Ok(())
+}
+
+fn capture_gnome_wallpaper_state(state: &mut BTreeMap<String, String>) -> Result<(), String> {
+    let picture_uri = run_cmd_capture(
+        "gsettings",
+        &["get", "org.gnome.desktop.background", "picture-uri"],
+    )?;
+    let picture_uri_dark = run_cmd_capture(
+        "gsettings",
+        &["get", "org.gnome.desktop.background", "picture-uri-dark"],
+    )?;
+    let picture_options = run_cmd_capture(
+        "gsettings",
+        &["get", "org.gnome.desktop.background", "picture-options"],
+    )?;
+    state.insert(
+        "picture_uri".to_string(),
+        strip_quoted_gsettings_value(picture_uri.trim()).to_string(),
+    );
+    state.insert(
+        "picture_uri_dark".to_string(),
+        strip_quoted_gsettings_value(picture_uri_dark.trim()).to_string(),
+    );
+    state.insert(
+        "picture_options".to_string(),
+        strip_quoted_gsettings_value(picture_options.trim()).to_string(),
+    );
+    Ok(())
+}
+
+fn restore_gnome_wallpaper_state(state: &BTreeMap<String, String>) -> Result<(), String> {
+    let picture_uri = state
+        .get("picture_uri")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "gnome wallpaper state missing picture_uri".to_string())?;
+    run_cmd(
+        "gsettings",
+        &[
+            "set",
+            "org.gnome.desktop.background",
+            "picture-uri",
+            picture_uri,
+        ],
+    )?;
+
+    let picture_uri_dark = state
+        .get("picture_uri_dark")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(picture_uri);
+    run_cmd(
+        "gsettings",
+        &[
+            "set",
+            "org.gnome.desktop.background",
+            "picture-uri-dark",
+            picture_uri_dark,
+        ],
+    )?;
+
+    let picture_options = state
+        .get("picture_options")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("zoom");
+    run_cmd(
+        "gsettings",
+        &[
+            "set",
+            "org.gnome.desktop.background",
+            "picture-options",
+            picture_options,
+        ],
+    )
 }
 
 fn apply_sway_wallpaper(image: &Path, fit_mode: &str) -> Result<(), String> {
@@ -240,6 +457,15 @@ fn normalize_windows_fit_mode(mode: &str) -> (&'static str, &'static str) {
 }
 
 fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
+    run_cmd_with_output(cmd, args).map(|_| ())
+}
+
+fn run_cmd_capture(cmd: &str, args: &[&str]) -> Result<String, String> {
+    let output = run_cmd_with_output(cmd, args)?;
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn run_cmd_with_output(cmd: &str, args: &[&str]) -> Result<std::process::Output, String> {
     let output = Command::new(cmd)
         .args(args)
         .output()
@@ -256,7 +482,51 @@ fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), String> {
         }
         return Err(msg);
     }
-    Ok(())
+    Ok(output)
+}
+
+fn write_state_file(path: &Path, state: &BTreeMap<String, String>) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create state dir {}: {err}", parent.display()))?;
+    }
+    let mut content = String::new();
+    for (key, value) in state {
+        content.push_str(key);
+        content.push('=');
+        content.push_str(&value.replace('\n', " "));
+        content.push('\n');
+    }
+    fs::write(path, content)
+        .map_err(|err| format!("failed to write wallpaper state {}: {err}", path.display()))
+}
+
+fn read_state_file(path: &Path) -> Result<BTreeMap<String, String>, String> {
+    let raw = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read wallpaper state {}: {err}", path.display()))?;
+    let mut state = BTreeMap::<String, String>::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some((key, value)) = trimmed.split_once('=') {
+            state.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+    if state.is_empty() {
+        return Err(format!(
+            "wallpaper state file {} is empty or invalid",
+            path.display()
+        ));
+    }
+    Ok(state)
+}
+
+fn strip_quoted_gsettings_value(raw: &str) -> &str {
+    raw.strip_prefix('\'')
+        .and_then(|s| s.strip_suffix('\''))
+        .unwrap_or(raw)
 }
 
 fn annotate_macos_wallpaper_error(err: String) -> String {
@@ -291,7 +561,10 @@ fn trim_multiline(raw: &str, max_lines: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{annotate_macos_wallpaper_error, apply_wallpaper, normalize_windows_fit_mode};
+    use super::{
+        annotate_macos_wallpaper_error, apply_wallpaper, normalize_windows_fit_mode,
+        strip_quoted_gsettings_value,
+    };
     use std::path::Path;
 
     #[test]
@@ -318,5 +591,14 @@ mod tests {
         let msg = annotate_macos_wallpaper_error(base.to_string());
         assert!(msg.contains("Privacy & Security -> Automation"));
         assert!(msg.contains("System Events"));
+    }
+
+    #[test]
+    fn gsettings_quote_strip_is_stable() {
+        assert_eq!(
+            strip_quoted_gsettings_value("'file:///tmp/demo.png'"),
+            "file:///tmp/demo.png"
+        );
+        assert_eq!(strip_quoted_gsettings_value("zoom"), "zoom");
     }
 }

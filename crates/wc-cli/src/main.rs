@@ -16,7 +16,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
-use wc_backend::apply_wallpaper;
+use wc_backend::{apply_wallpaper, restore_wallpaper_state, save_wallpaper_state};
 use wc_core::{
     AppConfig, BUILTIN_WIDGET_TYPE_IDS, WidgetInstanceConfig, WidgetPlugin, WidgetRegistry,
     WidgetResolvedPayload, WidgetRuntimeContext, build_doctor_report, builtin_image_presets,
@@ -107,6 +107,18 @@ enum Commands {
     },
     /// Stop spawned overlay helper processes for a config.
     OverlayStop {
+        /// Config path. Defaults to ~/.config/wallpaper-composer/config.toml
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
+    /// Save current system wallpaper state for later restoration.
+    WallpaperStateSave {
+        /// Config path. Defaults to ~/.config/wallpaper-composer/config.toml
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
+    /// Restore previously saved system wallpaper state.
+    WallpaperStateRestore {
         /// Config path. Defaults to ~/.config/wallpaper-composer/config.toml
         #[arg(long)]
         config: Option<PathBuf>,
@@ -214,6 +226,33 @@ fn main() -> Result<()> {
             let config_path = resolve_config_path(config)?;
             stop_overlay_runtime(&config_path)?;
             println!("overlay_runtime: stopped");
+        }
+        Commands::WallpaperStateSave { config } => {
+            let config_path = resolve_config_path(config)?;
+            let cfg = load_config_with_quote_recovery(&config_path)?;
+            let state_path = wallpaper_state_path(&config_path);
+            if state_path.exists() {
+                println!("wallpaper_state: already_saved");
+                println!("wallpaper_state_file: {}", state_path.display());
+            } else {
+                let status = save_wallpaper_state(&cfg.wallpaper_backend, &state_path)
+                    .map_err(anyhow::Error::msg)?;
+                println!("wallpaper_state: saved:{status}");
+                println!("wallpaper_state_file: {}", state_path.display());
+            }
+        }
+        Commands::WallpaperStateRestore { config } => {
+            let config_path = resolve_config_path(config)?;
+            let state_path = wallpaper_state_path(&config_path);
+            if !state_path.exists() {
+                println!("wallpaper_state: not_found");
+                println!("wallpaper_state_file: {}", state_path.display());
+            } else {
+                let status = restore_wallpaper_state(&state_path).map_err(anyhow::Error::msg)?;
+                fs::remove_file(&state_path)?;
+                println!("wallpaper_state: restored:{status}");
+                println!("wallpaper_state_file: {}", state_path.display());
+            }
         }
     }
 
@@ -4130,12 +4169,26 @@ fn acquire_run_lock(config_path: &Path, replace_existing: bool) -> Result<RunLoc
 }
 
 fn run_lock_path(config_path: &Path) -> PathBuf {
+    let base = state_base_path();
+    let cfg_hash = config_hash(config_path);
+    base.join(format!("wc-cli-{}.lock", cfg_hash))
+}
+
+fn wallpaper_state_path(config_path: &Path) -> PathBuf {
+    let base = state_base_path();
+    let cfg_hash = config_hash(config_path);
+    base.join(format!("wallpaper-state-{}.env", cfg_hash))
+}
+
+fn config_hash(config_path: &Path) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     config_path.display().to_string().hash(&mut hasher);
-    let cfg_hash = format!("{:016x}", hasher.finish());
-    let base = expand_tilde("~/.local/state/wallpaper-composer")
-        .unwrap_or_else(|_| std::env::temp_dir().join("wallpaper-composer"));
-    base.join(format!("wc-cli-{}.lock", cfg_hash))
+    format!("{:016x}", hasher.finish())
+}
+
+fn state_base_path() -> PathBuf {
+    expand_tilde("~/.local/state/wallpaper-composer")
+        .unwrap_or_else(|_| std::env::temp_dir().join("wallpaper-composer"))
 }
 
 fn read_lock_pid(path: &Path) -> Option<u32> {
