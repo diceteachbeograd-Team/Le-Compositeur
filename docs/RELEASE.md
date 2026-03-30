@@ -42,6 +42,9 @@ GitHub release assets currently include:
 
 Bundle/runtime notes:
 - Linux/Windows/macOS bundles include GUI + CLI binaries together.
+- Loop wallpaper safety is now part of runtime behavior:
+  - GUI start actions save prior wallpaper state.
+  - GUI stop action restores prior wallpaper state (where backend supports snapshot roundtrip).
 - Linux package path for default quotes: `/usr/share/le-compositeur/quotes/local-quotes.md`.
 - Linux tar/Windows zip/macOS app bundle also include `quotes/local-quotes.md` seed content.
 - Linux release `.deb` and `.rpm` are built via the same repo scripts used for local validation:
@@ -87,6 +90,6 @@ Pre-release:
 ```bash
 git checkout main
 git pull origin main
-git tag 2026.03.11-5
-git push origin 2026.03.11-5
+git tag 2026.03.30-1
+git push origin 2026.03.30-1
 ```

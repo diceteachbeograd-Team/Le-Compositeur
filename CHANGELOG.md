@@ -12,6 +12,11 @@
 - Updated GUI, config schema, and CLI validation to accept:
   - `auto`, `noop`, `macos`, `windows`, `gnome`, `sway`, `feh`
 - Updated docs (`README`, `README_FULL`, `ARCHITECTURE`, `PACKAGING`) to document the new backend matrix and runtime expectations.
+- Added wallpaper-state lifecycle around continuous loop control:
+  - GUI `Start Loop` / `Run Detached` now save the current system wallpaper state before the loop takes control.
+  - GUI `Stop Loop` now restores the previously saved wallpaper state (when available) and clears the saved state file.
+  - new CLI commands: `wallpaper-state-save` and `wallpaper-state-restore`.
+  - state roundtrip is implemented for `macos`, `windows`, and `gnome`; lightweight backends (`noop`, `sway`, `feh`) intentionally remain restore no-op.
 
 ## 2026.03.13-1 - 2026-03-13
 - Backported stability fixes from the Fedora/live-media work branch onto `main` while keeping `main` feature-gated:

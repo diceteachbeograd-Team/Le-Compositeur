@@ -1,6 +1,6 @@
 # Session Plan (Restart-Safe)
 
-Last updated: 2026-03-14
+Last updated: 2026-03-30
 
 ## Purpose
 
@@ -10,27 +10,26 @@ Use it together with `docs/TODO.md`.
 ## Current Workstream
 
 Active focus:
-1. Execute product pivot on `codex/fedora-first`: no live video/cams in stable mode.
-2. Use `NewsTicker` + `Static URL` as the default non-local content path.
-3. Keep weather/clock/quote/background stable and independent from ticker updates.
-4. Ensure Fedora VM package installs always use uniquely versioned RPM builds.
-5. Document the decision path so restart/handoff is deterministic.
+1. Keep cross-platform packaged builds working (Linux RPM/DEB, Windows zip, macOS ARM dmg).
+2. Continue Lite profile stabilization and UI simplification for low-memory VM targets.
+3. Keep wallpaper apply behavior deterministic across `Run Once`, loop start, and loop stop.
+4. Ensure Fedora/Windows/macOS install tests are reproducible from GitHub release assets.
+5. Keep docs/release runbook synchronized with real workflow.
 
 Current branch state:
-- Active branch is `codex/fedora-first`.
-- Workspace tabs now target: `Ordering`, `Images`, `Quotes`, `Weather`, `NewsTicker`, `Static URL`, `System`.
-- `show_news_layer` and `show_cams_layer` are forced off in stable GUI path.
-- `news_ticker2` is now independent of `show_news_layer` and can run as standalone ticker.
-- Overlay plan includes dedicated `news_ticker2` runtime ticker entry.
-- Browser/video embedding in wallpaper path is considered unstable and out of stable scope.
-- Repeated RPM builds with same release suffix caused stale installs; package release must increment per VM test build.
+- Active branch is `main`.
+- Cross-platform wallpaper backend matrix is active: `auto`, `noop`, `macos`, `windows`, `gnome`, `sway`, `feh`.
+- GUI loop controls now include wallpaper-state snapshot lifecycle:
+  - `Start Loop` / `Run Detached`: save wallpaper state
+  - `Stop Loop`: restore wallpaper state
+- Repeated RPM builds with same release suffix still cause stale installs; release suffix must increment per VM test build.
 
 ## Ground Truth Commands
 
 Run from repo root:
 
 ```bash
-cd "/Volumes/M4Data/Coding/Codex/Le-compsituer"
+cd "/Users/olivilo/Documents/Coding/Codex/Le-Compositeur-node24"
 git status --short --branch
 cargo test --all
 ```
