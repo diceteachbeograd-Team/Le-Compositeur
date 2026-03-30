@@ -80,7 +80,7 @@ jobs:
           - name: linux-x86_64
             os: ubuntu-latest
           - name: windows-x86_64
-            os: windows-latest
+            os: windows-2022
           - name: macos-arm64
             os: macos-14
 
@@ -147,24 +147,85 @@ jobs:
 
           ./scripts/smoke-linux-packages.sh
 
-      - name: Build Windows bundles (.zip + .exe)
+      - name: Build Windows installer (.setup.exe)
         if: matrix.name == 'windows-x86_64'
         shell: pwsh
         run: |
           & target/release/wc-cli.exe doctor | Out-Null
-          New-Item -ItemType Directory -Force -Path dist/le-compositeur-windows-x86_64/bin | Out-Null
-          Copy-Item target/release/wc-gui.exe dist/le-compositeur-windows-x86_64/bin/LeCompositeur.exe
-          Copy-Item target/release/wc-cli.exe dist/le-compositeur-windows-x86_64/bin/le-compositeur-cli.exe
-          Copy-Item target/release/wc-cli.exe dist/le-compositeur-windows-x86_64/bin/wc-cli.exe
-          New-Item -ItemType Directory -Force -Path dist/le-compositeur-windows-x86_64/quotes | Out-Null
-          Copy-Item assets/quotes/local/local-quotes.md dist/le-compositeur-windows-x86_64/quotes/local-quotes.md
-          Copy-Item README.md, LICENSE dist/le-compositeur-windows-x86_64/
-          Compress-Archive -Path dist/le-compositeur-windows-x86_64 -DestinationPath dist/le-compositeur-windows-x86_64.zip -Force
+          $tag = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          New-Item -ItemType Directory -Force -Path dist/windows-installer/payload/quotes | Out-Null
+          Copy-Item target/release/wc-gui.exe dist/windows-installer/payload/LeCompositeur.exe
+          Copy-Item target/release/wc-cli.exe dist/windows-installer/payload/le-compositeur-cli.exe
+          Copy-Item target/release/wc-cli.exe dist/windows-installer/payload/wc-cli.exe
+          Copy-Item assets/quotes/local/local-quotes.md dist/windows-installer/payload/quotes/local-quotes.md
+          Copy-Item LICENSE dist/windows-installer/payload/LICENSE.txt
+          @"
+          Le Compositeur - Windows Installer
 
-          # Smoke-check the packaged zip output, not only the build tree binary.
-          Remove-Item -Recurse -Force dist/smoke-unzip -ErrorAction SilentlyContinue
-          Expand-Archive -Path dist/le-compositeur-windows-x86_64.zip -DestinationPath dist/smoke-unzip -Force
-          & dist/smoke-unzip/le-compositeur-windows-x86_64/bin/wc-cli.exe doctor | Out-Null
+          Installed files:
+          - LeCompositeur.exe
+          - wc-cli.exe
+          - le-compositeur-cli.exe
+          - quotes\local-quotes.md
+
+          Uninstall:
+          - Settings -> Apps -> Installed apps -> Le Compositeur -> Uninstall
+          - or run "%ProgramFiles%\Le Compositeur\unins000.exe"
+          "@ | Set-Content -Encoding UTF8 dist/windows-installer/payload/README.txt
+
+          @"
+          [Setup]
+          AppId={{7F905B65-9C75-4A5A-A67C-857C9A0A3B31}
+          AppName=Le Compositeur
+          AppVersion=$tag
+          AppPublisher=diceteachbeograd-Team
+          DefaultDirName={autopf}\Le Compositeur
+          DefaultGroupName=Le Compositeur
+          UninstallDisplayIcon={app}\LeCompositeur.exe
+          Compression=lzma2
+          SolidCompression=yes
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          OutputDir=dist
+          OutputBaseFilename=le-compositeur-windows-x86_64-setup
+          DisableProgramGroupPage=yes
+          LicenseFile=dist\windows-installer\payload\LICENSE.txt
+
+          [Tasks]
+          Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
+
+          [Files]
+          Source: "dist\windows-installer\payload\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+
+          [Icons]
+          Name: "{group}\Le Compositeur"; Filename: "{app}\LeCompositeur.exe"
+          Name: "{group}\Uninstall Le Compositeur"; Filename: "{uninstallexe}"
+          Name: "{autodesktop}\Le Compositeur"; Filename: "{app}\LeCompositeur.exe"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\LeCompositeur.exe"; Description: "Launch Le Compositeur"; Flags: nowait postinstall skipifsilent
+          "@ | Set-Content -Encoding UTF8 dist/windows-installer/le-compositeur.iss
+
+          choco install innosetup -y --no-progress
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            throw "Inno Setup compiler not found: $iscc"
+          }
+          & $iscc dist/windows-installer/le-compositeur.iss
+
+          # Smoke test installer + uninstall lifecycle.
+          $setupExe = "dist/le-compositeur-windows-x86_64-setup.exe"
+          if (!(Test-Path $setupExe)) {
+            throw "Installer not found: $setupExe"
+          }
+          Start-Process -FilePath $setupExe -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
+          $installedCli = Join-Path ${env:ProgramFiles} "Le Compositeur\\wc-cli.exe"
+          & $installedCli doctor | Out-Null
+          $unins = Join-Path ${env:ProgramFiles} "Le Compositeur\\unins000.exe"
+          Start-Process -FilePath $unins -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait
+          if (Test-Path $installedCli) {
+            throw "Uninstall did not remove wc-cli.exe"
+          }
 
       - name: Build macOS ARM bundle (.dmg)
         if: matrix.name == 'macos-arm64'
@@ -262,7 +323,7 @@ jobs:
         with:
           name: release-windows-x86_64
           path: |
-            dist/le-compositeur-windows-x86_64.zip
+            dist/le-compositeur-windows-x86_64-setup.exe
 
       - name: Upload macOS release files
         if: matrix.name == 'macos-arm64'
@@ -296,7 +357,7 @@ jobs:
 
           Included artifacts:
           - Linux: `le-compositeur-linux-x86_64.tar.gz`, `le-compositeur-linux-x86_64.deb`, `le-compositeur-linux-x86_64.rpm`
-          - Windows: `le-compositeur-windows-x86_64.zip`
+          - Windows: `le-compositeur-windows-x86_64-setup.exe`
           - macOS ARM (Apple Silicon): `le-compositeur-macos-apple-silicon-arm64.dmg`
 
           Release process guarantees:
@@ -305,7 +366,7 @@ jobs:
           - Linux package smoke checks run automatically in CI:
             - `.deb` install + `wc-cli doctor` on Ubuntu runner
             - `.rpm` install + `wc-cli doctor` in clean Fedora 43 container
-          - Windows release zip is smoke-tested after archive creation (`wc-cli.exe doctor` from extracted zip).
+          - Windows installer is smoke-tested in CI (silent install -> `wc-cli.exe doctor` -> silent uninstall).
           - macOS ARM dmg is smoke-tested by mounting the dmg and running bundled `wc-cli doctor`.
           - Linux/Windows/macOS artifacts include both GUI and CLI binaries plus bundled local quotes.
           - Linux default profile is Lite (`WC_LITE_PROFILE=1`) with low-memory visual workflow.

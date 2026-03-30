@@ -21,7 +21,7 @@ Release publish strategy:
 - verify CI is green for the tagged commit first (`fmt`, `clippy`, `test`)
 - build in matrix jobs
 - run Linux package smoke validation (`.deb` install on Ubuntu, `.rpm` install in Fedora container)
-- run packaged artifact smoke validation for Windows zip and macOS dmg (`wc-cli doctor` from packaged output)
+- run packaged artifact smoke validation for Windows installer and macOS dmg (`wc-cli doctor` from packaged output)
 - upload artifacts per platform
 - publish GitHub release in one dedicated job
 
@@ -36,17 +36,18 @@ GitHub release assets currently include:
   - `le-compositeur-linux-x86_64.deb`
   - `le-compositeur-linux-x86_64.rpm`
 - Windows:
-  - `le-compositeur-windows-x86_64.zip`
+  - `le-compositeur-windows-x86_64-setup.exe`
 - macOS ARM:
   - `le-compositeur-macos-apple-silicon-arm64.dmg`
 
 Bundle/runtime notes:
-- Linux/Windows/macOS bundles include GUI + CLI binaries together.
+- Linux/macOS bundles include GUI + CLI binaries together.
+- Windows uses a native Inno Setup installer (`setup.exe`) with registered uninstall entry.
 - Loop wallpaper safety is now part of runtime behavior:
   - GUI start actions save prior wallpaper state.
   - GUI stop action restores prior wallpaper state (where backend supports snapshot roundtrip).
 - Linux package path for default quotes: `/usr/share/le-compositeur/quotes/local-quotes.md`.
-- Linux tar/Windows zip/macOS app bundle also include `quotes/local-quotes.md` seed content.
+- Linux tar/macOS app bundle include `quotes/local-quotes.md` seed content.
 - Linux release `.deb` and `.rpm` are built via the same repo scripts used for local validation:
   - `scripts/build-alpha-deb.sh`
   - `scripts/build-alpha-rpm.sh`

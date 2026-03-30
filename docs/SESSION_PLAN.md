@@ -10,7 +10,7 @@ Use it together with `docs/TODO.md`.
 ## Current Workstream
 
 Active focus:
-1. Keep cross-platform packaged builds working (Linux RPM/DEB, Windows zip, macOS ARM dmg).
+1. Keep cross-platform packaged builds working (Linux RPM/DEB, Windows setup.exe, macOS ARM dmg).
 2. Continue Lite profile stabilization and UI simplification for low-memory VM targets.
 3. Keep wallpaper apply behavior deterministic across `Run Once`, loop start, and loop stop.
 4. Ensure Fedora/Windows/macOS install tests are reproducible from GitHub release assets.

@@ -17,6 +17,11 @@
   - GUI `Stop Loop` now restores the previously saved wallpaper state (when available) and clears the saved state file.
   - new CLI commands: `wallpaper-state-save` and `wallpaper-state-restore`.
   - state roundtrip is implemented for `macos`, `windows`, and `gnome`; lightweight backends (`noop`, `sway`, `feh`) intentionally remain restore no-op.
+- Windows release packaging now ships a native installer:
+  - replaced portable Windows zip distribution with `le-compositeur-windows-x86_64-setup.exe` built via Inno Setup
+  - installer includes GUI/CLI binaries, quotes seed, and text docs (`README.txt`, `LICENSE.txt`)
+  - CI now smoke-tests Windows install + uninstall lifecycle (`silent install -> wc-cli doctor -> silent uninstall`)
+- Updated release/docs matrix to reflect installer-first distribution and uninstall commands per platform.
 
 ## 2026.03.13-1 - 2026-03-13
 - Backported stability fixes from the Fedora/live-media work branch onto `main` while keeping `main` feature-gated:

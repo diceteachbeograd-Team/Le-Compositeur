@@ -100,7 +100,7 @@ Known limitations / in progress:
 ### 3. Technology stack and versions
 Core stack:
 - Language: Rust (edition `2024`)
-- Workspace version: `2026.3.11-1`
+- Workspace version: `2026.3.13-1`
 - License: `GPL-3.0-or-later`
 
 Crates currently in use:
@@ -199,31 +199,31 @@ just migrate
 
 Alpha packaging helpers:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.11-5
-./scripts/build-alpha-deb.sh 2026.03.11-5
+./scripts/build-alpha-rpm.sh 2026.03.30-1
+./scripts/build-alpha-deb.sh 2026.03.30-1
 ```
 
 ### 6.1 Run on your system (release)
 Versioning scheme:
 - release version format: `YYYY.MM.DD-N`
-- example: `2026.03.11-5`
+- example: `2026.03.30-1`
 - if multiple builds happen on the same date, increment `N` (`.2`, `.3`, ...)
 
 You can choose either path:
-- `Option A`: download prebuilt release artifacts from GitHub Releases (tag `v...` or numeric tag like `2026.03.11-5`)
+- `Option A`: download prebuilt release artifacts from GitHub Releases (tag `v...` or numeric tag like `2026.03.30-1`)
 - `Option B`: build packages locally from source
 
 Fedora / RHEL (RPM):
 ```bash
 # Option A: install prebuilt RPM
 # install
-sudo dnf install ./wallpaper-composer-*.rpm
+sudo dnf install ./le-compositeur-linux-x86_64.rpm
 
 # Option B: local build + install
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.11-5
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-5*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.30-1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.30-1*.rpm
 
 # start GUI
 wc-gui
@@ -236,13 +236,13 @@ Ubuntu / Debian (DEB):
 ```bash
 # Option A: install prebuilt DEB
 # install
-sudo apt install ./wallpaper-composer_*_amd64.deb
+sudo apt install ./le-compositeur-linux-x86_64.deb
 
 # Option B: local build + install
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-5
-sudo apt install ./dist/le-compositeur_2026.03.11-5_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.30-1
+sudo apt install ./dist/le-compositeur_2026.03.30-1_amd64.deb
 
 # start GUI
 wc-gui
@@ -251,24 +251,22 @@ wc-gui
 wc-cli run --once
 ```
 
-Windows (ZIP artifact):
+Windows (setup.exe installer):
 ```powershell
 # unpack and run
-.\wallpaper-composer-windows-x86_64\bin\wc-gui.exe
+Start-Process .\le-compositeur-windows-x86_64-setup.exe
 ```
 
-macOS Intel / Apple Silicon (tar.gz artifact):
+macOS ARM (Apple Silicon, dmg artifact):
 ```bash
 # unpack and run
-./wallpaper-composer-macos-*/bin/wc-gui
+open ./le-compositeur-macos-apple-silicon-arm64.dmg
 ```
 
 ### 6.1.1 GitHub Actions release notes (important)
-- Current workflow artifact types: `tar.gz` (Linux/macOS) and `zip` (Windows).
-- Release also ships direct binaries per platform:
-  - `wc-cli-<platform>` / `wc-gui-<platform>` (Linux/macOS)
-  - `wc-cli-<platform>.exe` / `wc-gui-<platform>.exe` (Windows)
-- Current workflow does not yet publish native installers (`.rpm`, `.deb`, `.dmg`, `.msi/.exe installer`) automatically.
+- Current workflow artifact types: Linux `.tar.gz` / `.deb` / `.rpm`, Windows `.setup.exe`, macOS ARM `.dmg`.
+- Release assets are packaged bundles/installers; GUI/CLI binaries are included inside those artifacts.
+- Current workflow publishes native Linux packages (`.rpm`, `.deb`), Windows setup.exe installer, and macOS ARM dmg automatically for release tags.
 - Native Linux packages (`.rpm`, `.deb`) are created by local scripts:
   - RPM output: `~/rpmbuild/RPMS/x86_64/`
   - DEB output: `./dist/`
@@ -308,22 +306,22 @@ top -p "$(pgrep -d',' -f 'wc-cli|wc-gui')"
 Fedora / RHEL:
 ```bash
 # install
-sudo dnf install ./wallpaper-composer-*.rpm
+sudo dnf install ./le-compositeur-linux-x86_64.rpm
 
 # update to a newer local RPM
-sudo dnf upgrade ./wallpaper-composer-*.rpm
+sudo dnf upgrade ./le-compositeur-linux-x86_64.rpm
 
 # uninstall
-sudo dnf remove wallpaper-composer
+sudo dnf remove le-compositeur
 ```
 
 Ubuntu / Debian:
 ```bash
 # install
-sudo apt install ./wallpaper-composer_*_amd64.deb
+sudo apt install ./le-compositeur-linux-x86_64.deb
 
 # remove
-sudo apt remove wallpaper-composer
+sudo apt remove le-compositeur
 ```
 
 ### 7. CLI reference
@@ -552,7 +550,7 @@ Noch offen:
 
 ### 3. Technologien und Versionen
 - Sprache: Rust (Edition `2024`)
-- Projektversion: `2026.03.11-5`
+- Projektversion: `2026.03.30-1`
 - Lizenz: `GPL-3.0-or-later`
 
 Aktuell genutzte Crates:
@@ -609,30 +607,30 @@ cargo run -p wc-gui
 
 Alpha-Paket-Helfer:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.11-5
-./scripts/build-alpha-deb.sh 2026.03.11-5
+./scripts/build-alpha-rpm.sh 2026.03.30-1
+./scripts/build-alpha-deb.sh 2026.03.30-1
 ```
 
 ### 6.1 Auf deinem System starten (release)
 Versionsschema:
 - Release-Format: `YYYY.MM.DD-N`
-- Beispiel: `2026.03.11-5`
+- Beispiel: `2026.03.30-1`
 - bei mehreren Builds am gleichen Tag `N` hochzahlen (`.2`, `.3`, ...)
 
 Zwei Wege:
-- `Option A`: fertige Release-Artefakte aus GitHub Releases laden (Tag `v...` oder numerisch wie `2026.03.11-5`)
+- `Option A`: fertige Release-Artefakte aus GitHub Releases laden (Tag `v...` oder numerisch wie `2026.03.30-1`)
 - `Option B`: lokal aus Source bauen
 
 Fedora / RHEL (RPM):
 ```bash
 # Option A
-sudo dnf install ./wallpaper-composer-*.rpm
+sudo dnf install ./le-compositeur-linux-x86_64.rpm
 
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.11-5
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-5*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.30-1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.30-1*.rpm
 
 wc-gui
 wc-cli run --once
@@ -641,34 +639,32 @@ wc-cli run --once
 Ubuntu / Debian (DEB):
 ```bash
 # Option A
-sudo apt install ./wallpaper-composer_*_amd64.deb
+sudo apt install ./le-compositeur-linux-x86_64.deb
 
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-5
-sudo apt install ./dist/le-compositeur_2026.03.11-5_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.30-1
+sudo apt install ./dist/le-compositeur_2026.03.30-1_amd64.deb
 
 wc-gui
 wc-cli run --once
 ```
 
-Windows (ZIP-Artefakt):
+Windows (setup.exe-Installer):
 ```powershell
-.\wallpaper-composer-windows-x86_64\bin\wc-gui.exe
+Start-Process .\le-compositeur-windows-x86_64-setup.exe
 ```
 
-macOS Intel / Apple Silicon (tar.gz-Artefakt):
+macOS ARM (Apple Silicon, dmg-Artefakt):
 ```bash
-./wallpaper-composer-macos-*/bin/wc-gui
+open ./le-compositeur-macos-apple-silicon-arm64.dmg
 ```
 
 ### 6.1.1 GitHub Actions Hinweise (wichtig)
-- Aktuelle Workflow-Artefakte: `tar.gz` (Linux/macOS) und `zip` (Windows).
-- Im Release liegen zusatzlich direkte Binaries pro Plattform:
-  - `wc-cli-<platform>` / `wc-gui-<platform>` (Linux/macOS)
-  - `wc-cli-<platform>.exe` / `wc-gui-<platform>.exe` (Windows)
-- Aktuell werden keine nativen Installer (`.rpm`, `.deb`, `.dmg`, `.msi/.exe installer`) automatisch in GitHub Actions gebaut.
+- Aktuelle Workflow-Artefakte: Linux `.tar.gz` / `.deb` / `.rpm`, Windows `.setup.exe`, macOS ARM `.dmg`.
+- Im Release liegen gebundelte Artefakte/Installer; GUI- und CLI-Binaries sind darin enthalten.
+- Aktuell werden native Linux-Pakete (`.rpm`, `.deb`), Windows-zip und macOS ARM dmg automatisch fur Release-Tags gebaut.
 - Native Linux-Pakete (`.rpm`, `.deb`) kommen aus lokalen Build-Skripten:
   - RPM-Ausgabe: `~/rpmbuild/RPMS/x86_64/`
   - DEB-Ausgabe: `./dist/`
@@ -856,7 +852,7 @@ Nije jos uradjeno:
 
 ### 3. Tehnologije i verzije
 - Jezik: Rust (edition `2024`)
-- Verzija projekta: `2026.03.11-5`
+- Verzija projekta: `2026.03.30-1`
 - Licenca: `GPL-3.0-or-later`
 
 Crate-ovi:
@@ -913,30 +909,30 @@ cargo run -p wc-gui
 
 Alpha helper skripte:
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.11-5
-./scripts/build-alpha-deb.sh 2026.03.11-5
+./scripts/build-alpha-rpm.sh 2026.03.30-1
+./scripts/build-alpha-deb.sh 2026.03.30-1
 ```
 
 ### 6.1 Pokretanje na svom sistemu (release)
 Verzionisanje:
 - format izdanja: `YYYY.MM.DD-N`
-- primer: `2026.03.11-5`
+- primer: `2026.03.30-1`
 - za vise buildova istog dana povecaj `N` (`.2`, `.3`, ...)
 
 Imas dve opcije:
-- `Option A`: prebuilt release artefakti sa GitHub Releases (tag `v...` ili numericki kao `2026.03.11-5`)
+- `Option A`: prebuilt release artefakti sa GitHub Releases (tag `v...` ili numericki kao `2026.03.30-1`)
 - `Option B`: lokalni build iz source koda
 
 Fedora / RHEL (RPM):
 ```bash
 # Option A
-sudo dnf install ./wallpaper-composer-*.rpm
+sudo dnf install ./le-compositeur-linux-x86_64.rpm
 
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.11-5
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-5*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.30-1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.30-1*.rpm
 
 wc-gui
 wc-cli run --once
@@ -945,34 +941,32 @@ wc-cli run --once
 Ubuntu / Debian (DEB):
 ```bash
 # Option A
-sudo apt install ./wallpaper-composer_*_amd64.deb
+sudo apt install ./le-compositeur-linux-x86_64.deb
 
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-5
-sudo apt install ./dist/le-compositeur_2026.03.11-5_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.30-1
+sudo apt install ./dist/le-compositeur_2026.03.30-1_amd64.deb
 
 wc-gui
 wc-cli run --once
 ```
 
-Windows (ZIP):
+Windows (setup.exe):
 ```powershell
-.\wallpaper-composer-windows-x86_64\bin\wc-gui.exe
+Start-Process .\le-compositeur-windows-x86_64-setup.exe
 ```
 
-macOS Intel / Apple Silicon (tar.gz):
+macOS ARM (Apple Silicon, dmg):
 ```bash
-./wallpaper-composer-macos-*/bin/wc-gui
+open ./le-compositeur-macos-apple-silicon-arm64.dmg
 ```
 
 ### 6.1.1 GitHub Actions napomene (vazno)
-- Trenutni workflow artefakti: `tar.gz` (Linux/macOS) i `zip` (Windows).
-- U release-u su i direktni binarni fajlovi po platformi:
-  - `wc-cli-<platform>` / `wc-gui-<platform>` (Linux/macOS)
-  - `wc-cli-<platform>.exe` / `wc-gui-<platform>.exe` (Windows)
-- Trenutno se ne objavljuju automatski nativni instaleri (`.rpm`, `.deb`, `.dmg`, `.msi/.exe installer`).
+- Trenutni workflow artefakti: Linux `.tar.gz` / `.deb` / `.rpm`, Windows `.setup.exe`, macOS ARM `.dmg`.
+- U release-u su paketovani artefakti/instaleri; GUI i CLI binari su vec ukljuceni unutra.
+- Trenutno se za release tagove automatski objavljuju Linux paketi (`.rpm`, `.deb`), Windows setup.exe i macOS ARM dmg.
 - Nativni Linux paketi (`.rpm`, `.deb`) nastaju lokalnim skriptama:
   - RPM izlaz: `~/rpmbuild/RPMS/x86_64/`
   - DEB izlaz: `./dist/`
@@ -1119,7 +1113,7 @@ Le Compositeur 是一个面向 Linux 桌面环境的 Rust 开源项目。
 
 ### 3. 技术栈与版本
 - 语言：Rust（edition `2024`）
-- 项目版本：`2026.03.11-5`
+- 项目版本：`2026.03.30-1`
 - 许可证：`GPL-3.0-or-later`
 
 当前依赖：
@@ -1176,30 +1170,30 @@ cargo run -p wc-gui
 
 Alpha 打包脚本：
 ```bash
-./scripts/build-alpha-rpm.sh 2026.03.11-5
-./scripts/build-alpha-deb.sh 2026.03.11-5
+./scripts/build-alpha-rpm.sh 2026.03.30-1
+./scripts/build-alpha-deb.sh 2026.03.30-1
 ```
 
 ### 6.1 在你的系统上启动（release）
 版本规则：
 - 发布格式：`YYYY.MM.DD-N`
-- 示例：`2026.03.11-5`
+- 示例：`2026.03.30-1`
 - 同一天多次构建时递增 `N`（`.2`、`.3`）
 
 可选两种方式：
-- `Option A`：从 GitHub Releases 下载预构建产物（标签 `v...` 或数字标签如 `2026.03.11-5`）
+- `Option A`：从 GitHub Releases 下载预构建产物（标签 `v...` 或数字标签如 `2026.03.30-1`）
 - `Option B`：本地从源码构建
 
 Fedora / RHEL（RPM）：
 ```bash
 # Option A
-sudo dnf install ./wallpaper-composer-*.rpm
+sudo dnf install ./le-compositeur-linux-x86_64.rpm
 
 # Option B
 sudo dnf install -y rpm-build rpmdevtools rust cargo desktop-file-utils rsync
 rpmdev-setuptree
-./scripts/build-alpha-rpm.sh 2026.03.11-5
-sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.11-5*.rpm
+./scripts/build-alpha-rpm.sh 2026.03.30-1
+sudo rpm -Uvh --replacepkgs ~/rpmbuild/RPMS/x86_64/le-compositeur-2026.03.30-1*.rpm
 
 wc-gui
 wc-cli run --once
@@ -1208,34 +1202,32 @@ wc-cli run --once
 Ubuntu / Debian（DEB）：
 ```bash
 # Option A
-sudo apt install ./wallpaper-composer_*_amd64.deb
+sudo apt install ./le-compositeur-linux-x86_64.deb
 
 # Option B
 sudo apt update
 sudo apt install -y rustc cargo dpkg-dev
-./scripts/build-alpha-deb.sh 2026.03.11-5
-sudo apt install ./dist/le-compositeur_2026.03.11-5_amd64.deb
+./scripts/build-alpha-deb.sh 2026.03.30-1
+sudo apt install ./dist/le-compositeur_2026.03.30-1_amd64.deb
 
 wc-gui
 wc-cli run --once
 ```
 
-Windows（ZIP）：
+Windows（setup.exe）：
 ```powershell
-.\wallpaper-composer-windows-x86_64\bin\wc-gui.exe
+Start-Process .\le-compositeur-windows-x86_64-setup.exe
 ```
 
-macOS Intel / Apple Silicon（tar.gz）：
+macOS ARM（Apple Silicon，dmg）：
 ```bash
-./wallpaper-composer-macos-*/bin/wc-gui
+open ./le-compositeur-macos-apple-silicon-arm64.dmg
 ```
 
 ### 6.1.1 GitHub Actions 说明（重要）
-- 当前工作流产物类型：`tar.gz`（Linux/macOS）和 `zip`（Windows）。
-- Release 也会附带各平台的直接二进制文件：
-  - `wc-cli-<platform>` / `wc-gui-<platform>`（Linux/macOS）
-  - `wc-cli-<platform>.exe` / `wc-gui-<platform>.exe`（Windows）
-- 当前工作流不会自动生成原生安装包（`.rpm`、`.deb`、`.dmg`、`.msi/.exe installer`）。
+- 当前工作流产物类型：Linux `.tar.gz` / `.deb` / `.rpm`、Windows `.setup.exe`、macOS ARM `.dmg`。
+- Release 提供的是打包产物/安装器；GUI/CLI 二进制已包含在对应产物内。
+- 当前工作流会在 release tag 上自动生成 Linux 包（`.rpm`、`.deb`）、Windows setup.exe 与 macOS ARM dmg。
 - Linux 原生包（`.rpm`、`.deb`）需要本地脚本构建：
   - RPM 输出目录：`~/rpmbuild/RPMS/x86_64/`
   - DEB 输出目录：`./dist/`

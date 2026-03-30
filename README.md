@@ -39,8 +39,62 @@ See [docs/LITE_PROFILE.md](docs/LITE_PROFILE.md) for limits and tuning env vars.
 ### Artifact mapping
 - Linux: `le-compositeur-linux-x86_64.deb` or `le-compositeur-linux-x86_64.rpm`
 - Linux portable bundle: `le-compositeur-linux-x86_64.tar.gz`
-- Windows: `le-compositeur-windows-x86_64.zip`
+- Windows installer: `le-compositeur-windows-x86_64-setup.exe`
 - macOS ARM (Apple Silicon): `le-compositeur-macos-apple-silicon-arm64.dmg`
+
+## Install From Release Artifacts
+
+Fedora/RHEL (`.rpm`):
+```bash
+sudo dnf install -y ./le-compositeur-linux-x86_64.rpm
+le-compositeur
+```
+
+Ubuntu/Debian (`.deb`):
+```bash
+sudo apt install ./le-compositeur-linux-x86_64.deb
+le-compositeur
+```
+
+Windows (`.setup.exe`):
+```powershell
+Start-Process .\le-compositeur-windows-x86_64-setup.exe
+```
+
+macOS ARM (`.dmg`):
+```bash
+open ./le-compositeur-macos-apple-silicon-arm64.dmg
+```
+
+## Uninstall
+
+Windows (Win11 + Server 2022):
+```powershell
+# Settings -> Apps -> Le Compositeur -> Uninstall
+# or
+& "$env:ProgramFiles\Le Compositeur\unins000.exe"
+```
+
+Fedora/RHEL:
+```bash
+sudo dnf remove -y le-compositeur
+```
+
+Debian/Ubuntu:
+```bash
+sudo apt remove -y le-compositeur
+```
+
+Arch:
+```bash
+sudo pacman -Rns le-compositeur
+```
+
+macOS ARM/Intel:
+```bash
+rm -rf "/Applications/Le Compositeur.app"
+rm -rf "$HOME/.config/wallpaper-composer" "$HOME/.local/state/wallpaper-composer" "$HOME/.cache/wallpaper-composer"
+```
 
 ## Current Product Mode
 - Stable UX path on branch `codex/fedora-first` uses:
